@@ -1,0 +1,7 @@
+supabase/functions/
+supabase/migrations/
+migrations/
+*.md
+
+
+
