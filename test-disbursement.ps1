@@ -2,7 +2,7 @@
 # Replace the phone number below with your actual number
 
 $phoneNumber = "254727638940"  # Replace with your actual phone number (format: 254XXXXXXXXX)
-$amount = 10  # Small test amount in KES
+$amount = 5  # Small test amount in KES
 
 Write-Host "Making test disbursement to capture balance data..." -ForegroundColor Green
 Write-Host "Phone: $phoneNumber" -ForegroundColor Cyan
@@ -21,7 +21,7 @@ $disbursementData = @{
 Write-Host "`nSending disbursement request..." -ForegroundColor Yellow
 
 try {
-    $response = Invoke-WebRequest -Uri "http://localhost:3000/api/disburse" -Method POST -ContentType "application/json" -Headers @{"x-api-key"="kulmna_sk_live_1234567890abcdef"} -Body $disbursementData -UseBasicParsing
+    $response = Invoke-WebRequest -Uri "http://localhost:3000/api/disburse" -Method POST -ContentType "application/json" -Headers @{"x-api-key"="kulman_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"} -Body $disbursementData -UseBasicParsing
     
     $result = $response.Content | ConvertFrom-Json
     

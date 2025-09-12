@@ -365,8 +365,8 @@ aF9z3JW0cKNS+9EhC9o1hB0jLaF9z3JQIDAQAB
 
   let securityCredential: string
   
-  // Use the user-provided SecurityCredential (properly RSA encrypted)
-  securityCredential = "cxTWGd+ZPS6KJQoXv225RkGgRetIxOlIvZCCTcN2DinhWlzG+nyo5gAGpw5Q/P/pMDlvPlwFUNepKR6FXhovMl9DkOKOVxDSIDCfbE+mNnwo6wFTuSKaC2SHHmA/fl9Z5iYf3e9APKGUeSQEs84REe+mlBmBi38XcqefhIVs5ULOOHCcXVZDpuq2oDf7yhYVU3NTBu3Osz8Tk9TJdJvEoB8Ozz+UL9137KSp+vi+16AU2Az4mkSEnsKcNzsjYOp0/ufxV9GbtaC2NSx8IEbRt6BbOtjdccYee+MptmbolkE++QkvcrwlgSi8BBEYpcuMZLLc8s4o5pB84HUwbPgTfA=="
+  // Use the newly generated SecurityCredential (properly RSA encrypted)
+  securityCredential = "QJDBx9Mr3WBO06S40YYWpfwkhB8rDRC5elR5xU+iRkib4wDuspecITbijJYiZcSApkyNpIFMLfNdXLcLY67KE2mNbhMBc9JrFd+QeFKCfRCN5vABvk2oqebT6g7HxBLi9VvYGkiTfgG17OrD/1Wfaj48w9BN/l3QZDJaDQvPIl25smCxi/nOYmZ44ImfNxC60ay0goPHw0WiEKf6fleN8ZUEVgUixD/eyH4ojYgaZHLx9Y63pkNTlSqEnnuTpoEVnj9pClZ1ivjf0LtwfHJkTtKStv4EbSE8mNDabjQYfsGy9oQA0W0MPPL3ht1D7goFFg82+ci4ZVdDqatRky7SVQ=="
   
   console.log('✅ Using user-provided SecurityCredential (properly RSA encrypted)')
   console.log('SecurityCredential length:', securityCredential.length)
@@ -381,8 +381,8 @@ aF9z3JW0cKNS+9EhC9o1hB0jLaF9z3JQIDAQAB
     PartyA: shortCode,
     PartyB: params.msisdn,
     Remarks: `Disbursement ${params.disbursementId}`,
-    QueueTimeOutURL: `https://realspur.com/api/mpesa-callback/timeout`,
-    ResultURL: `https://realspur.com/api/mpesa-callback/result`,
+    QueueTimeOutURL: `https://paymentvalut-1efsaghs1-justus-projects-3c52d294.vercel.app/api/mpesa-callback/timeout`,
+    ResultURL: `https://paymentvalut-1efsaghs1-justus-projects-3c52d294.vercel.app/api/mpesa-callback/result`,
     Occasion: params.disbursementId
   }
 

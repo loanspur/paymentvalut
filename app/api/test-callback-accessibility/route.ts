@@ -2,54 +2,56 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('🔍 Testing callback endpoint accessibility...')
+    console.log('🔍 Testing callback accessibility...')
     
-    // Test if we can reach the callback endpoints
-    const callbackUrls = [
-      'https://realspur.com/api/mpesa-callback/result',
-      'https://realspur.com/api/mpesa-callback/timeout'
-    ]
-    
-    const results = []
-    
-    for (const url of callbackUrls) {
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            test: 'connectivity',
-            timestamp: new Date().toISOString()
-          }),
-          signal: AbortSignal.timeout(10000) // 10 second timeout
-        })
-        
-        results.push({
-          url,
-          status: response.status,
-          accessible: response.ok,
-          message: response.ok ? 'Accessible' : `HTTP ${response.status}`
-        })
-      } catch (error) {
-        results.push({
-          url,
-          status: 'error',
-          accessible: false,
-          message: error instanceof Error ? error.message : 'Unknown error'
-        })
-      }
-    }
+    // Test if this endpoint is accessible from external sources
+    const userAgent = request.headers.get('user-agent') || 'Unknown'
+    const origin = request.headers.get('origin') || 'Unknown'
+    const referer = request.headers.get('referer') || 'Unknown'
     
     return NextResponse.json({
-      message: 'Callback endpoint accessibility test',
-      results,
-      timestamp: new Date().toISOString()
+      message: 'Callback endpoint is accessible',
+      timestamp: new Date().toISOString(),
+      request_info: {
+        user_agent: userAgent,
+        origin: origin,
+        referer: referer,
+        method: request.method,
+        url: request.url
+      },
+      status: 'success'
     })
 
   } catch (error) {
     console.error('❌ Error testing callback accessibility:', error)
+    return NextResponse.json({ 
+      error: 'Internal server error', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    console.log('🔍 Testing callback POST accessibility...')
+    
+    const body = await request.text()
+    const userAgent = request.headers.get('user-agent') || 'Unknown'
+    
+    return NextResponse.json({
+      message: 'Callback POST endpoint is accessible',
+      timestamp: new Date().toISOString(),
+      received_data: body,
+      request_info: {
+        user_agent: userAgent,
+        content_type: request.headers.get('content-type'),
+        content_length: request.headers.get('content-length')
+      },
+      status: 'success'
+    })
+
+  } catch (error) {
+    console.error('❌ Error testing callback POST accessibility:', error)
     return NextResponse.json({ 
       error: 'Internal server error', 
       details: error instanceof Error ? error.message : 'Unknown error'
