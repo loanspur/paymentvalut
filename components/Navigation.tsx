@@ -98,6 +98,12 @@ export default function Navigation({ className = '' }: NavigationProps) {
       href: '/settings',
       icon: Settings,
       description: 'System settings'
+    },
+    {
+      name: 'API Docs',
+      href: '/api-docs',
+      icon: FileText,
+      description: 'USSD API documentation'
     }
   ]
 
@@ -252,6 +258,12 @@ export function SidebarNavigation({ className = '' }: NavigationProps) {
       href: '/settings',
       icon: Settings,
       description: 'System settings'
+    },
+    {
+      name: 'API Docs',
+      href: '/api-docs',
+      icon: FileText,
+      description: 'USSD API documentation'
     }
   ]
 
