@@ -84,6 +84,34 @@ serve(async (req) => {
       )
     }
 
+    // Check IP whitelisting if enabled
+    if (partner.ip_whitelist_enabled && partner.allowed_ips && partner.allowed_ips.length > 0) {
+      const clientIP = req.headers.get('x-forwarded-for') || 
+                      req.headers.get('x-real-ip') || 
+                      req.headers.get('cf-connecting-ip') ||
+                      'unknown'
+      
+      // Extract the first IP from x-forwarded-for (in case of multiple proxies)
+      const requestIP = clientIP.split(',')[0].trim()
+      
+      if (!partner.allowed_ips.includes(requestIP)) {
+        console.log(`❌ IP whitelist violation: ${requestIP} not in allowed list:`, partner.allowed_ips)
+        return new Response(
+          JSON.stringify({
+            status: 'rejected',
+            error_code: 'AUTH_1003',
+            error_message: 'IP address not whitelisted'
+          }),
+          { 
+            status: 403, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
+      }
+      
+      console.log(`✅ IP whitelist check passed: ${requestIP} is allowed for partner ${partner.name}`)
+    }
+
     // Parse request body
     const body: DisburseRequest = await req.json()
 
