@@ -482,7 +482,7 @@ export default function APIDocsPage() {
                           <tr>
                             <td className="px-4 py-3 text-sm font-mono text-gray-900">B2C_1002</td>
                             <td className="px-4 py-3 text-sm text-gray-600">Invalid amount (minimum 10 KES)</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">Use amount >= 10</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">Use amount &gt;= 10</td>
                           </tr>
                         </tbody>
                       </table>
