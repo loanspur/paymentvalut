@@ -17,6 +17,7 @@ export interface Partner {
   mpesa_environment: string
   is_active: boolean
   is_mpesa_configured: boolean
+  api_key: string
   allowed_ips: string[]
   ip_whitelist_enabled: boolean
   created_at: string
@@ -166,12 +167,10 @@ export default function PartnersPage() {
       } else {
         // Add new partner to database
         
-        // Generate API key hash (you'll need to provide the actual API key)
-        const apiKey = formData.api_key || `partner_sk_${Date.now()}_${Math.random().toString(36).substr(2, 16)}`
-        const apiKeyHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(apiKey))
-        const apiKeyHashHex = Array.from(new Uint8Array(apiKeyHash))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('')
+        // Generate strong API key with familiar prefix
+        const { generateStrongAPIKey, hashAPIKey } = await import('../../lib/api-key-utils')
+        const apiKey = formData.api_key || generateStrongAPIKey(formData.name, 'live')
+        const apiKeyHashHex = await hashAPIKey(apiKey)
 
         const { data, error } = await supabase
           .from('partners')
@@ -257,7 +256,7 @@ export default function PartnersPage() {
       mpesa_environment: partner.mpesa_environment,
       is_active: partner.is_active,
       is_mpesa_configured: partner.is_mpesa_configured,
-      api_key: '',
+      api_key: partner.api_key || '',
       allowed_ips: (partner as any).allowed_ips || [],
       ip_whitelist_enabled: (partner as any).ip_whitelist_enabled || false
     })
@@ -714,6 +713,46 @@ export default function PartnersPage() {
                       />
                       <p className="text-xs text-gray-500 mt-1">
                         The initiator password used for SecurityCredential generation in B2C transactions
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* API Key Section */}
+                  <div className="space-y-4">
+                    <h4 className="text-md font-medium text-gray-900">🔑 API Key</h4>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        API Key
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={formData.api_key}
+                          onChange={(e) => setFormData({...formData, api_key: e.target.value})}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                          placeholder="API key will be generated automatically"
+                          readOnly={!editingPartner}
+                        />
+                        {editingPartner && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const { generateStrongAPIKey } = await import('../../lib/api-key-utils')
+                              const newApiKey = generateStrongAPIKey(formData.name, 'live')
+                              setFormData({...formData, api_key: newApiKey})
+                            }}
+                            className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 text-sm"
+                          >
+                            Regenerate
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {editingPartner 
+                          ? "Click 'Regenerate' to create a new secure API key. The old key will be invalidated."
+                          : "A secure API key will be generated automatically when you save this partner."
+                        }
                       </p>
                     </div>
                   </div>
