@@ -29,14 +29,16 @@ export default function LoginPage() {
       const data = await response.json()
 
       if (response.ok) {
-        // Store auth token
-        localStorage.setItem('auth_token', data.token)
-        localStorage.setItem('user', JSON.stringify(data.user))
+        // Store auth token (client-side only)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('auth_token', data.token)
+          localStorage.setItem('user', JSON.stringify(data.user))
+        }
         
         // Redirect to dashboard
-        router.push('/dashboard')
+        router.push('/')
       } else {
-        setError(data.message || 'Login failed')
+        setError(data.error || data.message || 'Login failed')
       }
     } catch (error) {
       setError('Network error. Please try again.')

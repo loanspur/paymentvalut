@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { 
@@ -28,17 +28,21 @@ export default function Navigation({ className = '' }: NavigationProps) {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const pathname = usePathname()
 
-  // Check if user is logged in
-  useState(() => {
-    const token = localStorage.getItem('auth_token')
-    setIsLoggedIn(!!token)
-  })
+  // Check if user is logged in (client-side only)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('auth_token')
+      setIsLoggedIn(!!token)
+    }
+  }, [])
 
   const handleLogout = async () => {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
-      localStorage.removeItem('auth_token')
-      localStorage.removeItem('user')
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('user')
+      }
       setIsLoggedIn(false)
       window.location.href = '/login'
     } catch (error) {
