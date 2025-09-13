@@ -1,45 +1,74 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AuthService } from '../../../../lib/auth'
+import jwt from 'jsonwebtoken'
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
+
+// Demo users (in production, this would be in a database)
+const USERS = [
+  {
+    id: '1',
+    username: 'admin',
+    password: 'admin123', // In production, this would be hashed
+    role: 'admin',
+    name: 'System Administrator'
+  },
+  {
+    id: '2',
+    username: 'operator',
+    password: 'operator123',
+    role: 'operator',
+    name: 'System Operator'
+  }
+]
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json()
+    const { username, password } = await request.json()
 
-    if (!email || !password) {
-      return NextResponse.json(
-        { error: 'Email and password are required' },
-        { status: 400 }
-      )
+    if (!username || !password) {
+      return NextResponse.json({
+        error: 'Username and password are required'
+      }, { status: 400 })
     }
 
-    const result = await AuthService.login({ email, password })
+    // Find user
+    const user = USERS.find(u => u.username === username && u.password === password)
 
-    if (!result) {
-      return NextResponse.json(
-        { error: 'Invalid credentials' },
-        { status: 401 }
-      )
+    if (!user) {
+      return NextResponse.json({
+        error: 'Invalid credentials'
+      }, { status: 401 })
     }
 
-    // Return user data and session token
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: user.id, 
+        username: user.username, 
+        role: user.role 
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    )
+
+    // Return user data and token
     return NextResponse.json({
       success: true,
+      message: 'Login successful',
+      token,
       user: {
-        id: result.user.id,
-        email: result.user.email,
-        role: result.user.role,
-        partner_id: result.user.partner_id,
-        is_active: result.user.is_active,
-        last_login_at: result.user.last_login_at
-      },
-      session_token: result.session.session_token,
-      expires_at: result.session.expires_at
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        role: user.role
+      }
     })
 
   } catch (error) {
-    return NextResponse.json(
-      { error: 'Login failed' },
-      { status: 500 }
-    )
+    console.error('❌ Login error:', error)
+    return NextResponse.json({
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
   }
 }

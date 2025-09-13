@@ -14,7 +14,9 @@ import {
   Menu,
   X,
   Home,
-  FileText
+  FileText,
+  LogOut,
+  User
 } from 'lucide-react'
 
 interface NavigationProps {
@@ -23,7 +25,26 @@ interface NavigationProps {
 
 export default function Navigation({ className = '' }: NavigationProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
   const pathname = usePathname()
+
+  // Check if user is logged in
+  useState(() => {
+    const token = localStorage.getItem('auth_token')
+    setIsLoggedIn(!!token)
+  })
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('user')
+      setIsLoggedIn(false)
+      window.location.href = '/login'
+    } catch (error) {
+      console.error('Logout error:', error)
+    }
+  }
 
   const navigationItems = [
     {
@@ -119,6 +140,17 @@ export default function Navigation({ className = '' }: NavigationProps) {
             </Link>
           )
         })}
+        
+        {/* Logout Button */}
+        {isLoggedIn && (
+          <button
+            onClick={handleLogout}
+            className="group flex items-center px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+          >
+            <LogOut className="mr-3 h-5 w-5 flex-shrink-0" />
+            <span>Logout</span>
+          </button>
+        )}
       </nav>
 
       {/* Mobile Navigation */}
@@ -143,6 +175,20 @@ export default function Navigation({ className = '' }: NavigationProps) {
                 </Link>
               )
             })}
+            
+            {/* Mobile Logout Button */}
+            {isLoggedIn && (
+              <button
+                onClick={() => {
+                  handleLogout()
+                  setIsMobileMenuOpen(false)
+                }}
+                className="group flex items-center px-3 py-2 rounded-md text-base font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors w-full"
+              >
+                <LogOut className="mr-3 h-5 w-5 flex-shrink-0" />
+                <span>Logout</span>
+              </button>
+            )}
           </div>
         </div>
       )}

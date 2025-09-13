@@ -17,6 +17,8 @@ export interface Partner {
   mpesa_environment: string
   is_active: boolean
   is_mpesa_configured: boolean
+  allowed_ips: string[]
+  ip_whitelist_enabled: boolean
   created_at: string
   updated_at: string
 }
@@ -60,7 +62,9 @@ export default function PartnersPage() {
     mpesa_environment: 'sandbox',
     is_active: true,
     is_mpesa_configured: false,
-    api_key: ''
+    api_key: '',
+    allowed_ips: [] as string[],
+    ip_whitelist_enabled: false
   })
 
   // Environment configuration loaded
@@ -137,6 +141,8 @@ export default function PartnersPage() {
             mpesa_environment: formData.mpesa_environment,
             is_active: formData.is_active,
             is_mpesa_configured: formData.is_mpesa_configured,
+            allowed_ips: formData.allowed_ips,
+            ip_whitelist_enabled: formData.ip_whitelist_enabled,
             updated_at: new Date().toISOString()
           })
           .eq('id', editingPartner.id)
@@ -181,6 +187,8 @@ export default function PartnersPage() {
             mpesa_environment: formData.mpesa_environment,
             is_active: formData.is_active,
             is_mpesa_configured: formData.is_mpesa_configured,
+            allowed_ips: formData.allowed_ips,
+            ip_whitelist_enabled: formData.ip_whitelist_enabled,
             api_key_hash: apiKeyHashHex,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
@@ -220,7 +228,9 @@ export default function PartnersPage() {
         mpesa_environment: 'sandbox',
         is_active: true,
         is_mpesa_configured: false,
-        api_key: ''
+        api_key: '',
+        allowed_ips: [],
+        ip_whitelist_enabled: false
       })
       setShowAddForm(false)
       setEditingPartner(null)
@@ -247,10 +257,25 @@ export default function PartnersPage() {
       mpesa_environment: partner.mpesa_environment,
       is_active: partner.is_active,
       is_mpesa_configured: partner.is_mpesa_configured,
-      api_key: ''
+      api_key: '',
+      allowed_ips: (partner as any).allowed_ips || [],
+      ip_whitelist_enabled: (partner as any).ip_whitelist_enabled || false
     })
     setEditingPartner(partner)
     setShowAddForm(true)
+  }
+
+  // IP whitelisting functions
+  const [newIP, setNewIP] = useState('')
+  
+  const addIP = () => {
+    if (newIP.trim() && !formData.allowed_ips.includes(newIP.trim())) {
+      setFormData({
+        ...formData,
+        allowed_ips: [...formData.allowed_ips, newIP.trim()]
+      })
+      setNewIP('')
+    }
   }
 
   const handleDelete = (partnerId: string) => {
@@ -554,6 +579,65 @@ export default function PartnersPage() {
                         <option value="production">Production</option>
                       </select>
                     </div>
+                  </div>
+                  
+                  {/* IP Whitelisting Section */}
+                  <div className="space-y-4">
+                    <h4 className="text-md font-medium text-gray-900">🔒 Security & IP Whitelisting</h4>
+                    
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={formData.ip_whitelist_enabled}
+                          onChange={(e) => setFormData({...formData, ip_whitelist_enabled: e.target.checked})}
+                          className="mr-2"
+                        />
+                        Enable IP Whitelisting
+                      </label>
+                    </div>
+
+                    {formData.ip_whitelist_enabled && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Allowed IP Addresses
+                        </label>
+                        <div className="space-y-2">
+                          {(formData.allowed_ips || []).map((ip, index) => (
+                            <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                              <span className="font-mono text-sm">{ip}</span>
+                              <button
+                                type="button"
+                                onClick={() => setFormData({
+                                  ...formData, 
+                                  allowed_ips: formData.allowed_ips.filter((_, i) => i !== index)
+                                })}
+                                className="text-red-600 hover:text-red-800"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={newIP}
+                              onChange={(e) => setNewIP(e.target.value)}
+                              placeholder="Enter IP address (e.g., 192.168.1.100)"
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addIP())}
+                            />
+                            <button
+                              type="button"
+                              onClick={addIP}
+                              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                            >
+                              Add IP
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   
                   <div className="space-y-4">
