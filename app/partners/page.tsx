@@ -59,7 +59,8 @@ export default function PartnersPage() {
     mpesa_initiator_password: '',
     mpesa_environment: 'sandbox',
     is_active: true,
-    is_mpesa_configured: false
+    is_mpesa_configured: false,
+    api_key: ''
   })
 
   // Environment configuration loaded
