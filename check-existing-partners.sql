@@ -12,3 +12,6 @@ FROM partners
 ORDER BY name;
 
 
+
+
+

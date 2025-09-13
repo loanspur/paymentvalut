@@ -7,16 +7,18 @@ export default function DebugPage() {
   // Use actual values from your .env.local file
   const supabaseUrl = envUrl && envUrl !== 'your_supabase_project_url' 
     ? envUrl 
-    : 'https://mapgmmiobityxaaevomp.supabase.co'
+    : 'Environment variable NEXT_PUBLIC_SUPABASE_URL not set'
 
   const supabaseAnonKey = envKey && envKey !== 'your_supabase_anon_key'
     ? envKey
-    : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1hcGdtbWlvYml0eXhhYWV2b21wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzY0NzQ5NzQsImV4cCI6MjA1MjA1MDk3NH0.placeholder'
+    : 'Environment variable NEXT_PUBLIC_SUPABASE_ANON_KEY not set'
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold mb-6">Environment Variables Debug</h1>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold">Environment Variables Debug</h1>
+        </div>
         
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-lg font-semibold mb-4">Environment Variables Status:</h2>

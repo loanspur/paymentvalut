@@ -30,3 +30,6 @@ COMMENT ON COLUMN mpesa_balance_history.transaction_type IS 'Type of transaction
 COMMENT ON COLUMN mpesa_balance_history.change_amount IS 'Calculated change in balance (after - before)';
 
 
+
+
+

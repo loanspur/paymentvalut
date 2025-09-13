@@ -73,7 +73,6 @@ serve(async (req) => {
       .single()
 
     if (dbError) {
-      console.error('Database error:', dbError)
       return new Response(
         JSON.stringify({
           success: false,
@@ -104,7 +103,6 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('Unexpected error:', error)
     return new Response(
       JSON.stringify({
         success: false,
@@ -117,6 +115,4 @@ serve(async (req) => {
     )
   }
 })
-
-
 

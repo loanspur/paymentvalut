@@ -42,7 +42,7 @@ aF9z3JW0cKNS+9EhC9o1hB0jLaF9z3JQIDAQAB
       )
       
       // Base64 encode the encrypted result
-      const securityCredential = btoa(String.fromCharCode(...new Uint8Array(encryptedData)))
+      const securityCredential = btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(encryptedData))))
       
       return NextResponse.json({
         message: 'RSA encryption test successful',

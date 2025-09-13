@@ -13,7 +13,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('🔍 Testing M-Pesa API with detailed logging...')
+    // Testing M-Pesa API with detailed logging
     
     // Get Kulman's credentials
     const { data: partner, error: partnerError } = await supabase
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       ? 'https://api.safaricom.co.ke' 
       : 'https://sandbox.safaricom.co.ke'
     
-    console.log('Getting access token from:', `${baseUrl}/oauth/v1/generate`)
+    // Getting access token
     
     const tokenResponse = await fetch(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
       method: 'GET',
@@ -47,7 +47,6 @@ export async function POST(request: NextRequest) {
     })
     
     const tokenData = await tokenResponse.json()
-    console.log('Token response:', tokenData)
     
     if (!tokenData.access_token) {
       return NextResponse.json({
@@ -67,14 +66,14 @@ export async function POST(request: NextRequest) {
       CommandID: "BusinessPayment",
       Amount: 10,
       PartyA: shortCode,
-      PartyB: "254727638940",
+      PartyB: process.env.TEST_PHONE_NUMBER || "254727638940",
       Remarks: "Test disbursement",
-      QueueTimeOutURL: "https://mapgmmiobityxaaevomp.supabase.co/functions/v1/mpesa-b2c-timeout",
-      ResultURL: "https://mapgmmiobityxaaevomp.supabase.co/functions/v1/mpesa-b2c-result",
+      QueueTimeOutURL: process.env.MPESA_CALLBACK_TIMEOUT_URL || `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/mpesa-b2c-timeout`,
+      ResultURL: process.env.MPESA_CALLBACK_RESULT_URL || `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/mpesa-b2c-result`,
       Occasion: "TEST_DETAILED_CHECK"
     }
     
-    console.log('B2C Request:', JSON.stringify(b2cRequest, null, 2))
+    // B2C Request prepared
     
     // Call M-Pesa B2C API
     const b2cResponse = await fetch(`${baseUrl}/mpesa/b2c/v1/paymentrequest`, {
@@ -104,7 +103,6 @@ export async function POST(request: NextRequest) {
     })
     
   } catch (error) {
-    console.error('❌ Error:', error)
     return NextResponse.json({
       error: 'Failed to test M-Pesa API',
       message: error instanceof Error ? error.message : 'Unknown error'

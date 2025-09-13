@@ -40,3 +40,6 @@ FROM partners
 WHERE name = 'KULMAN GROUP';
 
 
+
+
+

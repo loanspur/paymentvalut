@@ -372,33 +372,22 @@ export default function PartnersPage() {
       />
       
       {/* Header */}
-      <div className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Partner Management</h1>
-              <p className="mt-2 text-gray-600">Manage partner organizations and their M-Pesa credentials</p>
-            </div>
-            <div className="flex space-x-3">
-              <a
-                href="/"
-                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors"
-              >
-                ← Back to Dashboard
-              </a>
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                + Add Partner
-              </button>
-            </div>
+      <div className="mb-8">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Partner Management</h1>
+            <p className="mt-2 text-gray-600">Manage partner organizations and their M-Pesa credentials</p>
           </div>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            + Add Partner
+          </button>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Partners Table */}
+      {/* Partners Table */}
         <div className="bg-white shadow rounded-lg">
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-lg font-medium text-gray-900">Partner Organizations</h2>
@@ -700,7 +689,6 @@ export default function PartnersPage() {
             </div>
           </div>
         )}
-      </div>
     </div>
   )
 }

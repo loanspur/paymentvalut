@@ -288,3 +288,6 @@ curl -X GET "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_cre
 **The system architecture is correct - we need to identify where the M-Pesa integration is failing.**
 
 
+
+
+

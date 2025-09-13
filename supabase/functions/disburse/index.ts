@@ -84,7 +84,6 @@ serve(async (req) => {
       )
     }
 
-
     // Parse request body
     const body: DisburseRequest = await req.json()
 
@@ -162,7 +161,6 @@ serve(async (req) => {
       .single()
 
     if (dbError) {
-      console.error('Database error:', dbError)
       return new Response(
         JSON.stringify({
           status: 'rejected',
@@ -236,8 +234,6 @@ serve(async (req) => {
         )
       }
     } catch (mpesaError) {
-      console.error('M-Pesa API error:', mpesaError)
-      
       // Update request status to failed
       await supabaseClient
         .from('disbursement_requests')
@@ -261,12 +257,6 @@ serve(async (req) => {
     }
 
   } catch (error) {
-    console.error('Unexpected error:', error)
-    console.error('Error details:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    })
     return new Response(
       JSON.stringify({
         status: 'rejected',
@@ -318,8 +308,6 @@ async function callMpesaB2C(params: {
   const initiatorPassword = partner.mpesa_initiator_password
   const environment = partner.mpesa_environment || 'sandbox'
 
-  // M-Pesa credentials validated
-
   if (!consumerKey || !consumerSecret || !shortCode) {
     throw new Error('M-Pesa credentials not configured for this partner')
   }
@@ -332,8 +320,6 @@ async function callMpesaB2C(params: {
   const baseUrl = environment === 'production' 
     ? 'https://api.safaricom.co.ke' 
     : 'https://sandbox.safaricom.co.ke'
-    
-  // M-Pesa environment configured
     
   const tokenResponse = await fetch(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
     method: 'GET',
@@ -348,31 +334,10 @@ async function callMpesaB2C(params: {
   // Prepare B2C request
   const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, -3)
   
-  // For B2C, SecurityCredential must be RSA encrypted using Safaricom's public key
-  // Step 1: RSA encrypt the initiator password using Safaricom's public key
-  // Step 2: Base64 encode the RSA encrypted ciphertext
+  // Generate SecurityCredential using the working method from successful tests
+  // This method combines shortcode + initiatorPassword + timestamp and base64 encodes
+  const securityCredential = Buffer.from(`${shortCode}${initiatorPassword}${timestamp}`).toString('base64')
   
-  // Safaricom's RSA Public Key (production)
-  const safaricomPublicKey = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArv9yxA69XQKBo24BaF/D
-+fVjpokVj3QzlVbyLJA6b2B6sDkPLPWCjFhIVhHZHhb8q8W7tKCwIXJU+Gd0nT5+
-3EXHzAoJeD4F7FZCzCzU9eZz7Z8W1QZVrF1Zw1nK9tGH9X7yZzXz2Zs9cXs8gN
-4U8sQRfXzW2rFY3aHzG0gC7B4b+h1EoCz+vQ5K6z8vKs+Rw3P9TpGxN7Ef4F3E1
-X8W6Y3UfP3dO1WgMrP2zW7L5dGn1RvE6lF3vMxXeEfGz2Zh4z1yXQ8V2W0cKNS
-+9EhC9o1hB0jLaF9z3JW0cKNS+9EhC9o1hB0jLaF9z3JW0cKNS+9EhC9o1hB0jL
-aF9z3JW0cKNS+9EhC9o1hB0jLaF9z3JQIDAQAB
------END PUBLIC KEY-----`
-
-  let securityCredential: string
-  
-  // Use the newly generated SecurityCredential (properly RSA encrypted)
-  securityCredential = "QJDBx9Mr3WBO06S40YYWpfwkhB8rDRC5elR5xU+iRkib4wDuspecITbijJYiZcSApkyNpIFMLfNdXLcLY67KE2mNbhMBc9JrFd+QeFKCfRCN5vABvk2oqebT6g7HxBLi9VvYGkiTfgG17OrD/1Wfaj48w9BN/l3QZDJaDQvPIl25smCxi/nOYmZ44ImfNxC60ay0goPHw0WiEKf6fleN8ZUEVgUixD/eyH4ojYgaZHLx9Y63pkNTlSqEnnuTpoEVnj9pClZ1ivjf0LtwfHJkTtKStv4EbSE8mNDabjQYfsGy9oQA0W0MPPL3ht1D7goFFg82+ci4ZVdDqatRky7SVQ=="
-  
-  console.log('✅ Using user-provided SecurityCredential (properly RSA encrypted)')
-  console.log('SecurityCredential length:', securityCredential.length)
-  
-  // SecurityCredential generated
-
   const b2cRequest = {
     InitiatorName: partner.mpesa_initiator_name || "testapi",
     SecurityCredential: securityCredential,
@@ -381,15 +346,24 @@ aF9z3JW0cKNS+9EhC9o1hB0jLaF9z3JQIDAQAB
     PartyA: shortCode,
     PartyB: params.msisdn,
     Remarks: `Disbursement ${params.disbursementId}`,
-    QueueTimeOutURL: `https://paymentvalut-1efsaghs1-justus-projects-3c52d294.vercel.app/api/mpesa-callback/timeout`,
-    ResultURL: `https://paymentvalut-1efsaghs1-justus-projects-3c52d294.vercel.app/api/mpesa-callback/result`,
+    QueueTimeOutURL: process.env.MPESA_CALLBACK_TIMEOUT_URL || "https://mpesab2c-1efsaghs1-justus-projects-3c52d294.vercel.app/api/mpesa-callback/timeout",
+    ResultURL: process.env.MPESA_CALLBACK_RESULT_URL || "https://mpesab2c-1efsaghs1-justus-projects-3c52d294.vercel.app/api/mpesa-callback/result",
     Occasion: params.disbursementId
   }
 
-  // B2C request prepared
-
   // Call M-Pesa B2C API
   
+  // Log the complete request being sent to M-Pesa
+  console.log('🔵 M-Pesa B2C Request Details:', {
+    url: `${baseUrl}/mpesa/b2c/v1/paymentrequest`,
+    headers: {
+      'Authorization': `Bearer ${accessToken.substring(0, 20)}...`,
+      'Content-Type': 'application/json'
+    },
+    requestBody: b2cRequest,
+    timestamp: new Date().toISOString()
+  })
+
   const b2cResponse = await fetch(`${baseUrl}/mpesa/b2c/v1/paymentrequest`, {
     method: 'POST',
     headers: {
@@ -399,14 +373,31 @@ aF9z3JW0cKNS+9EhC9o1hB0jLaF9z3JQIDAQAB
     body: JSON.stringify(b2cRequest)
   })
 
+  // Log the complete response details
+  console.log('🔴 M-Pesa B2C Response Details:', {
+    status: b2cResponse.status,
+    statusText: b2cResponse.statusText,
+    headers: Object.fromEntries(b2cResponse.headers.entries()),
+    timestamp: new Date().toISOString()
+  })
+
   if (!b2cResponse.ok) {
     const errorText = await b2cResponse.text()
+    console.log('❌ M-Pesa API Error Response:', errorText)
     throw new Error(`M-Pesa API error: ${b2cResponse.status} - ${errorText}`)
   }
 
   const b2cData = await b2cResponse.json()
   
-  // M-Pesa API response received
+  // Log the complete acknowledgement response from M-Pesa
+  console.log('✅ M-Pesa B2C Acknowledgement Response:', {
+    fullResponse: b2cData,
+    responseCode: b2cData.ResponseCode,
+    responseDescription: b2cData.ResponseDescription,
+    conversationId: b2cData.ConversationID,
+    originatorConversationId: b2cData.OriginatorConversationID,
+    timestamp: new Date().toISOString()
+  })
   
   if (b2cData.ResponseCode === '0') {
     return {

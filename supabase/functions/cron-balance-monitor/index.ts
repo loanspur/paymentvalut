@@ -31,7 +31,6 @@ serve(async (req) => {
     const result = await response.json()
 
     if (!response.ok) {
-      console.error('Balance monitoring failed:', result)
       return new Response(JSON.stringify({ 
         error: 'Balance monitoring failed',
         details: result 
@@ -53,7 +52,6 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    console.error('Cron job error:', error)
     return new Response(JSON.stringify({ 
       error: 'Cron job failed',
       message: error.message 
@@ -63,6 +61,4 @@ serve(async (req) => {
     })
   }
 })
-
-
 

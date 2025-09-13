@@ -156,3 +156,6 @@ ALTER TABLE partners ADD COLUMN IF NOT EXISTS mpesa_public_key TEXT;
 **The system architecture is correct, but the configuration and credentials need to be updated with real values from Safaricom.**
 
 
+
+
+

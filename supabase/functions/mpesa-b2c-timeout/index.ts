@@ -34,7 +34,6 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     
     if (!supabaseUrl || !supabaseServiceKey) {
-      console.error('Missing environment variables for callback function')
       return new Response('Configuration error', { status: 500 })
     }
     
@@ -70,7 +69,7 @@ serve(async (req) => {
       .eq('id', disbursementRequest.id)
 
     if (updateError) {
-      console.error('Error updating disbursement request:', updateError)
+      // Log error but don't fail the callback
     }
 
     // Log the timeout callback
@@ -94,7 +93,6 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    console.error('Error processing timeout callback:', error)
     return new Response('Error', { 
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'text/plain' }

@@ -31,7 +31,6 @@ export async function POST(request: NextRequest) {
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     
     if (!supabaseUrl || !supabaseAnonKey) {
-      console.error('Missing Supabase environment variables')
       return NextResponse.json(
         { 
           status: 'rejected',
@@ -61,15 +60,34 @@ export async function POST(request: NextRequest) {
     
     console.log('📡 Edge Function response:', {
       status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
       data: responseData,
       conversationId: responseData.conversation_id,
-      disbursementId: responseData.disbursement_id
+      disbursementId: responseData.disbursement_id,
+      timestamp: new Date().toISOString()
+    })
+    
+    // Log the complete response for Safaricom support
+    console.log('🔍 COMPLETE RESPONSE FOR SAFARICOM SUPPORT:', {
+      requestDetails: {
+        url: 'M-Pesa B2C API',
+        method: 'POST',
+        body: body,
+        timestamp: new Date().toISOString()
+      },
+      responseDetails: {
+        status: response.status,
+        statusText: response.statusText,
+        fullResponse: responseData,
+        conversationId: responseData.conversation_id,
+        disbursementId: responseData.disbursement_id
+      }
     })
     
     return NextResponse.json(responseData, { status: response.status })
     
   } catch (error) {
-    console.error('API Error:', error)
     return NextResponse.json(
       { 
         status: 'rejected',

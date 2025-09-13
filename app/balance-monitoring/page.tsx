@@ -23,7 +23,7 @@ interface BalanceHistory {
   id: string
   partner_id: string
   disbursement_id: string | null
-  balance_type: 'working' | 'utility' | 'charges' | 'total'
+  balance_type: 'utility'
   balance_amount: number
   transaction_type: 'disbursement' | 'callback' | 'manual'
   transaction_reference: string | null
@@ -43,17 +43,11 @@ interface Partner {
 interface BalanceMonitoringConfig {
   id: string
   partner_id: string
-  working_account_threshold?: number
-  utility_account_threshold?: number
-  charges_account_threshold?: number
-  low_balance_threshold?: number // For partner_balance_configs schema
-  unusual_drop_threshold?: number
-  unusual_drop_percentage?: number
+  utility_account_threshold: number
   check_interval_minutes: number
   slack_webhook_url: string | null
   slack_channel: string | null
-  is_enabled?: boolean
-  is_monitoring_enabled?: boolean // For partner_balance_configs schema
+  is_enabled: boolean
   last_checked_at: string | null
   last_alert_sent_at: string | null
   partner_name?: string
@@ -87,11 +81,10 @@ export default function BalanceMonitoringPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [showConfigModal, setShowConfigModal] = useState(false)
   const [editingConfig, setEditingConfig] = useState<BalanceMonitoringConfig | null>(null)
+  const [balanceMonitoringConfigExists, setBalanceMonitoringConfigExists] = useState<boolean | null>(null)
   const [configForm, setConfigForm] = useState({
     partner_id: '',
-    working_account_threshold: 1000,
     utility_account_threshold: 500,
-    charges_account_threshold: 200,
     check_interval_minutes: 30,
     slack_webhook_url: '',
     slack_channel: '#mpesa-alerts',
@@ -135,7 +128,6 @@ export default function BalanceMonitoringPage() {
 
       return exists
     } catch (error) {
-      console.log(`❌ Error checking ${tableName}: ${error}`)
       // Cache as false if there's an error
       tableExistsCache.current[tableName as keyof typeof tableExistsCache.current] = false
       return false
@@ -145,15 +137,22 @@ export default function BalanceMonitoringPage() {
   useEffect(() => {
     // Initialize table existence check
     const initializeTableCheck = async () => {
-      await checkTableExists('balance_monitoring_config')
+      const exists = await checkTableExists('balance_monitoring_config')
+      setBalanceMonitoringConfigExists(exists)
     }
     
     initializeTableCheck()
     fetchBalanceHistory()
-    fetchMonitoringConfigs()
     fetchBalanceAlerts()
     fetchPartners()
   }, [])
+
+  // Separate useEffect for monitoring configs that depends on table existence
+  useEffect(() => {
+    if (balanceMonitoringConfigExists !== null) {
+      fetchMonitoringConfigs()
+    }
+  }, [balanceMonitoringConfigExists])
 
   const fetchBalanceHistory = async () => {
     try {
@@ -170,7 +169,6 @@ export default function BalanceMonitoringPage() {
         .limit(100)
 
       if (error) {
-        console.error('Error fetching balance history:', error)
         addNotification({
           type: 'error',
           title: 'Database Error',
@@ -187,7 +185,6 @@ export default function BalanceMonitoringPage() {
 
       setBalanceHistory(transformedData)
     } catch (error) {
-      console.error('Error fetching balance history:', error)
       addNotification({
         type: 'error',
         title: 'Network Error',
@@ -200,8 +197,11 @@ export default function BalanceMonitoringPage() {
 
   const fetchMonitoringConfigs = async () => {
     try {
-      // Check which table exists using cached result
-      const balanceMonitoringConfigExists = await checkTableExists('balance_monitoring_config')
+      // Use the state variable instead of calling checkTableExists
+      if (balanceMonitoringConfigExists === null) {
+        console.log('⏳ Table existence not yet determined, skipping fetch')
+        return
+      }
       
       if (!balanceMonitoringConfigExists) {
         // Use partner_balance_configs
@@ -217,10 +217,8 @@ export default function BalanceMonitoringPage() {
           .order('created_at', { ascending: false })
         
         if (result.error) {
-          console.error('Error fetching monitoring configs from partner_balance_configs:', result.error)
           // If partner_balance_configs also doesn't exist, set empty array
           if (result.error.code === 'PGRST205') {
-            console.log('⚠️ Neither balance_monitoring_config nor partner_balance_configs tables exist')
             setMonitoringConfigs([])
             return
           }
@@ -247,7 +245,6 @@ export default function BalanceMonitoringPage() {
         .order('created_at', { ascending: false })
 
         if (result.error) {
-          console.error('Error fetching monitoring configs:', result.error)
         return
       }
 
@@ -259,7 +256,7 @@ export default function BalanceMonitoringPage() {
       setMonitoringConfigs(transformedData)
       }
     } catch (error) {
-      console.error('Error fetching monitoring configs:', error)
+      // Handle error silently
     }
   }
 
@@ -277,7 +274,6 @@ export default function BalanceMonitoringPage() {
         .limit(50)
 
       if (error) {
-        console.error('Error fetching balance alerts:', error)
         return
       }
 
@@ -288,7 +284,7 @@ export default function BalanceMonitoringPage() {
 
       setBalanceAlerts(transformedData)
     } catch (error) {
-      console.error('Error fetching balance alerts:', error)
+      // Handle error silently
     }
   }
 
@@ -301,13 +297,12 @@ export default function BalanceMonitoringPage() {
         .order('name')
 
       if (error) {
-        console.error('Error fetching partners:', error)
         return
       }
 
       setPartners(data || [])
     } catch (error) {
-      console.error('Error fetching partners:', error)
+      // Handle error silently
     }
   }
 
@@ -340,7 +335,6 @@ export default function BalanceMonitoringPage() {
         })
       }
     } catch (error) {
-      console.error('Error running balance check:', error)
       addNotification({
         type: 'error',
         title: 'Balance Check Failed',
@@ -357,17 +351,18 @@ export default function BalanceMonitoringPage() {
       let tableName = 'balance_monitoring_config'
       let configData: any = {
         partner_id: configForm.partner_id,
-        working_account_threshold: configForm.working_account_threshold,
         utility_account_threshold: configForm.utility_account_threshold,
-        charges_account_threshold: configForm.charges_account_threshold,
         check_interval_minutes: configForm.check_interval_minutes,
         slack_webhook_url: configForm.slack_webhook_url || null,
         slack_channel: configForm.slack_channel || null,
         is_enabled: configForm.is_enabled
       }
 
-      // Check which table exists using cached result
-      const balanceMonitoringConfigExists = await checkTableExists('balance_monitoring_config')
+      // Use the state variable instead of calling checkTableExists
+      if (balanceMonitoringConfigExists === null) {
+        console.log('⏳ Table existence not yet determined, skipping save')
+        return
+      }
 
       if (!balanceMonitoringConfigExists) {
         // Table doesn't exist, use partner_balance_configs with different schema
@@ -375,7 +370,7 @@ export default function BalanceMonitoringPage() {
         configData = {
           partner_id: configForm.partner_id,
           check_interval_minutes: configForm.check_interval_minutes,
-          low_balance_threshold: configForm.working_account_threshold, // Map to low_balance_threshold
+          low_balance_threshold: configForm.utility_account_threshold, // Map utility threshold to low_balance_threshold
           unusual_drop_threshold: 5000, // Default value
           unusual_drop_percentage: 20, // Default value
           slack_webhook_url: configForm.slack_webhook_url || null,
@@ -438,9 +433,7 @@ export default function BalanceMonitoringPage() {
       // Reset form and close modal
       setConfigForm({
         partner_id: '',
-        working_account_threshold: 1000,
         utility_account_threshold: 500,
-        charges_account_threshold: 200,
         check_interval_minutes: 30,
         slack_webhook_url: '',
         slack_channel: '#mpesa-alerts',
@@ -452,7 +445,6 @@ export default function BalanceMonitoringPage() {
       // Refresh data
       fetchMonitoringConfigs()
     } catch (error) {
-      console.error('Error saving configuration:', error)
       addNotification({
         type: 'error',
         title: 'Configuration Error',
@@ -465,21 +457,22 @@ export default function BalanceMonitoringPage() {
     setEditingConfig(config)
     setConfigForm({
       partner_id: config.partner_id,
-      working_account_threshold: config.working_account_threshold || config.low_balance_threshold || 1000,
       utility_account_threshold: config.utility_account_threshold || 500,
-      charges_account_threshold: config.charges_account_threshold || 200,
       check_interval_minutes: config.check_interval_minutes,
       slack_webhook_url: config.slack_webhook_url || '',
       slack_channel: config.slack_channel || '#mpesa-alerts',
-      is_enabled: config.is_enabled || config.is_monitoring_enabled || true
+      is_enabled: config.is_enabled || true
     })
     setShowConfigModal(true)
   }
 
   const toggleConfig = async (configId: string, isEnabled: boolean) => {
     try {
-      // Check which table exists using cached result
-      const balanceMonitoringConfigExists = await checkTableExists('balance_monitoring_config')
+      // Use the state variable instead of calling checkTableExists
+      if (balanceMonitoringConfigExists === null) {
+        console.log('⏳ Table existence not yet determined, skipping toggle')
+        return
+      }
 
       if (!balanceMonitoringConfigExists) {
         // Use partner_balance_configs
@@ -514,7 +507,6 @@ export default function BalanceMonitoringPage() {
       // Refresh data
       fetchMonitoringConfigs()
     } catch (error) {
-      console.error('Error toggling configuration:', error)
       addNotification({
         type: 'error',
         title: 'Configuration Error',
@@ -543,7 +535,6 @@ export default function BalanceMonitoringPage() {
       // Refresh data
       fetchBalanceAlerts()
     } catch (error) {
-      console.error('Error resolving alert:', error)
       addNotification({
         type: 'error',
         title: 'Alert Error',
@@ -604,33 +595,22 @@ export default function BalanceMonitoringPage() {
   // Calculate summary statistics
   const stats = {
     totalEntries: filteredBalanceHistory.length,
-    workingAccount: filteredBalanceHistory
-      .filter(item => item.balance_type === 'working')
-      .reduce((sum, item) => sum + (item.balance_amount || 0), 0),
     utilityAccount: filteredBalanceHistory
       .filter(item => item.balance_type === 'utility')
-      .reduce((sum, item) => sum + (item.balance_amount || 0), 0),
-    chargesAccount: filteredBalanceHistory
-      .filter(item => item.balance_type === 'charges')
       .reduce((sum, item) => sum + (item.balance_amount || 0), 0)
   }
 
   const getBalanceTypeColor = (type: string) => {
     switch (type) {
-      case 'working':
-        return 'bg-blue-100 text-blue-800'
       case 'utility':
         return 'bg-green-100 text-green-800'
-      case 'charges':
-        return 'bg-yellow-100 text-yellow-800'
-      case 'total':
-        return 'bg-purple-100 text-purple-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
   }
 
-  const getChangeIcon = (change: number) => {
+  const getChangeIcon = (change: number | null) => {
+    if (change === null || change === undefined) return null
     if (change > 0) return <TrendingUp className="w-4 h-4 text-green-600" />
     if (change < 0) return <TrendingDown className="w-4 h-4 text-red-600" />
     return null
@@ -653,32 +633,28 @@ export default function BalanceMonitoringPage() {
       />
 
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">M-Pesa Balance Monitoring</h1>
-          <p className="mt-2 text-gray-600">Track account balances, alerts, and monitoring configuration</p>
-        </div>
-        <div className="flex space-x-3">
-          <a
-            href="/"
-            className="btn btn-secondary"
-          >
-            ← Back to Dashboard
-          </a>
-          <button
-            onClick={runBalanceCheck}
-            className="btn bg-orange-600 hover:bg-orange-700 text-white"
-          >
-            <Bell className="w-4 h-4 mr-2" />
-            Run Check
-          </button>
-          <button
-            onClick={() => setShowConfigModal(true)}
-            className="btn btn-primary"
-          >
-            <Settings className="w-4 h-4 mr-2" />
-            Configure
-          </button>
+      <div className="mb-8">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">M-Pesa Balance Monitoring</h1>
+            <p className="mt-2 text-gray-600">Track account balances, alerts, and monitoring configuration</p>
+          </div>
+          <div className="flex space-x-3">
+            <button
+              onClick={runBalanceCheck}
+              className="btn bg-orange-600 hover:bg-orange-700 text-white"
+            >
+              <Bell className="w-4 h-4 mr-2" />
+              Run Check
+            </button>
+            <button
+              onClick={() => setShowConfigModal(true)}
+              className="btn btn-primary"
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Configure
+            </button>
+          </div>
         </div>
       </div>
 
@@ -725,21 +701,7 @@ export default function BalanceMonitoringPage() {
       {activeTab === 'history' && (
         <>
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div className="card">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <DollarSign className="w-6 h-6 text-blue-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Working Account</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                KES {stats.workingAccount.toLocaleString()}
-              </p>
-            </div>
-          </div>
-        </div>
-
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="card">
           <div className="flex items-center">
             <div className="p-2 bg-green-100 rounded-lg">
@@ -749,20 +711,6 @@ export default function BalanceMonitoringPage() {
               <p className="text-sm font-medium text-gray-600">Utility Account</p>
               <p className="text-2xl font-semibold text-gray-900">
                 KES {stats.utilityAccount.toLocaleString()}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="flex items-center">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <DollarSign className="w-6 h-6 text-yellow-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Charges Account</p>
-              <p className="text-2xl font-semibold text-gray-900">
-                KES {stats.chargesAccount.toLocaleString()}
               </p>
             </div>
           </div>
@@ -846,10 +794,7 @@ export default function BalanceMonitoringPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 >
                   <option value="all">All Types</option>
-                  <option value="working">Working Account</option>
                   <option value="utility">Utility Account</option>
-                  <option value="charges">Charges Account</option>
-                  <option value="total">Total Balance</option>
                 </select>
               </div>
 
@@ -936,8 +881,8 @@ export default function BalanceMonitoringPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <div className="flex items-center">
                         {getChangeIcon(item.change_amount)}
-                        <span className={`ml-1 ${item.change_amount > 0 ? 'text-green-600' : item.change_amount < 0 ? 'text-red-600' : 'text-gray-600'}`}>
-                          {item.change_amount > 0 ? '+' : ''}{item.change_amount.toLocaleString()}
+                        <span className={`ml-1 ${(item.change_amount || 0) > 0 ? 'text-green-600' : (item.change_amount || 0) < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                          {(item.change_amount || 0) > 0 ? '+' : ''}{(item.change_amount || 0).toLocaleString()}
                         </span>
                       </div>
                     </td>
@@ -1168,7 +1113,7 @@ export default function BalanceMonitoringPage() {
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Enabled</p>
               <p className="text-2xl font-semibold text-gray-900">
-                {monitoringConfigs.filter(c => c.is_enabled || c.is_monitoring_enabled).length}
+                {monitoringConfigs.filter(c => c.is_enabled).length}
               </p>
             </div>
           </div>
@@ -1201,13 +1146,7 @@ export default function BalanceMonitoringPage() {
                   Partner
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Working Threshold
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Utility Threshold
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Charges Threshold
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Check Interval
@@ -1231,22 +1170,16 @@ export default function BalanceMonitoringPage() {
                       {config.partner_name}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      KES {(config.working_account_threshold || config.low_balance_threshold || 0).toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       KES {(config.utility_account_threshold || 0).toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      KES {(config.charges_account_threshold || 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {config.check_interval_minutes} min
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        (config.is_enabled || config.is_monitoring_enabled) ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        config.is_enabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                       }`}>
-                        {(config.is_enabled || config.is_monitoring_enabled) ? 'Enabled' : 'Disabled'}
+                        {config.is_enabled ? 'Enabled' : 'Disabled'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -1263,14 +1196,14 @@ export default function BalanceMonitoringPage() {
                         Edit
                       </button>
                       <button
-                        onClick={() => toggleConfig(config.id, !(config.is_enabled || config.is_monitoring_enabled))}
+                        onClick={() => toggleConfig(config.id, !config.is_enabled)}
                         className={`font-medium ${
-                          (config.is_enabled || config.is_monitoring_enabled)
+                          config.is_enabled
                             ? 'text-red-600 hover:text-red-900' 
                             : 'text-green-600 hover:text-green-900'
                         }`}
                       >
-                        {(config.is_enabled || config.is_monitoring_enabled) ? 'Disable' : 'Enable'}
+                        {config.is_enabled ? 'Disable' : 'Enable'}
                       </button>
                     </td>
                   </tr>
@@ -1340,21 +1273,7 @@ export default function BalanceMonitoringPage() {
               </select>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Working Account Threshold (KES)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={configForm.working_account_threshold}
-                  onChange={(e) => setConfigForm({...configForm, working_account_threshold: parseFloat(e.target.value)})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  required
-                />
-              </div>
-
+            <div className="grid grid-cols-1 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Utility Account Threshold (KES)
@@ -1364,20 +1283,6 @@ export default function BalanceMonitoringPage() {
                   step="0.01"
                   value={configForm.utility_account_threshold}
                   onChange={(e) => setConfigForm({...configForm, utility_account_threshold: parseFloat(e.target.value)})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Charges Account Threshold (KES)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={configForm.charges_account_threshold}
-                  onChange={(e) => setConfigForm({...configForm, charges_account_threshold: parseFloat(e.target.value)})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   required
                 />

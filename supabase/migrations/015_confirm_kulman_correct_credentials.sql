@@ -15,3 +15,6 @@ AND name = 'KULMAN GROUP';
 COMMENT ON COLUMN partners.mpesa_passkey IS 'Not required for B2C transactions - confirmed by Safaricom';
 
 
+
+
+

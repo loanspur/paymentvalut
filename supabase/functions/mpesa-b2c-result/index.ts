@@ -35,7 +35,6 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     
     if (!supabaseUrl || !supabaseServiceKey) {
-      console.error('Missing environment variables for callback function')
       return new Response('Configuration error', { status: 500 })
     }
     
@@ -104,10 +103,7 @@ serve(async (req) => {
     let receiptNumber = null
     let transactionAmount = null
     let transactionDate = null
-    let phoneNumber = null
-    let workingAccountBalance = null
     let utilityAccountBalance = null
-    let chargesAccountBalance = null
 
     if (Result.ResultParameters?.ResultParameter) {
       for (const param of Result.ResultParameters.ResultParameter) {
@@ -121,14 +117,8 @@ serve(async (req) => {
           case 'TransactionDate':
             transactionDate = param.Value
             break
-          case 'B2CWorkingAccountAvailableFunds':
-            workingAccountBalance = parseFloat(param.Value)
-            break
           case 'B2CUtilityAccountAvailableFunds':
             utilityAccountBalance = parseFloat(param.Value)
-            break
-          case 'B2CChargesPaidAccountAvailableFunds':
-            chargesAccountBalance = parseFloat(param.Value)
             break
           case 'B2CRecipientIsRegisteredCustomer':
             // Whether recipient is registered
@@ -148,16 +138,14 @@ serve(async (req) => {
         receipt_number: receiptNumber,
         transaction_amount: transactionAmount,
         transaction_date: transactionDate,
-        mpesa_working_account_balance: workingAccountBalance,
         mpesa_utility_account_balance: utilityAccountBalance,
-        mpesa_charges_account_balance: chargesAccountBalance,
         balance_updated_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
       .eq('id', disbursementRequest.id)
 
     if (updateError) {
-      console.error('Error updating disbursement request:', updateError)
+      // Log error but don't fail the callback
     }
 
     // Log the result callback
@@ -179,56 +167,21 @@ serve(async (req) => {
         created_at: new Date().toISOString()
       })
 
-    // Log balance history for each account type
-    const balanceHistoryEntries = []
-    
-    if (workingAccountBalance !== null) {
-      balanceHistoryEntries.push({
-        partner_id: disbursementRequest.partner_id,
-        disbursement_id: disbursementRequest.id,
-        balance_type: 'working',
-        balance_amount: workingAccountBalance,
-        transaction_type: 'callback',
-        transaction_reference: conversationId,
-        balance_before: disbursementRequest.mpesa_working_account_balance,
-        balance_after: workingAccountBalance,
-        created_at: new Date().toISOString()
-      })
-    }
-    
+    // Log balance history for utility account only
     if (utilityAccountBalance !== null) {
-      balanceHistoryEntries.push({
-        partner_id: disbursementRequest.partner_id,
-        disbursement_id: disbursementRequest.id,
-        balance_type: 'utility',
-        balance_amount: utilityAccountBalance,
-        transaction_type: 'callback',
-        transaction_reference: conversationId,
-        balance_before: disbursementRequest.mpesa_utility_account_balance,
-        balance_after: utilityAccountBalance,
-        created_at: new Date().toISOString()
-      })
-    }
-    
-    if (chargesAccountBalance !== null) {
-      balanceHistoryEntries.push({
-        partner_id: disbursementRequest.partner_id,
-        disbursement_id: disbursementRequest.id,
-        balance_type: 'charges',
-        balance_amount: chargesAccountBalance,
-        transaction_type: 'callback',
-        transaction_reference: conversationId,
-        balance_before: disbursementRequest.mpesa_charges_account_balance,
-        balance_after: chargesAccountBalance,
-        created_at: new Date().toISOString()
-      })
-    }
-
-    // Insert balance history entries
-    if (balanceHistoryEntries.length > 0) {
       await supabaseClient
         .from('mpesa_balance_history')
-        .insert(balanceHistoryEntries)
+        .insert({
+          partner_id: disbursementRequest.partner_id,
+          disbursement_id: disbursementRequest.id,
+          balance_type: 'utility',
+          balance_amount: utilityAccountBalance,
+          transaction_type: 'callback',
+          transaction_reference: conversationId,
+          balance_before: disbursementRequest.mpesa_utility_account_balance,
+          balance_after: utilityAccountBalance,
+          created_at: new Date().toISOString()
+        })
     }
 
     return new Response('OK', { 
@@ -237,7 +190,6 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    console.error('Error processing result callback:', error)
     return new Response('Error', { 
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'text/plain' }

@@ -8,3 +8,6 @@ ADD COLUMN mpesa_initiator_password TEXT;
 COMMENT ON COLUMN partners.mpesa_initiator_password IS 'M-Pesa B2C InitiatorPassword used for SecurityCredential generation';
 
 
+
+
+

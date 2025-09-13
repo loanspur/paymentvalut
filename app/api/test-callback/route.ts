@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('🧪 Testing M-Pesa callback simulation...')
+    // Testing M-Pesa callback simulation
     
     // Simulate a successful M-Pesa callback
     const mockCallback = {
@@ -71,10 +71,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Send the mock callback to the M-Pesa result endpoint
-    const callbackUrl = 'https://mapgmmiobityxaaevomp.supabase.co/functions/v1/mpesa-b2c-result'
-    
-    console.log('Sending mock callback to:', callbackUrl)
-    console.log('Callback data:', JSON.stringify(mockCallback, null, 2))
+    const callbackUrl = process.env.MPESA_CALLBACK_RESULT_URL || `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/mpesa-b2c-result`
     
     const response = await fetch(callbackUrl, {
       method: 'POST',
@@ -95,7 +92,6 @@ export async function POST(request: NextRequest) {
     })
     
   } catch (error) {
-    console.error('❌ Error:', error)
     return NextResponse.json({
       error: 'Failed to send mock callback',
       message: error instanceof Error ? error.message : 'Unknown error'
