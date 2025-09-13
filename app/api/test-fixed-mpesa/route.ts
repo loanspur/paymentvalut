@@ -16,20 +16,38 @@ export async function POST(request: NextRequest) {
     console.log('🧪 Testing Fixed M-Pesa B2C Implementation...')
     
     // Get partner credentials from database
-    const { data: partner, error: partnerError } = await supabase
+    const { data: partners, error: partnerError } = await supabase
       .from('partners')
-      .select('mpesa_shortcode, mpesa_consumer_key, mpesa_consumer_secret, mpesa_passkey, mpesa_environment, is_mpesa_configured, mpesa_initiator_name, mpesa_initiator_password')
+      .select('id, name, mpesa_shortcode, mpesa_consumer_key, mpesa_consumer_secret, mpesa_passkey, mpesa_environment, is_mpesa_configured, mpesa_initiator_name, mpesa_initiator_password')
       .eq('is_mpesa_configured', true)
-      .single()
+      .eq('is_active', true)
 
-    if (partnerError || !partner) {
+    if (partnerError) {
+      return NextResponse.json({
+        error: 'Failed to fetch partners',
+        details: partnerError.message
+      }, { status: 500 })
+    }
+
+    if (!partners || partners.length === 0) {
       return NextResponse.json({
         error: 'No configured partner found',
-        details: partnerError?.message
+        details: 'No active partners with M-Pesa configuration found'
       }, { status: 400 })
     }
 
-    console.log('✅ Partner found:', partner.mpesa_initiator_name)
+    // Use the first configured partner (preferably Kulman if available)
+    const partner = partners.find(p => p.name.toLowerCase().includes('kulman')) || partners[0]
+
+    console.log('✅ Partner found:', {
+      id: partner.id,
+      name: partner.name,
+      initiator_name: partner.mpesa_initiator_name,
+      has_consumer_key: !!partner.mpesa_consumer_key,
+      has_consumer_secret: !!partner.mpesa_consumer_secret,
+      has_initiator_password: !!partner.mpesa_initiator_password,
+      environment: partner.mpesa_environment
+    })
 
     // Get access token using the same method as the working disburse function
     const environment = partner.mpesa_environment || 'sandbox'
