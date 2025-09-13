@@ -13,10 +13,10 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 export async function GET(request: NextRequest) {
   try {
-    console.log('🔍 Debugging callback data...')
+    console.log('🔍 Debugging callback processing...')
     
-    // Get the latest disbursement
-    const { data: latestDisbursement, error: disbursementError } = await supabase
+    // Get the most recent disbursement request
+    const { data: recentDisbursement, error: disbursementError } = await supabase
       .from('disbursement_requests')
       .select('*')
       .order('created_at', { ascending: false })
@@ -24,50 +24,80 @@ export async function GET(request: NextRequest) {
       .single()
 
     if (disbursementError) {
-      return NextResponse.json({ 
-        error: 'Failed to fetch disbursement', 
-        details: disbursementError 
+      return NextResponse.json({
+        error: 'Failed to fetch recent disbursement',
+        details: disbursementError.message
       }, { status: 500 })
     }
 
-    console.log('Latest disbursement:', latestDisbursement)
-
-    // Get all callbacks for this disbursement
-    const { data: callbacks, error: callbackError } = await supabase
+    // Get recent callbacks
+    const { data: recentCallbacks, error: callbackError } = await supabase
       .from('mpesa_callbacks')
       .select('*')
-      .or(`disbursement_id.eq.${latestDisbursement.id},conversation_id.eq.${latestDisbursement.conversation_id}`)
       .order('created_at', { ascending: false })
+      .limit(3)
 
     if (callbackError) {
-      return NextResponse.json({ 
-        error: 'Failed to fetch callbacks', 
-        details: callbackError 
+      return NextResponse.json({
+        error: 'Failed to fetch callbacks',
+        details: callbackError.message
       }, { status: 500 })
     }
 
-    // Get all callbacks (for debugging)
-    const { data: allCallbacks, error: allCallbackError } = await supabase
-      .from('mpesa_callbacks')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(10)
+    // Check if conversation_id matches
+    const matchingCallbacks = recentCallbacks?.filter(callback => 
+      callback.conversation_id === recentDisbursement?.conversation_id
+    )
 
     return NextResponse.json({
-      message: 'Callback debug data',
-      latest_disbursement: latestDisbursement,
-      callbacks_for_disbursement: callbacks || [],
-      all_recent_callbacks: allCallbacks || [],
-      disbursement_id: latestDisbursement.id,
-      conversation_id: latestDisbursement.conversation_id,
-      timestamp: new Date().toISOString()
+      message: 'Callback debug completed',
+      timestamp: new Date().toISOString(),
+      recent_disbursement: recentDisbursement ? {
+        id: recentDisbursement.id,
+        amount: recentDisbursement.amount,
+        msisdn: recentDisbursement.msisdn,
+        status: recentDisbursement.status,
+        conversation_id: recentDisbursement.conversation_id,
+        result_code: recentDisbursement.result_code,
+        result_desc: recentDisbursement.result_desc,
+        transaction_receipt: recentDisbursement.transaction_receipt,
+        created_at: recentDisbursement.created_at,
+        updated_at: recentDisbursement.updated_at
+      } : null,
+      recent_callbacks: recentCallbacks?.map(callback => ({
+        id: callback.id,
+        conversation_id: callback.conversation_id,
+        callback_type: callback.callback_type,
+        result_code: callback.result_code,
+        result_desc: callback.result_desc,
+        receipt_number: callback.receipt_number,
+        transaction_amount: callback.transaction_amount,
+        created_at: callback.created_at
+      })) || [],
+      matching_callbacks: matchingCallbacks?.map(callback => ({
+        id: callback.id,
+        conversation_id: callback.conversation_id,
+        callback_type: callback.callback_type,
+        result_code: callback.result_code,
+        result_desc: callback.result_desc,
+        receipt_number: callback.receipt_number,
+        transaction_amount: callback.transaction_amount,
+        created_at: callback.created_at
+      })) || [],
+      analysis: {
+        disbursement_found: !!recentDisbursement,
+        callbacks_found: recentCallbacks?.length || 0,
+        matching_callbacks: matchingCallbacks?.length || 0,
+        conversation_id_match: matchingCallbacks && matchingCallbacks.length > 0,
+        status_issue: recentDisbursement?.status === 'accepted' ? 'Status not updated to success' : 'Status looks correct'
+      }
     })
 
   } catch (error) {
-    console.error('❌ Error debugging callbacks:', error)
-    return NextResponse.json({ 
-      error: 'Internal server error', 
-      details: error instanceof Error ? error.message : 'Unknown error'
+    console.error('❌ Callback debug failed:', error)
+    return NextResponse.json({
+      error: 'Callback debug failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
 }
