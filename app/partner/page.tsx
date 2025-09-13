@@ -198,11 +198,11 @@ export default function PartnerDashboard() {
     setShortcodeForm({
       shortcode: shortcode.shortcode,
       shortcode_name: shortcode.shortcode_name,
-      mpesa_consumer_key: shortcode.mpesa_consumer_key || '',
-      mpesa_consumer_secret: shortcode.mpesa_consumer_secret || '',
-      mpesa_passkey: shortcode.mpesa_passkey || '',
-      mpesa_initiator_name: shortcode.mpesa_initiator_name || '',
-      mpesa_initiator_password: shortcode.mpesa_initiator_password || '',
+      mpesa_consumer_key: (shortcode as any).mpesa_consumer_key || '',
+      mpesa_consumer_secret: (shortcode as any).mpesa_consumer_secret || '',
+      mpesa_passkey: (shortcode as any).mpesa_passkey || '',
+      mpesa_initiator_name: (shortcode as any).mpesa_initiator_name || '',
+      mpesa_initiator_password: (shortcode as any).mpesa_initiator_password || '',
       mpesa_environment: shortcode.mpesa_environment
     })
     setShowShortcodeModal(true)
