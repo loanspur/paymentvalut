@@ -24,6 +24,11 @@ interface PartnerShortcode {
   is_active: boolean
   created_at: string
   updated_at: string
+  mpesa_consumer_key?: string
+  mpesa_consumer_secret?: string
+  mpesa_passkey?: string
+  mpesa_initiator_name?: string
+  mpesa_initiator_password?: string
 }
 
 interface DisbursementRequest {
