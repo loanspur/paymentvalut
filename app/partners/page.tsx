@@ -219,7 +219,8 @@ export default function PartnersPage() {
         mpesa_initiator_password: '',
         mpesa_environment: 'sandbox',
         is_active: true,
-        is_mpesa_configured: false
+        is_mpesa_configured: false,
+        api_key: ''
       })
       setShowAddForm(false)
       setEditingPartner(null)
@@ -245,7 +246,8 @@ export default function PartnersPage() {
       mpesa_initiator_password: (partner as any).mpesa_initiator_password || '',
       mpesa_environment: partner.mpesa_environment,
       is_active: partner.is_active,
-      is_mpesa_configured: partner.is_mpesa_configured
+      is_mpesa_configured: partner.is_mpesa_configured,
+      api_key: ''
     })
     setEditingPartner(partner)
     setShowAddForm(true)
@@ -671,7 +673,8 @@ export default function PartnersPage() {
                           mpesa_initiator_password: '',
                           mpesa_environment: 'sandbox',
                           is_active: true,
-                          is_mpesa_configured: false
+                          is_mpesa_configured: false,
+                          api_key: ''
                         })
                       }}
                       className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
