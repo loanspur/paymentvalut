@@ -29,6 +29,7 @@ interface PartnerShortcode {
   mpesa_passkey?: string
   mpesa_initiator_name?: string
   mpesa_initiator_password?: string
+  // Force rebuild by adding comment
 }
 
 interface DisbursementRequest {
