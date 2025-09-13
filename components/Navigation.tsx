@@ -82,18 +82,6 @@ export default function Navigation({ className = '' }: NavigationProps) {
       description: 'Balance monitoring'
     },
     {
-      name: 'Debug',
-      href: '/debug',
-      icon: AlertTriangle,
-      description: 'System diagnostics'
-    },
-    {
-      name: 'Logs',
-      href: '/logs',
-      icon: FileText,
-      description: 'Transaction logs'
-    },
-    {
       name: 'Settings',
       href: '/settings',
       icon: Settings,
@@ -240,18 +228,6 @@ export function SidebarNavigation({ className = '' }: NavigationProps) {
       href: '/balance-monitoring',
       icon: TrendingUp,
       description: 'Balance monitoring'
-    },
-    {
-      name: 'Debug',
-      href: '/debug',
-      icon: AlertTriangle,
-      description: 'System diagnostics'
-    },
-    {
-      name: 'Logs',
-      href: '/logs',
-      icon: FileText,
-      description: 'Transaction logs'
     },
     {
       name: 'Settings',
