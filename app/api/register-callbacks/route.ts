@@ -56,46 +56,35 @@ export async function POST(request: NextRequest) {
     const validationUrl = `https://paymentvalut-ju.vercel.app/api/mpesa-callback/validation`
     const confirmationUrl = `https://paymentvalut-ju.vercel.app/api/mpesa-callback/result`
 
-    // Register callback URLs with Safaricom
-    const registerUrl = environment === 'production' 
-      ? 'https://api.safaricom.co.ke/mpesa/c2b/v2/registerurl'
-      : 'https://sandbox.safaricom.co.ke/mpesa/c2b/v1/registerurl'
+    // For B2C, callbacks are configured during the disbursement request
+    // We don't need to register URLs separately like C2B
+    // The callback URLs are sent with each B2C request
+    
+    // Let's test if our callback URLs are accessible
+    const testValidation = await fetch(validationUrl, { method: 'GET' })
+    const testConfirmation = await fetch(confirmationUrl, { method: 'GET' })
+    
+    const validationAccessible = testValidation.ok
+    const confirmationAccessible = testConfirmation.ok
 
-    const registerData = {
-      ShortCode: partner.mpesa_shortcode,
-      ResponseType: 'Completed',
-      ConfirmationURL: confirmationUrl,
-      ValidationURL: validationUrl
-    }
-
-    console.log('📡 Registering callbacks with Safaricom:', {
-      url: registerUrl,
+    console.log('📡 Testing B2C callback URLs:', {
       shortcode: partner.mpesa_shortcode,
       validation_url: validationUrl,
-      confirmation_url: confirmationUrl
+      confirmation_url: confirmationUrl,
+      validation_accessible: validationAccessible,
+      confirmation_accessible: confirmationAccessible
     })
-
-    const registerResponse = await fetch(registerUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${tokenData.access_token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(registerData)
-    })
-
-    const registerResult = await registerResponse.json()
-
-    console.log('📊 Safaricom registration response:', registerResult)
 
     return NextResponse.json({
-      message: 'Callback registration completed',
+      message: 'B2C callback URLs are ready for use',
       environment: environment,
       shortcode: partner.mpesa_shortcode,
       validation_url: validationUrl,
       confirmation_url: confirmationUrl,
-      registration_response: registerResult,
-      success: registerResponse.ok
+      validation_accessible: validationAccessible,
+      confirmation_accessible: confirmationAccessible,
+      success: validationAccessible && confirmationAccessible,
+      note: 'B2C callbacks are configured per transaction, not pre-registered like C2B'
     })
 
   } catch (error) {
