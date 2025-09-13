@@ -346,8 +346,8 @@ async function callMpesaB2C(params: {
     PartyA: shortCode,
     PartyB: params.msisdn,
     Remarks: `Disbursement ${params.disbursementId}`,
-    QueueTimeOutURL: process.env.MPESA_CALLBACK_TIMEOUT_URL || "https://mpesab2c-1efsaghs1-justus-projects-3c52d294.vercel.app/api/mpesa-callback/timeout",
-    ResultURL: process.env.MPESA_CALLBACK_RESULT_URL || "https://mpesab2c-1efsaghs1-justus-projects-3c52d294.vercel.app/api/mpesa-callback/result",
+    QueueTimeOutURL: process.env.MPESA_CALLBACK_TIMEOUT_URL || "https://paymentvalut-ju.vercel.app/api/mpesa-callback/timeout",
+    ResultURL: process.env.MPESA_CALLBACK_RESULT_URL || "https://paymentvalut-ju.vercel.app/api/mpesa-callback/result",
     Occasion: params.disbursementId
   }
 
