@@ -66,7 +66,8 @@ export default function IPWhitelistPage() {
 
   const addIP = () => {
     if (newIP.trim() && editingPartner) {
-      const updatedIPs = [...editingPartner.allowed_ips, newIP.trim()]
+      const currentIPs = editingPartner.allowed_ips || []
+      const updatedIPs = [...currentIPs, newIP.trim()]
       setEditingPartner({ ...editingPartner, allowed_ips: updatedIPs })
       setNewIP('')
     }
@@ -74,7 +75,8 @@ export default function IPWhitelistPage() {
 
   const removeIP = (ipToRemove: string) => {
     if (editingPartner) {
-      const updatedIPs = editingPartner.allowed_ips.filter(ip => ip !== ipToRemove)
+      const currentIPs = editingPartner.allowed_ips || []
+      const updatedIPs = currentIPs.filter(ip => ip !== ipToRemove)
       setEditingPartner({ ...editingPartner, allowed_ips: updatedIPs })
     }
   }
@@ -129,7 +131,7 @@ export default function IPWhitelistPage() {
                         Allowed IP Addresses
                       </label>
                       <div className="space-y-2">
-                        {editingPartner.allowed_ips.map((ip, index) => (
+                        {(editingPartner.allowed_ips || []).map((ip, index) => (
                           <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
                             <span className="font-mono text-sm">{ip}</span>
                             <button
@@ -178,7 +180,7 @@ export default function IPWhitelistPage() {
                       <button
                         onClick={() => updateIPWhitelist(
                           editingPartner.id,
-                          editingPartner.allowed_ips,
+                          editingPartner.allowed_ips || [],
                           editingPartner.ip_whitelist_enabled
                         )}
                         disabled={saving}
@@ -197,7 +199,7 @@ export default function IPWhitelistPage() {
                 ) : (
                   <div>
                     <div className="text-sm text-gray-600 mb-2">Allowed IPs:</div>
-                    {partner.allowed_ips.length > 0 ? (
+                    {partner.allowed_ips && partner.allowed_ips.length > 0 ? (
                       <div className="space-y-1">
                         {partner.allowed_ips.map((ip, index) => (
                           <div key={index} className="font-mono text-sm bg-gray-100 p-2 rounded">
