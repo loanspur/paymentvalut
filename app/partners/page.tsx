@@ -758,7 +758,9 @@ export default function PartnersPage() {
                           mpesa_environment: 'sandbox',
                           is_active: true,
                           is_mpesa_configured: false,
-                          api_key: ''
+                          api_key: '',
+                          allowed_ips: [],
+                          ip_whitelist_enabled: false
                         })
                       }}
                       className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
