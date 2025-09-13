@@ -15,20 +15,25 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔧 Registering B2C callback URLs with Safaricom...')
     
-    // Get partner credentials
-    const { data: partner, error: partnerError } = await supabase
+    // Get partner credentials - fetch all configured partners
+    const { data: partners, error: partnerError } = await supabase
       .from('partners')
-      .select('mpesa_shortcode, mpesa_consumer_key, mpesa_consumer_secret, mpesa_environment')
+      .select('mpesa_shortcode, mpesa_consumer_key, mpesa_consumer_secret, mpesa_environment, name')
       .eq('is_mpesa_configured', true)
       .eq('is_active', true)
-      .single()
 
-    if (partnerError || !partner) {
+    if (partnerError || !partners || partners.length === 0) {
       return NextResponse.json({
         error: 'No configured partner found',
-        details: partnerError?.message
+        details: partnerError?.message || 'No active partners with M-Pesa configured'
       }, { status: 400 })
     }
+
+    // Prioritize "Kulman" partner if available, otherwise use first one
+    let partner = partners.find(p => p.name?.toLowerCase().includes('kulman')) || partners[0]
+    
+    console.log('🔍 Found partners:', partners.map(p => ({ name: p.name, shortcode: p.mpesa_shortcode })))
+    console.log('✅ Using partner:', { name: partner.name, shortcode: partner.mpesa_shortcode })
 
     const environment = partner.mpesa_environment || 'sandbox'
     const baseUrl = environment === 'production' 
