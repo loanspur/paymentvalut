@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '../../../../lib/supabase'
-import { requirePartner } from '../../../../lib/auth'
+import { requirePartner } from '../../../../lib/auth-utils'
+
 
 // Get partner's disbursements
 export const GET = requirePartner(async (request: NextRequest, user) => {

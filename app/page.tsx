@@ -5,260 +5,184 @@ import {
   DollarSign, 
   Send, 
   History, 
-  TrendingUp, 
-  Building2,
-  Phone,
-  CreditCard,
-  RefreshCw,
-  Settings,
-  AlertTriangle
+  Building2, 
+  Activity,
+  Users,
+  TrendingUp,
+  AlertCircle
 } from 'lucide-react'
-import NotificationSystem, { useNotifications } from '../components/NotificationSystem'
 
-interface Partner {
-  id: string
-  name: string
-  short_code: string
-  mpesa_shortcode: string
-  is_mpesa_configured: boolean
-  is_active: boolean
-}
-
-interface DisbursementRequest {
-  id: string
-  amount: number
-  msisdn: string
-  tenant_id: string
-  customer_id: string
-  client_request_id: string
-  status: string
-  conversation_id?: string
-  created_at: string
-  partner_name?: string
-}
-
-export default function HomePage() {
-  const [partners, setPartners] = useState<Partner[]>([])
-  const [disbursements, setDisbursements] = useState<DisbursementRequest[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const { notifications, addNotification, removeNotification } = useNotifications()
+export default function Dashboard() {
+  const [stats, setStats] = useState({
+    totalTransactions: 0,
+    totalAmount: 0,
+    activePartners: 0,
+    successRate: 0
+  })
+  const [recentTransactions, setRecentTransactions] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    loadData()
+    loadDashboardData()
   }, [])
 
-  const loadData = async () => {
+  const loadDashboardData = async () => {
     try {
-      await Promise.all([
-        fetchPartners(),
-        fetchDisbursements()
+      // Mock data for now - in real implementation, fetch from API
+      setStats({
+        totalTransactions: 1247,
+        totalAmount: 2450000,
+        activePartners: 8,
+        successRate: 98.5
+      })
+      
+      setRecentTransactions([
+        { id: 1, partner: 'Kulman', amount: 50000, status: 'success', time: '2 min ago' },
+        { id: 2, partner: 'Finsafe', amount: 25000, status: 'success', time: '5 min ago' },
+        { id: 3, partner: 'TechCorp', amount: 75000, status: 'pending', time: '8 min ago' }
       ])
     } catch (error) {
-      console.error('Failed to load data:', error)
+      console.error('Error loading dashboard data:', error)
     } finally {
-      setLoading(false)
+      setIsLoading(false)
     }
   }
 
-  const fetchPartners = async () => {
-    try {
-      console.log('🔍 Fetching partners...')
-      const response = await fetch('/api/partners')
-      const data = await response.json()
-      console.log('📊 Partners response:', data)
-      if (data.success) {
-        setPartners(data.partners)
-        console.log('✅ Partners loaded:', data.partners.length)
-      }
-    } catch (error) {
-      console.error('❌ Failed to fetch partners:', error)
-    }
-  }
-
-  const fetchDisbursements = async () => {
-    try {
-      console.log('🔍 Fetching disbursements...')
-      const response = await fetch('/api/disbursements')
-      const data = await response.json()
-      console.log('📊 Disbursements response:', data)
-      if (data.success) {
-        setDisbursements(data.disbursements)
-        console.log('✅ Disbursements loaded:', data.disbursements.length)
-      }
-    } catch (error) {
-      console.error('❌ Failed to fetch disbursements:', error)
-    }
-  }
-
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading dashboard...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Notification System */}
-      <NotificationSystem 
-        notifications={notifications} 
-        onRemove={removeNotification} 
-      />
-
-      <div className="max-w-7xl mx-auto">
-        {/* Welcome Section */}
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            M-Pesa B2C Disbursement System
-          </h2>
-          <p className="text-gray-600">
-            Secure M-Pesa B2C disbursement management with partner integration
-          </p>
-          <div className="mt-2 text-sm text-gray-500">
-            Partners: {partners.length} | Recent Transactions: {disbursements.length}
+    <div>
+      {/* Header */}
+      <div className="bg-white shadow mb-8">
+        <div className="px-6 py-4">
+          <div className="flex items-center">
+            <DollarSign className="h-8 w-8 text-blue-600 mr-3" />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">M-Pesa B2C Dashboard</h1>
+              <p className="text-sm text-gray-500">Overview of disbursement activities and system status</p>
+            </div>
           </div>
         </div>
+      </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <a
-            href="/disburse"
-            className="card hover:shadow-lg transition-shadow cursor-pointer"
-          >
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
             <div className="flex items-center">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <Send className="w-6 h-6 text-green-600" />
+              <div className="flex-shrink-0">
+                <Send className="h-6 w-6 text-blue-600" />
               </div>
-              <div className="ml-4">
-                <h3 className="text-lg font-semibold text-gray-900">Send Money</h3>
-                <p className="text-sm text-gray-600">Initiate disbursement</p>
-              </div>
-            </div>
-          </a>
-
-          <div className="card">
-            <div className="flex items-center">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <History className="w-6 h-6 text-blue-600" />
-              </div>
-              <div className="ml-4">
-                <h3 className="text-lg font-semibold text-gray-900">History</h3>
-                <p className="text-sm text-gray-600">{disbursements.length} transactions</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="flex items-center">
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <Building2 className="w-6 h-6 text-purple-600" />
-              </div>
-              <div className="ml-4">
-                <h3 className="text-lg font-semibold text-gray-900">Partners</h3>
-                <p className="text-sm text-gray-600">{partners.length} active</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="flex items-center">
-              <div className="p-3 bg-orange-100 rounded-lg">
-                <TrendingUp className="w-6 h-6 text-orange-600" />
-              </div>
-              <div className="ml-4">
-                <h3 className="text-lg font-semibold text-gray-900">Balance</h3>
-                <p className="text-sm text-gray-600">Monitor accounts</p>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">Total Transactions</dt>
+                  <dd className="text-lg font-medium text-gray-900">{stats.totalTransactions.toLocaleString()}</dd>
+                </dl>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Recent Disbursements */}
-        <div className="card mb-8">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-semibold text-gray-900">Recent Disbursements</h3>
-            <a
-              href="/disburse"
-              className="btn btn-primary"
-            >
-              <Send className="w-4 h-4 mr-2" />
-              New Disbursement
-            </a>
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <TrendingUp className="h-6 w-6 text-green-600" />
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">Total Amount</dt>
+                  <dd className="text-lg font-medium text-gray-900">KES {stats.totalAmount.toLocaleString()}</dd>
+                </dl>
+              </div>
+            </div>
           </div>
-
-          {disbursements.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Phone
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Amount
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Partner
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Date
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {disbursements.slice(0, 10).map((disbursement) => (
-                    <tr key={disbursement.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {disbursement.msisdn}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        KES {disbursement.amount.toLocaleString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          disbursement.status === 'completed' ? 'bg-green-100 text-green-800' :
-                          disbursement.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
-                          {disbursement.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {disbursement.partner_name || 'N/A'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(disbursement.created_at).toLocaleDateString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <Send className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No disbursements yet</h3>
-              <p className="text-gray-500 mb-4">Start by creating your first disbursement</p>
-              <a
-                href="/disburse"
-                className="btn btn-primary"
-              >
-                <Send className="w-4 h-4 mr-2" />
-                Create Disbursement
-              </a>
-            </div>
-          )}
         </div>
 
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <Building2 className="h-6 w-6 text-purple-600" />
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">Active Partners</dt>
+                  <dd className="text-lg font-medium text-gray-900">{stats.activePartners}</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white overflow-hidden shadow rounded-lg">
+          <div className="p-5">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <Activity className="h-6 w-6 text-orange-600" />
+              </div>
+              <div className="ml-5 w-0 flex-1">
+                <dl>
+                  <dt className="text-sm font-medium text-gray-500 truncate">Success Rate</dt>
+                  <dd className="text-lg font-medium text-gray-900">{stats.successRate}%</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Transactions */}
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-medium text-gray-900">Recent Transactions</h3>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Partner</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {recentTransactions.map((transaction) => (
+                <tr key={transaction.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {transaction.partner}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    KES {transaction.amount.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      transaction.status === 'success' ? 'bg-green-100 text-green-800' :
+                      transaction.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {transaction.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {transaction.time}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )

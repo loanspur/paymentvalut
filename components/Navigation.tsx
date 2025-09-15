@@ -8,7 +8,6 @@ import {
   Send, 
   History, 
   Building2, 
-  TrendingUp, 
   AlertTriangle,
   Settings,
   Menu,
@@ -16,7 +15,8 @@ import {
   Home,
   FileText,
   LogOut,
-  User
+  User,
+  Shield
 } from 'lucide-react'
 
 interface NavigationProps {
@@ -76,12 +76,6 @@ export default function Navigation({ className = '' }: NavigationProps) {
       description: 'Transaction history'
     },
     {
-      name: 'Balance',
-      href: '/balance-monitoring',
-      icon: TrendingUp,
-      description: 'Balance monitoring'
-    },
-    {
       name: 'Settings',
       href: '/settings',
       icon: Settings,
@@ -92,6 +86,12 @@ export default function Navigation({ className = '' }: NavigationProps) {
       href: '/api-docs',
       icon: FileText,
       description: 'USSD API documentation'
+    },
+    {
+      name: 'Admin',
+      href: '/admin-dashboard',
+      icon: Shield,
+      description: 'User management & activity tracking'
     }
   ]
 
@@ -224,12 +224,6 @@ export function SidebarNavigation({ className = '' }: NavigationProps) {
       description: 'Transaction history'
     },
     {
-      name: 'Balance',
-      href: '/balance-monitoring',
-      icon: TrendingUp,
-      description: 'Balance monitoring'
-    },
-    {
       name: 'Settings',
       href: '/settings',
       icon: Settings,
@@ -240,6 +234,12 @@ export function SidebarNavigation({ className = '' }: NavigationProps) {
       href: '/api-docs',
       icon: FileText,
       description: 'USSD API documentation'
+    },
+    {
+      name: 'Admin',
+      href: '/admin-dashboard',
+      icon: Shield,
+      description: 'User management & activity tracking'
     }
   ]
 

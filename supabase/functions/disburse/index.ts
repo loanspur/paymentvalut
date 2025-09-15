@@ -326,6 +326,14 @@ async function callMpesaB2C(params: {
     .single()
 
   if (partnerError || !partner || !partner.is_mpesa_configured) {
+    console.log('❌ Partner M-Pesa credentials not configured:', {
+      partnerError,
+      partner: partner ? {
+        id: partner.id,
+        name: partner.name,
+        is_mpesa_configured: partner.is_mpesa_configured
+      } : null
+    })
     throw new Error('Partner M-Pesa credentials not configured')
   }
 
@@ -341,8 +349,22 @@ async function callMpesaB2C(params: {
   }
   
   if (!initiatorPassword) {
+    console.log('❌ M-Pesa InitiatorPassword not configured for partner:', {
+      partnerId: params.partnerId,
+      hasInitiatorPassword: !!partner.mpesa_initiator_password
+    })
     throw new Error('M-Pesa InitiatorPassword not configured for this partner')
   }
+  
+  // Note: Passkey is not required for B2C transactions according to Safaricom
+  
+  console.log('✅ M-Pesa credentials loaded:', {
+    partnerId: params.partnerId,
+    shortCode,
+    environment,
+    hasInitiatorPassword: !!initiatorPassword,
+    initiatorName: partner.mpesa_initiator_name
+  })
 
   // Get access token
   const baseUrl = environment === 'production' 
@@ -357,14 +379,36 @@ async function callMpesaB2C(params: {
   })
 
   const tokenData = await tokenResponse.json()
+  
+  if (!tokenResponse.ok) {
+    console.log('❌ M-Pesa Token Error:', {
+      status: tokenResponse.status,
+      statusText: tokenResponse.statusText,
+      response: tokenData
+    })
+    throw new Error(`M-Pesa token error: ${tokenResponse.status} - ${JSON.stringify(tokenData)}`)
+  }
+  
   const accessToken = tokenData.access_token
+  
+  if (!accessToken) {
+    console.log('❌ No access token in response:', tokenData)
+    throw new Error('No access token received from M-Pesa')
+  }
 
   // Prepare B2C request
   const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, -3)
   
-  // Generate SecurityCredential using the working method from successful tests
-  // This method combines shortcode + initiatorPassword + timestamp and base64 encodes
-  const securityCredential = Buffer.from(`${shortCode}${initiatorPassword}${timestamp}`).toString('base64')
+  // Use the pre-generated security credential from the database
+  // This is the encrypted credential provided by Safaricom/Daraja
+  const securityCredential = initiatorPassword
+  
+  console.log('🔐 Using stored Security Credential:', {
+    environment,
+    shortCode,
+    securityCredentialLength: securityCredential ? securityCredential.length : 0,
+    securityCredentialPreview: securityCredential ? securityCredential.substring(0, 20) + '...' : 'NULL'
+  })
   
   const b2cRequest = {
     InitiatorName: partner.mpesa_initiator_name || "testapi",

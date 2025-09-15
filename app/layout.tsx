@@ -1,6 +1,7 @@
 import './globals.css'
 import { Inter } from 'next/font/google'
-import Navigation from '../components/Navigation'
+import AuthProvider from '../components/AuthProvider'
+import ProtectedLayout from '../components/ProtectedLayout'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -17,26 +18,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <div className="min-h-screen bg-gray-50">
-          {/* Header with Navigation */}
-          <header className="bg-white shadow-sm border-b border-gray-200">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <div className="flex justify-between items-center h-16">
-                <div className="flex items-center">
-                  <h1 className="text-xl font-semibold text-gray-900">
-                    M-Pesa B2C Vault
-                  </h1>
-                </div>
-                <Navigation />
-              </div>
-            </div>
-          </header>
-          
-          {/* Main Content */}
-          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <AuthProvider>
+          <ProtectedLayout>
             {children}
-          </main>
-        </div>
+          </ProtectedLayout>
+        </AuthProvider>
       </body>
     </html>
   )

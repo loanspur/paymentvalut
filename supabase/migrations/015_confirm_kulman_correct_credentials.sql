@@ -18,3 +18,6 @@ COMMENT ON COLUMN partners.mpesa_passkey IS 'Not required for B2C transactions -
 
 
 
+
+
+

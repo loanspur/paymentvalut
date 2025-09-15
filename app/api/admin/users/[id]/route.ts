@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AuthService } from '../../../../../lib/auth'
-import { requireAdmin } from '../../../../../lib/auth'
+import { requireAdmin } from '../../../../../lib/auth-utils'
+import { supabase } from '../../../../../lib/supabase'
+
+
 
 // Get specific user (admin only)
 export async function GET(
@@ -10,9 +12,14 @@ export async function GET(
   return requireAdmin(async (req, user) => {
     try {
       const userId = params.id
-      const targetUser = await AuthService.getUserById(userId)
+      
+      const { data: targetUser, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .single()
 
-      if (!targetUser) {
+      if (error || !targetUser) {
         return NextResponse.json(
           { error: 'User not found' },
           { status: 404 }
@@ -57,9 +64,14 @@ export async function PUT(
       delete updates.id
       delete updates.created_at
 
-      const updatedUser = await AuthService.updateUser(userId, updates)
+      const { data: updatedUser, error } = await supabase
+        .from('users')
+        .update(updates)
+        .eq('id', userId)
+        .select()
+        .single()
 
-      if (!updatedUser) {
+      if (error || !updatedUser) {
         return NextResponse.json(
           { error: 'Failed to update user' },
           { status: 500 }
@@ -106,9 +118,12 @@ export async function DELETE(
         )
       }
 
-      const success = await AuthService.deleteUser(userId)
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId)
 
-      if (!success) {
+      if (error) {
         return NextResponse.json(
           { error: 'Failed to delete user' },
           { status: 500 }

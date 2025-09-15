@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '../../../../lib/supabase'
-import { requireAdmin } from '../../../../lib/auth'
+import { requireAdmin } from '../../../../lib/auth-utils'
+
 
 // Get all partners (admin only)
 export const GET = requireAdmin(async (request: NextRequest, user) => {

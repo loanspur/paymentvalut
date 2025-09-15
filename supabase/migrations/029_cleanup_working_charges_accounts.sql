@@ -43,3 +43,6 @@ COMMENT ON COLUMN mpesa_balance_history.balance_type IS 'Balance type: utility o
 
 
 
+
+
+

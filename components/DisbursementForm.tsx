@@ -110,7 +110,7 @@ export default function DisbursementForm({
 
       const data = await response.json()
 
-      if (response.ok && data.status === 'accepted') {
+      if (response.ok && (data.status === 'accepted' || data.status === 'queued')) {
         addNotification({
           type: 'success',
           title: 'Disbursement Initiated',

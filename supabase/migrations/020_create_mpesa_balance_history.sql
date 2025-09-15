@@ -33,3 +33,6 @@ COMMENT ON COLUMN mpesa_balance_history.change_amount IS 'Calculated change in b
 
 
 
+
+
+

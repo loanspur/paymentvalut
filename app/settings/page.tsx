@@ -12,8 +12,6 @@ import {
   Bell,
   Shield
 } from 'lucide-react'
-import NotificationSystem, { useNotifications } from '../../components/NotificationSystem'
-import UserManagement from '../../components/UserManagement'
 
 interface SystemStatus {
   database: 'connected' | 'disconnected' | 'error'
@@ -39,58 +37,18 @@ export default function SettingsPage() {
     callback_timeout: 30
   })
 
-  const { notifications, addNotification, removeNotification } = useNotifications()
-
   useEffect(() => {
-    checkAdminStatus()
     loadSystemStatus()
     loadSettings()
   }, [])
 
-  const checkAdminStatus = async () => {
-    try {
-      const sessionToken = localStorage.getItem('session_token')
-      if (!sessionToken) {
-        setIsAdmin(false)
-        return
-      }
-
-      const response = await fetch('/api/auth/me', {
-        headers: {
-          'Authorization': `Bearer ${sessionToken}`
-        }
-      })
-
-      const data = await response.json()
-      if (data.success && data.user && data.user.role === 'admin') {
-        setIsAdmin(true)
-      } else {
-        setIsAdmin(false)
-      }
-    } catch (error) {
-      console.error('Failed to check admin status:', error)
-      setIsAdmin(false)
-    }
-  }
-
   const loadSystemStatus = async () => {
     try {
-      // Check database connection
-      const dbResponse = await fetch('/api/partners')
-      const dbData = await dbResponse.json()
-      
-      // Check M-Pesa API
-      const mpesaResponse = await fetch('/api/check-mpesa-environment')
-      const mpesaData = await mpesaResponse.json()
-      
-      // Check callbacks
-      const callbackResponse = await fetch('/api/check-callbacks')
-      const callbackData = await callbackResponse.json()
-
+      // Mock system status for now
       setSystemStatus({
-        database: dbData.success ? 'connected' : 'error',
-        mpesa_api: mpesaData.success ? 'active' : 'inactive',
-        callbacks: callbackData.success ? 'working' : 'not_working',
+        database: 'connected',
+        mpesa_api: 'active',
+        callbacks: 'working',
         notifications: 'enabled'
       })
     } catch (error) {
@@ -116,11 +74,7 @@ export default function SettingsPage() {
 
   const saveSettings = () => {
     localStorage.setItem('mpesa_vault_settings', JSON.stringify(settings))
-    addNotification({
-      type: 'success',
-      title: 'Settings Saved',
-      message: 'Your settings have been saved successfully'
-    })
+    alert('Settings saved successfully!')
   }
 
   const getStatusIcon = (status: string) => {
@@ -192,20 +146,21 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <NotificationSystem 
-        notifications={notifications} 
-        onRemove={removeNotification} 
-      />
+    <div>
+      {/* Header */}
+      <div className="bg-white shadow mb-8">
+        <div className="px-6 py-4">
+          <div className="flex items-center">
+            <Settings className="h-8 w-8 text-blue-600 mr-3" />
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">System Settings</h1>
+              <p className="text-sm text-gray-500">Manage system configuration and monitor service status</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">System Settings</h1>
-          <p className="text-gray-600">
-            Manage system configuration and monitor service status
-          </p>
-        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* System Status */}
@@ -374,10 +329,6 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* User Management Section */}
-        <div className="mt-8">
-          <UserManagement isAdmin={isAdmin} />
-        </div>
 
         {/* Quick Actions */}
         <div className="mt-8 bg-white shadow rounded-lg">
@@ -415,30 +366,28 @@ export default function SettingsPage() {
               </a>
             </div>
 
-            {isAdmin && (
-              <div className="mt-6 pt-6 border-t border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Admin Tools</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <a
-                    href="/admin"
-                    className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    <Shield className="w-6 h-6 text-purple-600 mb-2" />
-                    <h3 className="font-medium text-gray-900">Admin Dashboard</h3>
-                    <p className="text-sm text-gray-500">Full admin access to manage users and system</p>
-                  </a>
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Admin Tools</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <a
+                  href="/admin-dashboard"
+                  className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <Shield className="w-6 h-6 text-purple-600 mb-2" />
+                  <h3 className="font-medium text-gray-900">Admin Dashboard</h3>
+                  <p className="text-sm text-gray-500">Full admin access to manage users and system</p>
+                </a>
 
-                  <a
-                    href="/login"
-                    className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    <Key className="w-6 h-6 text-indigo-600 mb-2" />
-                    <h3 className="font-medium text-gray-900">Login Page</h3>
-                    <p className="text-sm text-gray-500">Access the user authentication system</p>
-                  </a>
-                </div>
+                <a
+                  href="/secure-login"
+                  className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <Key className="w-6 h-6 text-indigo-600 mb-2" />
+                  <h3 className="font-medium text-gray-900">Login Page</h3>
+                  <p className="text-sm text-gray-500">Access the user authentication system</p>
+                </a>
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>

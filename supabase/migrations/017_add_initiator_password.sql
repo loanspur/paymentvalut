@@ -11,3 +11,6 @@ COMMENT ON COLUMN partners.mpesa_initiator_password IS 'M-Pesa B2C InitiatorPass
 
 
 
+
+
+

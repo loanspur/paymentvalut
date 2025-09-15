@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AuthService } from '../../../../lib/auth'
+import { supabase } from '../../../../lib/supabase'
 
 // Get user by ID
 export async function GET(
@@ -7,9 +7,23 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = await AuthService.getUserById(params.id)
-    
-    if (!user) {
+    // Simple authentication check
+    const token = request.cookies.get('auth_token')?.value
+    if (!token) {
+      return NextResponse.json({
+        error: 'Access denied',
+        message: 'Authentication required'
+      }, { status: 401 })
+    }
+
+    // Get user from database
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', params.id)
+      .single()
+
+    if (error || !user) {
       return NextResponse.json(
         { error: 'User not found' },
         { status: 404 }
@@ -52,9 +66,14 @@ export async function PUT(
     delete updates.created_at
     delete updates.updated_at
 
-    const updatedUser = await AuthService.updateUser(params.id, updates)
+    const { data: updatedUser, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', params.id)
+      .select()
+      .single()
     
-    if (!updatedUser) {
+    if (error || !updatedUser) {
       return NextResponse.json(
         { error: 'Failed to update user' },
         { status: 500 }
@@ -90,9 +109,12 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const success = await AuthService.deleteUser(params.id)
+    const { error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', params.id)
     
-    if (!success) {
+    if (error) {
       return NextResponse.json(
         { error: 'Failed to delete user' },
         { status: 500 }

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AuthService } from '../../../../lib/auth'
+import jwt from 'jsonwebtoken'
+import { supabase } from '../../../../lib/supabase'
+
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,12 +14,35 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const user = await AuthService.validateSession(sessionToken)
-
-    if (!user) {
+    // Verify JWT token
+    const decoded = jwt.verify(sessionToken, process.env.JWT_SECRET!) as any
+    
+    if (!decoded) {
       return NextResponse.json(
         { error: 'Invalid session' },
         { status: 401 }
+      )
+    }
+
+    // Get user from database
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', decoded.userId || decoded.id)
+      .single()
+
+    if (error || !user) {
+      return NextResponse.json(
+        { error: 'Invalid session' },
+        { status: 401 }
+      )
+    }
+
+    // Check if user is active
+    if (!user.is_active) {
+      return NextResponse.json(
+        { error: 'Account is inactive' },
+        { status: 403 }
       )
     }
 

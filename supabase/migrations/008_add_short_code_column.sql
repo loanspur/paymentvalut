@@ -28,3 +28,6 @@ COMMENT ON COLUMN partners.short_code IS 'Internal business identifier for the p
 
 
 
+
+
+
