@@ -159,6 +159,15 @@ export default function SecureLoginPage() {
                 {isLoading ? 'Signing in...' : 'Sign in'}
               </button>
             </div>
+
+            <div className="text-center">
+              <a
+                href="/request-password-reset"
+                className="text-sm text-blue-600 hover:text-blue-500"
+              >
+                Forgot your password?
+              </a>
+            </div>
           </form>
 
         </div>

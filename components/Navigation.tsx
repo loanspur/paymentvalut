@@ -197,6 +197,29 @@ export default function Navigation({ className = '' }: NavigationProps) {
 // Sidebar Navigation Component
 export function SidebarNavigation({ className = '' }: NavigationProps) {
   const pathname = usePathname()
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+
+  // Check if user is logged in (client-side only)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('auth_token')
+      setIsLoggedIn(!!token)
+    }
+  }, [])
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('user')
+      }
+      setIsLoggedIn(false)
+      window.location.href = '/login'
+    } catch (error) {
+      console.error('Logout error:', error)
+    }
+  }
 
   const navigationItems = [
     {
@@ -281,6 +304,19 @@ export function SidebarNavigation({ className = '' }: NavigationProps) {
           )
         })}
       </nav>
+
+      {/* Logout Button */}
+      {isLoggedIn && (
+        <div className="px-4 py-4 border-t border-gray-200">
+          <button
+            onClick={handleLogout}
+            className="group flex items-center w-full px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+          >
+            <LogOut className="mr-3 h-5 w-5 flex-shrink-0" />
+            <span>Logout</span>
+          </button>
+        </div>
+      )}
     </div>
   )
 }

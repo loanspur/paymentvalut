@@ -12,19 +12,41 @@ import {
   Building2,
   Shield,
   UserCheck,
-  UserX
+  UserX,
+  Key,
+  Settings
 } from 'lucide-react'
 import NotificationSystem, { useNotifications } from './NotificationSystem'
+import UserPermissionsManager from './UserPermissionsManager'
 
 interface User {
   id: string
   email: string
-  role: 'admin' | 'partner'
+  first_name?: string
+  last_name?: string
+  phone_number?: string
+  department?: string
+  role: 'super_admin' | 'admin' | 'partner_admin' | 'operator' | 'viewer' | 'partner'
   partner_id?: string
   is_active: boolean
+  email_verified?: boolean
   last_login_at?: string
+  last_activity_at?: string
+  notes?: string
   created_at: string
   updated_at: string
+  partners?: {
+    id: string
+    name: string
+    short_code: string
+  }
+  shortcode_access?: Array<{
+    shortcode_id: string
+    shortcode: string
+    partner_name: string
+    access_type: string
+    granted_at: string
+  }>
 }
 
 interface Partner {
@@ -48,11 +70,19 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
   const [showUserModal, setShowUserModal] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [showPermissionsModal, setShowPermissionsModal] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [userForm, setUserForm] = useState({
     email: '',
     password: '',
-    role: 'partner' as 'admin' | 'partner',
-    partner_id: ''
+    first_name: '',
+    last_name: '',
+    phone_number: '',
+    department: '',
+    role: 'partner' as 'super_admin' | 'admin' | 'partner_admin' | 'operator' | 'viewer' | 'partner',
+    partner_id: '',
+    shortcode_access: [] as any[],
+    notes: ''
   })
 
   const { notifications, addNotification, removeNotification } = useNotifications()
@@ -155,10 +185,27 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
     setUserForm({
       email: user.email,
       password: '',
+      first_name: user.first_name || '',
+      last_name: user.last_name || '',
+      phone_number: user.phone_number || '',
+      department: user.department || '',
       role: user.role,
-      partner_id: user.partner_id || ''
+      partner_id: user.partner_id || '',
+      shortcode_access: user.shortcode_access || [],
+      notes: user.notes || ''
     })
     setShowUserModal(true)
+  }
+
+  const handleManagePermissions = (user: User) => {
+    setSelectedUser(user)
+    setShowPermissionsModal(true)
+  }
+
+  const handleClosePermissions = () => {
+    setShowPermissionsModal(false)
+    setSelectedUser(null)
+    fetchUsers() // Refresh users to get updated permissions
   }
 
   const handleUpdateUser = async () => {
@@ -236,18 +283,38 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
     setUserForm({
       email: '',
       password: '',
+      first_name: '',
+      last_name: '',
+      phone_number: '',
+      department: '',
       role: 'partner',
-      partner_id: ''
+      partner_id: '',
+      shortcode_access: [],
+      notes: ''
     })
     setEditingUser(null)
   }
 
   const getRoleIcon = (role: string) => {
-    return role === 'admin' ? <Shield className="w-4 h-4" /> : <Building2 className="w-4 h-4" />
+    switch (role) {
+      case 'super_admin': return <Shield className="w-4 h-4" />
+      case 'admin': return <Shield className="w-4 h-4" />
+      case 'partner_admin': return <Building2 className="w-4 h-4" />
+      case 'operator': return <Users className="w-4 h-4" />
+      case 'viewer': return <Eye className="w-4 h-4" />
+      default: return <Building2 className="w-4 h-4" />
+    }
   }
 
   const getRoleColor = (role: string) => {
-    return role === 'admin' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
+    switch (role) {
+      case 'super_admin': return 'bg-purple-100 text-purple-800'
+      case 'admin': return 'bg-red-100 text-red-800'
+      case 'partner_admin': return 'bg-blue-100 text-blue-800'
+      case 'operator': return 'bg-green-100 text-green-800'
+      case 'viewer': return 'bg-gray-100 text-gray-800'
+      default: return 'bg-blue-100 text-blue-800'
+    }
   }
 
   const getStatusIcon = (isActive: boolean) => {
@@ -353,8 +420,15 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
                             </div>
                           </div>
                           <div className="ml-4">
-                            <div className="text-sm font-medium text-gray-900">{user.email}</div>
-                            <div className="text-sm text-gray-500">ID: {user.id.slice(0, 8)}...</div>
+                            <div className="text-sm font-medium text-gray-900">
+                              {user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : user.email}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {user.first_name && user.last_name ? user.email : `ID: ${user.id.slice(0, 8)}...`}
+                            </div>
+                            {user.department && (
+                              <div className="text-xs text-gray-400">{user.department}</div>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -389,12 +463,21 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
                           <button
                             onClick={() => handleEditUser(user)}
                             className="text-blue-600 hover:text-blue-900"
+                            title="Edit User"
                           >
                             <Edit className="w-4 h-4" />
                           </button>
                           <button
+                            onClick={() => handleManagePermissions(user)}
+                            className="text-purple-600 hover:text-purple-900"
+                            title="Manage Permissions"
+                          >
+                            <Key className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => handleDeleteUser(user.id)}
                             className="text-red-600 hover:text-red-900"
+                            title="Delete User"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -452,6 +535,33 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
                 e.preventDefault()
                 editingUser ? handleUpdateUser() : handleCreateUser()
               }} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      First Name
+                    </label>
+                    <input
+                      type="text"
+                      value={userForm.first_name}
+                      onChange={(e) => setUserForm({...userForm, first_name: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="John"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Last Name
+                    </label>
+                    <input
+                      type="text"
+                      value={userForm.last_name}
+                      onChange={(e) => setUserForm({...userForm, last_name: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Doe"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Email Address
@@ -464,6 +574,33 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
                     placeholder="user@example.com"
                     required
                   />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Phone Number
+                    </label>
+                    <input
+                      type="tel"
+                      value={userForm.phone_number}
+                      onChange={(e) => setUserForm({...userForm, phone_number: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="+254 700 000 000"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Department
+                    </label>
+                    <input
+                      type="text"
+                      value={userForm.department}
+                      onChange={(e) => setUserForm({...userForm, department: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Finance, Operations, etc."
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -495,16 +632,20 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
                   </label>
                   <select
                     value={userForm.role}
-                    onChange={(e) => setUserForm({...userForm, role: e.target.value as 'admin' | 'partner'})}
+                    onChange={(e) => setUserForm({...userForm, role: e.target.value as any})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     required
                   >
-                    <option value="partner">Partner</option>
-                    <option value="admin">Admin</option>
+                    <option value="viewer">Viewer (Read-only)</option>
+                    <option value="operator">Operator (Limited Write)</option>
+                    <option value="partner">Partner (Basic Access)</option>
+                    <option value="partner_admin">Partner Admin (Partner Management)</option>
+                    <option value="admin">Admin (System Management)</option>
+                    <option value="super_admin">Super Admin (Full Access)</option>
                   </select>
                 </div>
 
-                {userForm.role === 'partner' && (
+                {(userForm.role === 'partner' || userForm.role === 'partner_admin' || userForm.role === 'operator' || userForm.role === 'viewer') && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Partner
@@ -513,7 +654,7 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
                       value={userForm.partner_id}
                       onChange={(e) => setUserForm({...userForm, partner_id: e.target.value})}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      required={userForm.role === 'partner'}
+                      required={['partner', 'partner_admin', 'operator', 'viewer'].includes(userForm.role)}
                     >
                       <option value="">Select a partner</option>
                       {partners.map(partner => (
@@ -524,6 +665,19 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
                     </select>
                   </div>
                 )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Notes
+                  </label>
+                  <textarea
+                    value={userForm.notes}
+                    onChange={(e) => setUserForm({...userForm, notes: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="Additional notes about this user..."
+                  />
+                </div>
 
                 <div className="flex justify-end space-x-3 pt-4">
                   <button
@@ -547,6 +701,15 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
             </div>
           </div>
         </div>
+      )}
+
+      {/* User Permissions Manager Modal */}
+      {showPermissionsModal && selectedUser && (
+        <UserPermissionsManager
+          user={selectedUser}
+          onClose={handleClosePermissions}
+          onUpdate={fetchUsers}
+        />
       )}
     </>
   )

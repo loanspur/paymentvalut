@@ -215,17 +215,19 @@ serve(async (req) => {
       })
 
       if (mpesaResponse.ResultCode === 0) {
-        // Update request status to accepted
+        // Update request status to success - M-Pesa accepted the transaction
         await supabaseClient
           .from('disbursement_requests')
           .update({ 
-            status: 'accepted',
-            conversation_id: conversationId
+            status: 'success',
+            conversation_id: conversationId,
+            result_code: mpesaResponse.ResultCode.toString(),
+            result_desc: mpesaResponse.ResultDesc
           })
           .eq('id', disbursementRequest.id)
 
         const response: DisburseResponse = {
-          status: 'accepted',
+          status: 'success',
           disbursement_id: disbursementRequest.id,
           conversation_id: conversationId,
           will_callback: true

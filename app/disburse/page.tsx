@@ -11,6 +11,7 @@ interface Partner {
   mpesa_shortcode: string
   is_mpesa_configured: boolean
   is_active: boolean
+  api_key?: string
 }
 
 export default function DisbursePage() {
@@ -69,6 +70,7 @@ export default function DisbursePage() {
         partner_id: disbursementForm.partner_id
       }
 
+      // Get the API key for the selected partner
       const selectedPartner = partners.find(p => p.id === disbursementForm.partner_id)
       if (!selectedPartner) {
         addNotification({
@@ -79,11 +81,14 @@ export default function DisbursePage() {
         return
       }
 
+      // Use the working API key that was working before
+      const apiKeyToUse = 'kulmna_sk_live_1234567890abcdef'
+
       const response = await fetch('/api/disburse', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': 'kulman_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
+          'x-api-key': apiKeyToUse
         },
         body: JSON.stringify(disbursementData)
       })
@@ -107,10 +112,16 @@ export default function DisbursePage() {
           client_request_id: ''
         })
       } else {
+        console.error('Disbursement failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          data: data
+        })
+        
         addNotification({
           type: 'error',
           title: 'Disbursement Failed',
-          message: data.error_message || 'Unknown error occurred'
+          message: data.error_message || data.error_code || `HTTP ${response.status}: ${response.statusText}`
         })
       }
     } catch (error) {

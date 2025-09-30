@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase, supabaseConfig } from '../../lib/supabase'
+import { generateStrongAPIKey, hashAPIKey } from '../../lib/api-key-utils'
 
 // Partner interface
 export interface Partner {
@@ -14,6 +15,7 @@ export interface Partner {
   mpesa_passkey: string
   mpesa_initiator_name: string
   mpesa_initiator_password: string
+  security_credential?: string
   mpesa_environment: string
   is_active: boolean
   is_mpesa_configured: boolean
@@ -60,7 +62,8 @@ export default function PartnersPage() {
     mpesa_passkey: '',
     mpesa_initiator_name: '',
     mpesa_initiator_password: '',
-    mpesa_environment: 'sandbox',
+    security_credential: '',
+    mpesa_environment: 'sandbox' as 'sandbox' | 'production',
     is_active: true,
     is_mpesa_configured: false,
     api_key: '',
@@ -129,23 +132,33 @@ export default function PartnersPage() {
       if (editingPartner) {
         // Update existing partner in database
         
+        const updateData: any = {
+          name: formData.name,
+          short_code: formData.short_code,
+          mpesa_shortcode: formData.mpesa_shortcode,
+          mpesa_consumer_key: formData.mpesa_consumer_key,
+          mpesa_consumer_secret: formData.mpesa_consumer_secret,
+          mpesa_passkey: formData.mpesa_passkey,
+          mpesa_initiator_name: formData.mpesa_initiator_name,
+          mpesa_initiator_password: formData.mpesa_initiator_password,
+          mpesa_environment: formData.mpesa_environment,
+          is_active: formData.is_active,
+          is_mpesa_configured: formData.is_mpesa_configured,
+          allowed_ips: formData.allowed_ips,
+          ip_whitelist_enabled: formData.ip_whitelist_enabled,
+          updated_at: new Date().toISOString()
+        }
+
+        // Only update API key if it was changed
+        if (formData.api_key && formData.api_key !== editingPartner.api_key) {
+          const apiKeyHashHex = await hashAPIKey(formData.api_key)
+          updateData.api_key = formData.api_key
+          updateData.api_key_hash = apiKeyHashHex
+        }
+
         const { data, error } = await supabase
           .from('partners')
-          .update({
-            name: formData.name,
-            mpesa_shortcode: formData.mpesa_shortcode,
-            mpesa_consumer_key: formData.mpesa_consumer_key,
-            mpesa_consumer_secret: formData.mpesa_consumer_secret,
-            mpesa_passkey: formData.mpesa_passkey,
-            mpesa_initiator_name: formData.mpesa_initiator_name,
-            mpesa_initiator_password: formData.mpesa_initiator_password,
-            mpesa_environment: formData.mpesa_environment,
-            is_active: formData.is_active,
-            is_mpesa_configured: formData.is_mpesa_configured,
-            allowed_ips: formData.allowed_ips,
-            ip_whitelist_enabled: formData.ip_whitelist_enabled,
-            updated_at: new Date().toISOString()
-          })
+          .update(updateData)
           .eq('id', editingPartner.id)
           .select()
 
@@ -168,30 +181,31 @@ export default function PartnersPage() {
         // Add new partner to database
         
         // Generate strong API key with familiar prefix
-        const { generateStrongAPIKey, hashAPIKey } = await import('../../lib/api-key-utils')
         const apiKey = formData.api_key || generateStrongAPIKey(formData.name, 'live')
         const apiKeyHashHex = await hashAPIKey(apiKey)
 
+        const insertData: any = {
+          name: formData.name,
+          short_code: formData.short_code,
+          mpesa_shortcode: formData.mpesa_shortcode,
+          mpesa_consumer_key: formData.mpesa_consumer_key,
+          mpesa_consumer_secret: formData.mpesa_consumer_secret,
+          mpesa_passkey: formData.mpesa_passkey,
+          mpesa_initiator_name: formData.mpesa_initiator_name,
+          mpesa_initiator_password: formData.mpesa_initiator_password,
+          mpesa_environment: formData.mpesa_environment,
+          is_active: formData.is_active,
+          is_mpesa_configured: formData.is_mpesa_configured,
+          allowed_ips: formData.allowed_ips,
+          ip_whitelist_enabled: formData.ip_whitelist_enabled,
+          api_key_hash: apiKeyHashHex,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+
         const { data, error } = await supabase
           .from('partners')
-          .insert({
-            name: formData.name,
-            short_code: formData.short_code,
-            mpesa_shortcode: formData.mpesa_shortcode,
-            mpesa_consumer_key: formData.mpesa_consumer_key,
-            mpesa_consumer_secret: formData.mpesa_consumer_secret,
-            mpesa_passkey: formData.mpesa_passkey,
-            mpesa_initiator_name: formData.mpesa_initiator_name,
-            mpesa_initiator_password: formData.mpesa_initiator_password,
-            mpesa_environment: formData.mpesa_environment,
-            is_active: formData.is_active,
-            is_mpesa_configured: formData.is_mpesa_configured,
-            allowed_ips: formData.allowed_ips,
-            ip_whitelist_enabled: formData.ip_whitelist_enabled,
-            api_key_hash: apiKeyHashHex,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
+          .insert(insertData)
           .select()
 
         if (error) {
@@ -209,8 +223,55 @@ export default function PartnersPage() {
           title: 'Partner Added',
           message: 'Partner added successfully!'
         })
+
+        // Store credentials in vault if M-Pesa credentials are provided
+        if (formData.mpesa_consumer_key && formData.mpesa_consumer_secret && formData.mpesa_initiator_password) {
+          const credentials = {
+            consumer_key: formData.mpesa_consumer_key,
+            consumer_secret: formData.mpesa_consumer_secret,
+            passkey: formData.mpesa_passkey || '',
+            initiator_name: formData.mpesa_initiator_name || '',
+            initiator_password: formData.mpesa_initiator_password,
+            security_credential: formData.security_credential,
+            environment: formData.mpesa_environment
+          }
+
+          try {
+            const partnerId = editingPartner ? editingPartner.id : data[0].id
+          const response = await fetch('/api/partners/store-credentials', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              partnerId,
+              credentials
+            })
+          })
+
+           if (response.ok) {
+             addNotification({
+               type: 'success',
+               title: 'Vault Updated',
+               message: 'M-Pesa credentials stored securely in vault'
+             })
+           } else {
+             addNotification({
+               type: 'warning',
+               title: 'Vault Warning',
+               message: 'Partner saved but credentials not stored in vault'
+             })
+           }
+         } catch (vaultError) {
+           addNotification({
+             type: 'error',
+             title: 'Vault Error',
+             message: 'Failed to store credentials in vault'
+           })
+         }
+        }
       }
-      
+
       // Refresh the partners list
       await fetchPartners()
       
@@ -224,6 +285,7 @@ export default function PartnersPage() {
         mpesa_passkey: '',
         mpesa_initiator_name: '',
         mpesa_initiator_password: '',
+        security_credential: '',
         mpesa_environment: 'sandbox',
         is_active: true,
         is_mpesa_configured: false,
@@ -245,17 +307,18 @@ export default function PartnersPage() {
 
   const handleEdit = (partner: Partner) => {
     setFormData({
-      name: partner.name,
-      short_code: partner.short_code,
-      mpesa_shortcode: partner.mpesa_shortcode,
-      mpesa_consumer_key: partner.mpesa_consumer_key,
-      mpesa_consumer_secret: partner.mpesa_consumer_secret,
-      mpesa_passkey: partner.mpesa_passkey,
+      name: partner.name || '',
+      short_code: partner.short_code || '',
+      mpesa_shortcode: partner.mpesa_shortcode || '',
+      mpesa_consumer_key: partner.mpesa_consumer_key || '',
+      mpesa_consumer_secret: partner.mpesa_consumer_secret || '',
+      mpesa_passkey: partner.mpesa_passkey || '',
       mpesa_initiator_name: partner.mpesa_initiator_name || '',
       mpesa_initiator_password: (partner as any).mpesa_initiator_password || '',
-      mpesa_environment: partner.mpesa_environment,
-      is_active: partner.is_active,
-      is_mpesa_configured: partner.is_mpesa_configured,
+      security_credential: (partner as any).security_credential || '',
+      mpesa_environment: (partner.mpesa_environment as 'sandbox' | 'production') || 'sandbox',
+      is_active: partner.is_active ?? true,
+      is_mpesa_configured: partner.is_mpesa_configured ?? false,
       api_key: partner.api_key || '',
       allowed_ips: (partner as any).allowed_ips || [],
       ip_whitelist_enabled: (partner as any).ip_whitelist_enabled || false
@@ -571,7 +634,7 @@ export default function PartnersPage() {
                       </label>
                       <select
                         value={formData.mpesa_environment}
-                        onChange={(e) => setFormData({...formData, mpesa_environment: e.target.value})}
+                        onChange={(e) => setFormData({...formData, mpesa_environment: e.target.value as 'sandbox' | 'production'})}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="sandbox">Sandbox</option>
@@ -640,7 +703,12 @@ export default function PartnersPage() {
                   </div>
                   
                   <div className="space-y-4">
-                    <h4 className="text-md font-medium text-gray-900">M-Pesa Credentials</h4>
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-md font-medium text-gray-900">M-Pesa Credentials</h4>
+                      <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                        🔒 Stored in Vault
+                      </div>
+                    </div>
                     
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -715,6 +783,22 @@ export default function PartnersPage() {
                         The initiator password used for SecurityCredential generation in B2C transactions
                       </p>
                     </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Security Credential <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        value={formData.security_credential || ''}
+                        onChange={(e) => setFormData({...formData, security_credential: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Enter RSA-encrypted Security Credential from Safaricom"
+                        rows={3}
+                      />
+                      <p className="text-xs text-red-600 mt-1">
+                        ⚠️ REQUIRED: This must be the RSA-encrypted SecurityCredential from Safaricom, not the raw password
+                      </p>
+                    </div>
                   </div>
                   
                   {/* API Key Section */}
@@ -737,8 +821,7 @@ export default function PartnersPage() {
                         {editingPartner && (
                           <button
                             type="button"
-                            onClick={async () => {
-                              const { generateStrongAPIKey } = await import('../../lib/api-key-utils')
+                            onClick={() => {
                               const newApiKey = generateStrongAPIKey(formData.name, 'live')
                               setFormData({...formData, api_key: newApiKey})
                             }}
@@ -794,6 +877,7 @@ export default function PartnersPage() {
                           mpesa_passkey: '',
                           mpesa_initiator_name: '',
                           mpesa_initiator_password: '',
+                          security_credential: '',
                           mpesa_environment: 'sandbox',
                           is_active: true,
                           is_mpesa_configured: false,
