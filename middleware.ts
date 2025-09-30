@@ -16,7 +16,7 @@ async function verifyToken(token: string): Promise<any> {
 
 export async function middleware(request: NextRequest) {
   // Public routes that don't need protection
-  const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup']
+  const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup', '/request-password-reset', '/reset-password']
   const isPublicRoute = publicRoutes.includes(request.nextUrl.pathname)
 
   // Check if user is authenticated

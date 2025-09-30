@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '../../../../lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+import { jwtVerify } from 'jose'
 import bcrypt from 'bcryptjs'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
+
+async function verifyToken(token: string): Promise<any> {
+  try {
+    const secret = new TextEncoder().encode(JWT_SECRET)
+    const { payload } = await jwtVerify(token, secret)
+    return payload
+  } catch (error) {
+    return null
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,6 +28,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         error: 'Access denied',
         message: 'Authentication required'
+      }, { status: 401 })
+    }
+
+    // Decode the JWT token to get user ID
+    const decoded = await verifyToken(token)
+    if (!decoded || !decoded.userId) {
+      return NextResponse.json({
+        error: 'Invalid authentication',
+        message: 'Invalid token'
       }, { status: 401 })
     }
 
@@ -34,7 +61,7 @@ export async function POST(request: NextRequest) {
     const { data: currentUser, error: userError } = await supabase
       .from('users')
       .select('id, password_hash, email')
-      .eq('id', token)
+      .eq('id', decoded.userId)
       .eq('is_active', true)
       .single()
 

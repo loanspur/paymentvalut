@@ -1,5 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '../../../lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+import { jwtVerify } from 'jose'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
+
+async function verifyToken(token: string): Promise<any> {
+  try {
+    const secret = new TextEncoder().encode(JWT_SECRET)
+    const { payload } = await jwtVerify(token, secret)
+    return payload
+  } catch (error) {
+    return null
+  }
+}
 
 // GET - Get current user's profile
 export async function GET(request: NextRequest) {
@@ -10,6 +28,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         error: 'Access denied',
         message: 'Authentication required'
+      }, { status: 401 })
+    }
+
+    // Decode the JWT token to get user ID
+    const decoded = await verifyToken(token)
+    if (!decoded || !decoded.userId) {
+      return NextResponse.json({
+        error: 'Invalid authentication',
+        message: 'Invalid token'
       }, { status: 401 })
     }
 
@@ -35,15 +62,9 @@ export async function GET(request: NextRequest) {
         password_change_required,
         two_factor_enabled,
         created_at,
-        updated_at,
-        partners (
-          id,
-          name,
-          short_code
-        )
+        updated_at
       `)
-      .eq('id', token)
-      .eq('is_active', true)
+      .eq('id', decoded.userId)
       .single()
 
     if (userError || !user) {
@@ -53,19 +74,26 @@ export async function GET(request: NextRequest) {
       }, { status: 401 })
     }
 
-    // Get user's accessible shortcodes
-    const { data: shortcodes, error: shortcodeError } = await supabase
-      .rpc('get_user_accessible_shortcodes_enhanced', { p_user_id: user.id })
-
-    if (shortcodeError) {
-      console.error('Error fetching user shortcodes:', shortcodeError)
+    // Get user's accessible shortcodes (non-blocking)
+    let shortcodes = []
+    try {
+      const { data: shortcodeData, error: shortcodeError } = await supabase
+        .rpc('get_user_accessible_shortcodes_enhanced', { p_user_id: user.id })
+      
+      if (shortcodeError) {
+        console.error('Error fetching user shortcodes:', shortcodeError)
+      } else {
+        shortcodes = shortcodeData || []
+      }
+    } catch (error) {
+      console.error('Error fetching user shortcodes:', error)
     }
 
     return NextResponse.json({
       success: true,
       user: {
         ...user,
-        accessible_shortcodes: shortcodes || []
+        accessible_shortcodes: shortcodes
       }
     })
 
@@ -87,6 +115,15 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({
         error: 'Access denied',
         message: 'Authentication required'
+      }, { status: 401 })
+    }
+
+    // Decode the JWT token to get user ID
+    const decoded = await verifyToken(token)
+    if (!decoded || !decoded.userId) {
+      return NextResponse.json({
+        error: 'Invalid authentication',
+        message: 'Invalid token'
       }, { status: 401 })
     }
 
@@ -116,7 +153,7 @@ export async function PUT(request: NextRequest) {
     const { data: updatedUser, error: updateError } = await supabase
       .from('users')
       .update(filteredUpdateData)
-      .eq('id', token)
+      .eq('id', decoded.userId)
       .eq('is_active', true)
       .select(`
         id,
@@ -137,12 +174,7 @@ export async function PUT(request: NextRequest) {
         password_change_required,
         two_factor_enabled,
         created_at,
-        updated_at,
-        partners (
-          id,
-          name,
-          short_code
-        )
+        updated_at
       `)
       .single()
 

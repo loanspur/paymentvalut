@@ -15,7 +15,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const pathname = usePathname()
 
   // Public routes that don't need the protected layout
-  const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup']
+  const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup', '/request-password-reset', '/reset-password']
   const isPublicRoute = publicRoutes.includes(pathname)
 
   // For public routes, just render children without the protected layout
