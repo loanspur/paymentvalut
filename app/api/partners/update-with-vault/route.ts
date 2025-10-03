@@ -1,6 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { CredentialManager } from '../../../../supabase/functions/_shared/credential-manager.ts'
+// Note: Using Node.js crypto for Next.js compatibility
+import { createCipheriv, createDecipheriv, scryptSync, randomBytes } from 'crypto'
+
+// Simple credential encryption for Next.js
+function encryptCredentials(credentials: any, passphrase: string): string {
+  try {
+    const algorithm = 'aes-256-cbc'
+    const key = scryptSync(passphrase, 'salt', 32)
+    const iv = randomBytes(16)
+    
+    const cipher = createCipheriv(algorithm, key, iv)
+    let encrypted = cipher.update(JSON.stringify(credentials), 'utf8', 'hex')
+    encrypted += cipher.final('hex')
+    
+    return iv.toString('hex') + ':' + encrypted
+  } catch (error) {
+    console.error('Encryption error:', error)
+    throw new Error('Failed to encrypt credentials')
+  }
+}
 
 // Initialize Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -102,18 +121,28 @@ export async function PUT(request: NextRequest) {
     // Update vault credentials if requested
     if (update_credentials && mpesa_consumer_key && mpesa_consumer_secret && mpesa_initiator_password) {
       try {
-        await CredentialManager.storePartnerCredentials(
-          partner_id,
-          {
-            consumer_key: mpesa_consumer_key,
-            consumer_secret: mpesa_consumer_secret,
-            initiator_password: mpesa_initiator_password,
-            security_credential: mpesa_security_credential,
-            shortcode: existingPartner.mpesa_shortcode || '',
-            environment: mpesa_environment || existingPartner.mpesa_environment
-          },
-          vault_passphrase
-        )
+        // Encrypt credentials using Node.js crypto
+        const encryptedCredentials = encryptCredentials({
+          consumer_key: mpesa_consumer_key,
+          consumer_secret: mpesa_consumer_secret,
+          initiator_password: mpesa_initiator_password,
+          security_credential: mpesa_security_credential,
+          shortcode: existingPartner.mpesa_shortcode || '',
+          environment: mpesa_environment || existingPartner.mpesa_environment
+        }, vault_passphrase)
+
+        // Store encrypted credentials in database
+        const { error: vaultError } = await supabase
+          .from('partners')
+          .update({ 
+            encrypted_credentials: encryptedCredentials,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', partner_id)
+
+        if (vaultError) {
+          throw new Error(`Failed to store encrypted credentials: ${vaultError.message}`)
+        }
       } catch (vaultError) {
         console.error('Failed to update vault credentials:', vaultError)
         return NextResponse.json(
