@@ -131,7 +131,7 @@ class CredentialManager {
         partner = partnerResult
       } catch (selectError) {
         // If credential columns don't exist, try with basic columns only
-        console.log('⚠️ [CredentialManager] Credential columns not found, trying basic columns')
+        // Credential columns not found, trying basic columns
         const { data: partnerResult, error } = await supabase
           .from('partners')
           .select('id, name, mpesa_shortcode, mpesa_environment')
@@ -145,32 +145,22 @@ class CredentialManager {
       }
     }
 
-    // Debug: Log what we have
-    console.log('🔍 [CredentialManager] Partner data:', {
-      hasEncryptedCredentials: !!partner.encrypted_credentials,
-      hasConsumerKey: !!partner.consumer_key,
-      hasConsumerSecret: !!partner.consumer_secret,
-      hasInitiatorPassword: !!partner.initiator_password,
-      hasSecurityCredential: !!partner.security_credential,
-      securityCredentialLength: partner.security_credential ? partner.security_credential.length : 0,
-      securityCredentialPreview: partner.security_credential ? partner.security_credential.substring(0, 20) + '...' : 'null',
-      partnerId: partnerId
-    })
+    // Check partner data availability
 
     // Try to use encrypted credentials first
     if (partner.encrypted_credentials) {
       try {
-        console.log('🔐 [CredentialManager] Attempting to decrypt vault credentials')
+        // Attempting to decrypt vault credentials
         return await this.decryptCredentials(partner.encrypted_credentials, passphrase)
       } catch (decryptError) {
-        console.log('⚠️ [CredentialManager] Vault decryption failed, falling back to plain text credentials')
+        // Vault decryption failed, falling back to plain text credentials
         // Fall through to use plain text credentials
       }
     }
 
     // Fallback to plain text credentials if encrypted ones are not available or fail to decrypt
     if (partner.consumer_key && partner.consumer_secret && partner.initiator_password) {
-      console.log('📝 [CredentialManager] Using plain text credentials as fallback')
+      // Using plain text credentials as fallback
       return {
         consumer_key: partner.consumer_key,
         consumer_secret: partner.consumer_secret,
@@ -222,3 +212,5 @@ class CredentialManager {
 }
 
 export { CredentialManager, type DecryptedCredentials, type EncryptedCredentials }
+
+

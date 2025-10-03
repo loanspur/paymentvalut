@@ -91,11 +91,7 @@ export default function DisbursePage() {
       }
       const apiKeyToUse = selectedPartner.api_key
 
-      console.log('🚀 [Frontend] Sending disbursement request:', {
-        url: '/api/disburse',
-        apiKey: apiKeyToUse ? apiKeyToUse.substring(0, 10) + '...' : 'none',
-        disbursementData
-      })
+      // Sending disbursement request
 
       const response = await fetch('/api/disburse', {
         method: 'POST',
@@ -108,11 +104,7 @@ export default function DisbursePage() {
 
       const data = await response.json()
 
-      console.log('📥 [Frontend] Received response:', {
-        status: response.status,
-        statusText: response.statusText,
-        data: JSON.stringify(data, null, 2)
-      })
+      // Response received
 
       if (response.ok && (data.status === 'accepted' || data.status === 'queued')) {
         addNotification({

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { CredentialManager } from '../../../../supabase/functions/_shared/credential-manager.ts'
 
 // Initialize Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -10,71 +11,6 @@ if (!supabaseUrl || !supabaseServiceKey) {
 }
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
-
-// Enhanced Credential Manager for vault operations
-class EnhancedCredentialManager {
-  // Encrypt credentials and store in vault
-  static async encryptAndStoreCredentials(
-    partnerId: string, 
-    credentials: {
-      consumer_key: string
-      consumer_secret: string
-      passkey?: string
-      initiator_name?: string
-      initiator_password: string
-      security_credential?: string
-      environment: string
-    },
-    passphrase?: string
-  ): Promise<void> {
-    try {
-      // Use provided passphrase or generate one
-      const vaultPassphrase = passphrase || process.env.MPESA_VAULT_PASSPHRASE || 'mpesa-vault-passphrase-2025'
-      
-      // Create JSON structure
-      const credentialsJson = JSON.stringify(credentials)
-      
-      // Encode as base64 (simple encoding for now)
-      const encryptedData = btoa(credentialsJson)
-      
-      // Hash the passphrase
-      const passphraseHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(vaultPassphrase))
-      const passphraseHashHex = Array.from(new Uint8Array(passphraseHash))
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('')
-      
-      // Store in database
-      const { error } = await supabase
-        .from('partners')
-        .update({
-          encrypted_credentials: encryptedData,
-          vault_passphrase_hash: passphraseHashHex
-        })
-        .eq('id', partnerId)
-      
-      if (error) {
-        throw new Error(`Failed to store encrypted credentials: ${error.message}`)
-      }
-      
-      console.log('✅ Credentials encrypted and stored in vault for partner:', partnerId)
-      
-    } catch (error) {
-      console.error('❌ Failed to encrypt and store credentials:', error)
-      throw new Error(`Failed to encrypt credentials: ${error.message}`)
-    }
-  }
-
-  // Check if partner has vault credentials
-  static async hasVaultCredentials(partnerId: string): Promise<boolean> {
-    const { data: partner } = await supabase
-      .from('partners')
-      .select('encrypted_credentials')
-      .eq('id', partnerId)
-      .single()
-    
-    return !!partner?.encrypted_credentials
-  }
-}
 
 // Update existing partner with vault credentials
 export async function PUT(request: NextRequest) {
@@ -166,15 +102,14 @@ export async function PUT(request: NextRequest) {
     // Update vault credentials if requested
     if (update_credentials && mpesa_consumer_key && mpesa_consumer_secret && mpesa_initiator_password) {
       try {
-        await EnhancedCredentialManager.encryptAndStoreCredentials(
+        await CredentialManager.storePartnerCredentials(
           partner_id,
           {
             consumer_key: mpesa_consumer_key,
             consumer_secret: mpesa_consumer_secret,
-            passkey: mpesa_passkey,
-            initiator_name: mpesa_initiator_name,
             initiator_password: mpesa_initiator_password,
             security_credential: mpesa_security_credential,
+            shortcode: existingPartner.mpesa_shortcode || '',
             environment: mpesa_environment || existingPartner.mpesa_environment
           },
           vault_passphrase
@@ -204,7 +139,7 @@ export async function PUT(request: NextRequest) {
         ip_whitelist_enabled: updatedPartner.ip_whitelist_enabled,
         is_mpesa_configured: updatedPartner.is_mpesa_configured,
         is_active: updatedPartner.is_active,
-        has_vault_credentials: await EnhancedCredentialManager.hasVaultCredentials(partner_id),
+        has_vault_credentials: false, // Simplified - vault status can be checked separately
         updated_at: updatedPartner.updated_at
       }
     })

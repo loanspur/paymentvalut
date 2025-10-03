@@ -15,7 +15,7 @@ serve(async (req) => {
   }
 
   try {
-    console.log('🔔 [Edge Function] Disbursement request received')
+    // Disbursement request received
     
     const body = await req.json()
     const apiKey = req.headers.get('x-api-key')
@@ -47,7 +47,7 @@ serve(async (req) => {
     // Validate API key
     const { data: partner, error: partnerError } = await supabaseClient
       .from('partners')
-      .select('id, name, mpesa_shortcode, mpesa_environment, is_mpesa_configured, mpesa_initiator_name')
+      .select('id, name, mpesa_shortcode, mpesa_environment, is_mpesa_configured, mpesa_initiator_name, consumer_key, consumer_secret, initiator_password, security_credential, encrypted_credentials')
       .eq('api_key_hash', await hashAPIKey(apiKey))
       .eq('is_active', true)
       .single()
@@ -70,9 +70,26 @@ serve(async (req) => {
     const vaultPassphrase = Deno.env.get('MPESA_VAULT_PASSPHRASE') || 'mpesa-vault-passphrase-2025'
     let credentials
     try {
-      credentials = await CredentialManager.getPartnerCredentials(partner.id, vaultPassphrase)
+      credentials = await CredentialManager.getPartnerCredentials(partner.id, vaultPassphrase, partner)
+      // Credentials retrieved successfully
     } catch (vaultError) {
-      throw new Error(`Failed to retrieve M-Pesa credentials for ${partner.name}: ${vaultError.message}`)
+      console.error('❌ [Edge Function] Vault credential retrieval failed for partner:', partner.name, vaultError)
+      // Attempting to use plain text credentials as fallback
+      
+      // Fallback to plain text credentials
+      if (partner.consumer_key && partner.consumer_secret && partner.initiator_password) {
+        // Using plain text credentials as fallback
+        credentials = {
+          consumer_key: partner.consumer_key,
+          consumer_secret: partner.consumer_secret,
+          initiator_password: partner.initiator_password,
+          security_credential: partner.security_credential || partner.initiator_password,
+          shortcode: partner.mpesa_shortcode || '',
+          environment: partner.mpesa_environment || 'sandbox'
+        }
+      } else {
+        throw new Error(`Failed to retrieve M-Pesa credentials for ${partner.name}: ${vaultError.message}`)
+      }
     }
 
     const consumerKey = credentials.consumer_key
@@ -94,8 +111,7 @@ serve(async (req) => {
       ? 'https://api.safaricom.co.ke' 
       : 'https://sandbox.safaricom.co.ke'
     
-    console.log('🎫 [Daraja] Getting OAuth token from:', baseUrl)
-    console.log('🎫 [Daraja] Using consumer key:', consumerKey.substring(0, 10) + '...')
+    // Getting OAuth token from M-Pesa
       
     const tokenResponse = await fetch(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
       method: 'GET',
@@ -105,8 +121,7 @@ serve(async (req) => {
     })
 
     const tokenData = await tokenResponse.json()
-    console.log('🎫 [Daraja] OAuth response status:', tokenResponse.status)
-    console.log('🎫 [Daraja] OAuth response body:', JSON.stringify(tokenData, null, 2))
+    // OAuth response received
     
     if (!tokenResponse.ok) {
       throw new Error(`OAuth failed ${tokenResponse.status}: ${JSON.stringify(tokenData)}`)
@@ -116,7 +131,7 @@ serve(async (req) => {
       throw new Error('No access token received from M-Pesa')
     }
     
-    console.log('✅ [Daraja] OAuth token received successfully')
+    // OAuth token received successfully
 
     // Prepare B2C request
     const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, -3)
@@ -127,16 +142,11 @@ serve(async (req) => {
     }
     const securityCredential = credentials.security_credential
     
-    console.log('🔐 [Daraja] Using security credential from vault (length):', securityCredential.length)
+    // Using security credential from vault
     
-    // Debug: Log the callback URLs being constructed
+    // Construct callback URLs
     const resultURL = `${supabaseUrl}/functions/v1/mpesa-b2c-result`
     const timeoutURL = `${supabaseUrl}/functions/v1/mpesa-b2c-timeout`
-    
-    console.log('🔗 [Daraja] Callback URLs being sent to M-Pesa:')
-    console.log('🔗 [Daraja] ResultURL:', resultURL)
-    console.log('🔗 [Daraja] QueueTimeOutURL:', timeoutURL)
-    console.log('🔗 [Daraja] Supabase URL:', supabaseUrl)
     
     const b2cRequest = {
       InitiatorName: credentials.initiator_name || partner.mpesa_initiator_name || process.env.DEFAULT_INITIATOR_NAME || "default_initiator",
@@ -151,9 +161,7 @@ serve(async (req) => {
       Occasion: body.client_request_id || 'manual'
     }
 
-    // Call M-Pesa B2C API with explicit logging
-    console.log('📤 [Daraja] Making B2C payment request to:', `${baseUrl}/mpesa/b2c/v1/paymentrequest`)
-    console.log('📤 [Daraja] B2C request payload:', JSON.stringify(b2cRequest, null, 2))
+    // Call M-Pesa B2C API
     
     const b2cResponse = await fetch(`${baseUrl}/mpesa/b2c/v1/paymentrequest`, {
       method: 'POST',
@@ -165,8 +173,7 @@ serve(async (req) => {
     })
 
     const b2cData = await b2cResponse.json()
-    console.log('📥 [Daraja] B2C response status:', b2cResponse.status)
-    console.log('📥 [Daraja] B2C response body:', JSON.stringify(b2cData, null, 2))
+    // B2C response received
     
     if (!b2cResponse.ok) {
       throw new Error(`B2C API failed ${b2cResponse.status}: ${JSON.stringify(b2cData)}`)
@@ -175,31 +182,25 @@ serve(async (req) => {
     // Check if M-Pesa transaction was successful
     const isMpesaSuccess = b2cData.ResponseCode === '0'
     
-    console.log('🔍 [Daraja] Transaction validation:', {
-      responseCode: b2cData.ResponseCode,
-      responseDescription: b2cData.ResponseDescription,
-      conversationId: b2cData.ConversationID,
-      originatorConversationId: b2cData.OriginatorConversationID,
-      isMpesaSuccess
-    })
+    // Transaction validation
 
     // If M-Pesa transaction failed, throw an error
     if (!isMpesaSuccess) {
-      console.log('⚠️ [Daraja] M-Pesa transaction failed:', b2cData.ResponseDescription)
+      // M-Pesa transaction failed
       throw new Error(`M-Pesa transaction failed: ${b2cData.ResponseDescription || 'Unknown error'}`)
     }
 
     // Create disbursement request record (only with basic columns that definitely exist)
     const disbursementData: any = {
       origin: 'ussd', // Use 'ussd' instead of 'api' to satisfy database constraint
-      tenant_id: body.tenant_id,
-      customer_id: body.customer_id,
-      client_request_id: body.client_request_id,
-      msisdn: body.msisdn,
-      amount: body.amount,
+        tenant_id: body.tenant_id,
+        customer_id: body.customer_id,
+        client_request_id: body.client_request_id,
+        msisdn: body.msisdn,
+        amount: body.amount,
       status: b2cData.ResponseCode === '0' ? 'accepted' : 'failed', // Use 'accepted' instead of 'pending'
-      partner_id: partner.id,
-      mpesa_shortcode: partner.mpesa_shortcode,
+        partner_id: partner.id,
+        mpesa_shortcode: partner.mpesa_shortcode,
       conversation_id: b2cData.ConversationID, // Add conversation ID for callback matching
       originator_conversation_id: b2cData.OriginatorConversationID // Add originator conversation ID
     }
@@ -237,19 +238,19 @@ serve(async (req) => {
       
       if (fallbackError) {
         console.error('Fallback insert also failed:', fallbackError)
-        return new Response(
-          JSON.stringify({
-            status: 'rejected',
+      return new Response(
+        JSON.stringify({
+          status: 'rejected',
             error_code: 'DB_1001',
             error_message: `Database error: ${fallbackError.message}`
-          }),
-          { 
-            status: 500, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-          }
-        )
-      }
-      
+        }),
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
+
       disbursementRequest = fallbackRequest
       console.log('✅ Fallback insert successful (without conversation IDs)')
     } else {
@@ -258,40 +259,40 @@ serve(async (req) => {
 
     // Return response based on M-Pesa response
     if (b2cData.ResponseCode === '0') {
-      console.log('✅ [Daraja] B2C payment request accepted by M-Pesa')
-      return new Response(
+      // B2C payment request accepted by M-Pesa
+        return new Response(
         JSON.stringify({
           status: 'accepted',
           conversation_id: b2cData.ConversationID,
           originator_conversation_id: b2cData.OriginatorConversationID,
           disbursement_id: disbursementRequest?.id
         }),
-        { 
-          status: 200, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    } else {
-      console.log('❌ [Daraja] B2C payment request rejected by M-Pesa:', b2cData.ResponseDescription)
-      return new Response(
-        JSON.stringify({
-          status: 'rejected',
+          { 
+            status: 200, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
+      } else {
+      // B2C payment request rejected by M-Pesa
+        return new Response(
+          JSON.stringify({
+            status: 'rejected',
           error_code: b2cData.ResponseCode,
           error_message: b2cData.ResponseDescription
-        }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
+          }),
+          { 
+            status: 400, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
+      }
 
   } catch (error) {
     console.error('Error in disbursement:', error)
-    return new Response(
-      JSON.stringify({
-        status: 'rejected',
-        error_code: 'B2C_1004',
+      return new Response(
+        JSON.stringify({
+          status: 'rejected',
+          error_code: 'B2C_1004',
         error_message: error.message || 'M-Pesa service unavailable'
       }),
       { 

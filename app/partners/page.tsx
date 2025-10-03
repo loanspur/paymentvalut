@@ -164,6 +164,20 @@ export default function PartnersPage() {
           updateData.api_key_hash = apiKeyHashHex
         }
 
+        // Always update M-Pesa credentials if provided (for fallback mechanism)
+        if (formData.mpesa_consumer_key) {
+          updateData.consumer_key = formData.mpesa_consumer_key
+        }
+        if (formData.mpesa_consumer_secret) {
+          updateData.consumer_secret = formData.mpesa_consumer_secret
+        }
+        if (formData.mpesa_initiator_password) {
+          updateData.initiator_password = formData.mpesa_initiator_password
+        }
+        if (formData.security_credential) {
+          updateData.security_credential = formData.security_credential
+        }
+
         const { data, error } = await supabase
           .from('partners')
           .update(updateData)
@@ -273,7 +287,11 @@ export default function PartnersPage() {
           is_active: formData.is_active,
           is_mpesa_configured: formData.is_mpesa_configured,
           api_key: apiKey, // Add the actual API key
-          api_key_hash: apiKeyHashHex
+          api_key_hash: apiKeyHashHex,
+          // Also store in the fallback columns for redundancy
+          consumer_key: formData.mpesa_consumer_key,
+          consumer_secret: formData.mpesa_consumer_secret,
+          initiator_password: formData.mpesa_initiator_password
         }
 
         // Only include columns that exist in the database
@@ -334,38 +352,38 @@ export default function PartnersPage() {
 
           try {
             const partnerId = data[0].id
-            const response = await fetch('/api/partners/store-credentials', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                partnerId,
-                credentials
-              })
+          const response = await fetch('/api/partners/store-credentials', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              partnerId,
+              credentials
             })
+          })
 
-            if (response.ok) {
-              addNotification({
-                type: 'success',
-                title: 'Vault Updated',
-                message: 'M-Pesa credentials stored securely in vault'
-              })
-            } else {
-              addNotification({
-                type: 'warning',
-                title: 'Vault Warning',
-                message: 'Partner saved but credentials not stored in vault'
-              })
-            }
-          } catch (vaultError) {
+           if (response.ok) {
+             addNotification({
+               type: 'success',
+               title: 'Vault Updated',
+               message: 'M-Pesa credentials stored securely in vault'
+             })
+           } else {
+             addNotification({
+               type: 'warning',
+               title: 'Vault Warning',
+               message: 'Partner saved but credentials not stored in vault'
+             })
+           }
+         } catch (vaultError) {
             console.error('Vault error:', vaultError)
-            addNotification({
+           addNotification({
               type: 'warning',
               title: 'Vault Warning',
               message: 'Partner saved but failed to store credentials in vault'
-            })
-          }
+           })
+         }
         }
       }
 
