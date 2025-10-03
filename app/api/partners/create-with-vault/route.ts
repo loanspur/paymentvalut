@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
         name,
         mpesa_shortcode,
         mpesa_environment,
-        mpesa_initiator_name: mpesa_initiator_name || 'testapi',
+        mpesa_initiator_name: mpesa_initiator_name || process.env.DEFAULT_INITIATOR_NAME || 'default_initiator',
         contact_email,
         contact_phone,
         description,

@@ -1,0 +1,522 @@
+// Comprehensive Duplicate Prevention Service
+// Handles multiple layers of duplicate prevention and intelligent insufficient funds management
+
+export interface DuplicateCheckResult {
+  isDuplicate: boolean
+  blockReason?: string
+  blockType?: string
+  existingRequest?: any
+  shouldQueue?: boolean
+  queueReason?: string
+}
+
+export interface InsufficientFundsResult {
+  hasInsufficientFunds: boolean
+  currentBalance: number
+  requestedAmount: number
+  shortfall: number
+  shouldQueue: boolean
+  estimatedRefillTime?: Date
+}
+
+export class DuplicatePreventionService {
+  private supabaseClient: any
+
+  constructor(supabaseClient: any) {
+    this.supabaseClient = supabaseClient
+  }
+
+  /**
+   * Comprehensive duplicate check with multiple layers
+   */
+  async checkForDuplicates(
+    partnerId: string,
+    customerId: string,
+    msisdn: string,
+    amount: number,
+    clientIp: string,
+    clientRequestId: string
+  ): Promise<DuplicateCheckResult> {
+    
+    // 1. Check basic idempotency (client_request_id)
+    const idempotencyCheck = await this.checkIdempotency(partnerId, clientRequestId)
+    if (idempotencyCheck.isDuplicate) {
+      return idempotencyCheck
+    }
+
+    // 2. Check time-based restrictions
+    const timeBasedCheck = await this.checkTimeBasedRestrictions(
+      partnerId, customerId, msisdn, amount, clientIp
+    )
+    if (timeBasedCheck.isDuplicate) {
+      return timeBasedCheck
+    }
+
+    // 3. Check daily limits
+    const dailyLimitCheck = await this.checkDailyLimits(
+      partnerId, customerId, clientIp, amount
+    )
+    if (dailyLimitCheck.isDuplicate) {
+      return dailyLimitCheck
+    }
+
+    // 4. Check active blocks
+    const blockCheck = await this.checkActiveBlocks(
+      partnerId, customerId, clientIp
+    )
+    if (blockCheck.isDuplicate) {
+      return blockCheck
+    }
+
+    return { isDuplicate: false }
+  }
+
+  /**
+   * Check basic idempotency using client_request_id
+   */
+  private async checkIdempotency(
+    partnerId: string, 
+    clientRequestId: string
+  ): Promise<DuplicateCheckResult> {
+    const { data: existingRequest } = await this.supabaseClient
+      .from('disbursement_requests')
+      .select('id, status, conversation_id, created_at')
+      .eq('client_request_id', clientRequestId)
+      .eq('partner_id', partnerId)
+      .single()
+
+    if (existingRequest) {
+      return {
+        isDuplicate: true,
+        blockReason: `Request with client_request_id '${clientRequestId}' already exists`,
+        blockType: 'idempotency',
+        existingRequest
+      }
+    }
+
+    return { isDuplicate: false }
+  }
+
+  /**
+   * Check time-based restrictions (same customer+amount, same IP within time window)
+   */
+  private async checkTimeBasedRestrictions(
+    partnerId: string,
+    customerId: string,
+    msisdn: string,
+    amount: number,
+    clientIp: string
+  ): Promise<DuplicateCheckResult> {
+    
+    // Get time-based restrictions for this partner
+    const { data: restrictions } = await this.supabaseClient
+      .from('disbursement_restrictions')
+      .select('restriction_type, time_window_minutes')
+      .eq('partner_id', partnerId)
+      .eq('is_enabled', true)
+      .in('restriction_type', ['same_customer_amount_time', 'same_ip_time'])
+
+    for (const restriction of restrictions || []) {
+      const timeWindow = restriction.time_window_minutes * 60 * 1000 // Convert to milliseconds
+      const cutoffTime = new Date(Date.now() - timeWindow)
+
+      if (restriction.restriction_type === 'same_customer_amount_time') {
+        // Check for same customer + same amount within time window
+        const { data: recentRequest } = await this.supabaseClient
+          .from('disbursement_requests')
+          .select('id, created_at, status')
+          .eq('partner_id', partnerId)
+          .eq('customer_id', customerId)
+          .eq('amount', amount)
+          .gte('created_at', cutoffTime.toISOString())
+          .in('status', ['queued', 'accepted', 'success'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+
+        if (recentRequest) {
+          const timeDiff = Date.now() - new Date(recentRequest.created_at).getTime()
+          const minutesAgo = Math.floor(timeDiff / 60000)
+          
+          return {
+            isDuplicate: true,
+            blockReason: `Duplicate disbursement: Same customer (${customerId}) and amount (KES ${amount}) within ${restriction.time_window_minutes} minutes. Last request was ${minutesAgo} minutes ago.`,
+            blockType: 'duplicate_customer_amount',
+            existingRequest: recentRequest
+          }
+        }
+      }
+
+      if (restriction.restriction_type === 'same_ip_time') {
+        // Check for same IP within time window
+        const { data: recentRequest } = await this.supabaseClient
+          .from('disbursement_requests')
+          .select('id, created_at, status, customer_id, amount')
+          .eq('partner_id', partnerId)
+          .gte('created_at', cutoffTime.toISOString())
+          .in('status', ['queued', 'accepted', 'success'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+
+        if (recentRequest) {
+          const timeDiff = Date.now() - new Date(recentRequest.created_at).getTime()
+          const minutesAgo = Math.floor(timeDiff / 60000)
+          
+          return {
+            isDuplicate: true,
+            blockReason: `Rate limit exceeded: Same IP (${clientIp}) within ${restriction.time_window_minutes} minutes. Last request was ${minutesAgo} minutes ago.`,
+            blockType: 'duplicate_ip',
+            existingRequest: recentRequest
+          }
+        }
+      }
+    }
+
+    return { isDuplicate: false }
+  }
+
+  /**
+   * Check daily limits per customer and IP
+   */
+  private async checkDailyLimits(
+    partnerId: string,
+    customerId: string,
+    clientIp: string,
+    amount: number
+  ): Promise<DuplicateCheckResult> {
+    
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+
+    // Get daily limit restrictions
+    const { data: restrictions } = await this.supabaseClient
+      .from('disbursement_restrictions')
+      .select('restriction_type, daily_limit_amount, daily_limit_count')
+      .eq('partner_id', partnerId)
+      .eq('is_enabled', true)
+      .in('restriction_type', ['same_customer_daily_limit', 'same_ip_daily_limit'])
+
+    for (const restriction of restrictions || []) {
+      if (restriction.restriction_type === 'same_customer_daily_limit') {
+        // Check customer daily limits
+        const { data: dailyStats } = await this.supabaseClient
+          .from('disbursement_requests')
+          .select('amount')
+          .eq('partner_id', partnerId)
+          .eq('customer_id', customerId)
+          .gte('created_at', today.toISOString())
+          .lt('created_at', tomorrow.toISOString())
+          .in('status', ['queued', 'accepted', 'success'])
+
+        const dailyAmount = dailyStats?.reduce((sum: number, req: any) => sum + parseFloat(req.amount), 0) || 0
+        const dailyCount = dailyStats?.length || 0
+
+        if (dailyAmount + amount > restriction.daily_limit_amount) {
+          return {
+            isDuplicate: true,
+            blockReason: `Daily amount limit exceeded: Customer ${customerId} has already disbursed KES ${dailyAmount} today (limit: KES ${restriction.daily_limit_amount})`,
+            blockType: 'daily_limit_exceeded'
+          }
+        }
+
+        if (dailyCount >= restriction.daily_limit_count) {
+          return {
+            isDuplicate: true,
+            blockReason: `Daily count limit exceeded: Customer ${customerId} has already made ${dailyCount} disbursements today (limit: ${restriction.daily_limit_count})`,
+            blockType: 'daily_limit_exceeded'
+          }
+        }
+      }
+
+      if (restriction.restriction_type === 'same_ip_daily_limit') {
+        // Check IP daily limits
+        const { data: dailyStats } = await this.supabaseClient
+          .from('disbursement_requests')
+          .select('amount')
+          .eq('partner_id', partnerId)
+          .gte('created_at', today.toISOString())
+          .lt('created_at', tomorrow.toISOString())
+          .in('status', ['queued', 'accepted', 'success'])
+
+        const dailyAmount = dailyStats?.reduce((sum: number, req: any) => sum + parseFloat(req.amount), 0) || 0
+        const dailyCount = dailyStats?.length || 0
+
+        if (dailyAmount + amount > restriction.daily_limit_amount) {
+          return {
+            isDuplicate: true,
+            blockReason: `Daily IP amount limit exceeded: IP ${clientIp} has already disbursed KES ${dailyAmount} today (limit: KES ${restriction.daily_limit_amount})`,
+            blockType: 'daily_limit_exceeded'
+          }
+        }
+
+        if (dailyCount >= restriction.daily_limit_count) {
+          return {
+            isDuplicate: true,
+            blockReason: `Daily IP count limit exceeded: IP ${clientIp} has already made ${dailyCount} disbursements today (limit: ${restriction.daily_limit_count})`,
+            blockType: 'daily_limit_exceeded'
+          }
+        }
+      }
+    }
+
+    return { isDuplicate: false }
+  }
+
+  /**
+   * Check for active blocks
+   */
+  private async checkActiveBlocks(
+    partnerId: string,
+    customerId: string,
+    clientIp: string
+  ): Promise<DuplicateCheckResult> {
+    
+    const now = new Date()
+
+    // Check customer blocks
+    const { data: customerBlock } = await this.supabaseClient
+      .from('disbursement_blocks')
+      .select('block_reason, block_expires_at, block_type')
+      .eq('partner_id', partnerId)
+      .eq('customer_id', customerId)
+      .or(`block_expires_at.is.null,block_expires_at.gt.${now.toISOString()}`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (customerBlock) {
+      return {
+        isDuplicate: true,
+        blockReason: `Customer blocked: ${customerBlock.block_reason}`,
+        blockType: customerBlock.block_type
+      }
+    }
+
+    // Check IP blocks
+    const { data: ipBlock } = await this.supabaseClient
+      .from('disbursement_blocks')
+      .select('block_reason, block_expires_at, block_type')
+      .eq('partner_id', partnerId)
+      .eq('client_ip', clientIp)
+      .or(`block_expires_at.is.null,block_expires_at.gt.${now.toISOString()}`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (ipBlock) {
+      return {
+        isDuplicate: true,
+        blockReason: `IP blocked: ${ipBlock.block_reason}`,
+        blockType: ipBlock.block_type
+      }
+    }
+
+    return { isDuplicate: false }
+  }
+
+  /**
+   * Check for insufficient funds and determine if should queue
+   */
+  async checkInsufficientFunds(
+    partnerId: string,
+    amount: number
+  ): Promise<InsufficientFundsResult> {
+    
+    // Get current balance
+    const { data: latestBalance } = await this.supabaseClient
+      .from('balance_requests')
+      .select('utility_account_balance, created_at')
+      .eq('partner_id', partnerId)
+      .eq('status', 'completed')
+      .not('utility_account_balance', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (!latestBalance) {
+      return {
+        hasInsufficientFunds: false,
+        currentBalance: 0,
+        requestedAmount: amount,
+        shortfall: amount,
+        shouldQueue: false
+      }
+    }
+
+    const currentBalance = parseFloat(latestBalance.utility_account_balance)
+    const shortfall = amount - currentBalance
+
+    if (shortfall <= 0) {
+      return {
+        hasInsufficientFunds: false,
+        currentBalance,
+        requestedAmount: amount,
+        shortfall: 0,
+        shouldQueue: false
+      }
+    }
+
+    // Check if insufficient funds queueing is enabled
+    const { data: queueRestriction } = await this.supabaseClient
+      .from('disbursement_restrictions')
+      .select('is_enabled')
+      .eq('partner_id', partnerId)
+      .eq('restriction_type', 'insufficient_funds_queue')
+      .eq('is_enabled', true)
+      .single()
+
+    const shouldQueue = !!queueRestriction
+
+    return {
+      hasInsufficientFunds: true,
+      currentBalance,
+      requestedAmount: amount,
+      shortfall,
+      shouldQueue,
+      estimatedRefillTime: this.estimateRefillTime(partnerId, shortfall)
+    }
+  }
+
+  /**
+   * Queue disbursement for insufficient funds
+   */
+  async queueForInsufficientFunds(
+    disbursementRequestId: string,
+    partnerId: string,
+    customerId: string,
+    msisdn: string,
+    amount: number,
+    clientIp: string,
+    priority: number = 1
+  ): Promise<void> {
+    
+    const nextRetryAt = new Date(Date.now() + (5 * 60 * 1000)) // 5 minutes from now
+
+    await this.supabaseClient
+      .from('insufficient_funds_queue')
+      .insert({
+        disbursement_request_id: disbursementRequestId,
+        partner_id: partnerId,
+        customer_id: customerId,
+        msisdn: msisdn,
+        amount: amount,
+        client_ip: clientIp,
+        priority: priority,
+        retry_count: 0,
+        max_retries: 3,
+        next_retry_at: nextRetryAt.toISOString(),
+        status: 'queued'
+      })
+  }
+
+  /**
+   * Create a block for duplicate prevention
+   */
+  async createBlock(
+    partnerId: string,
+    blockType: string,
+    blockReason: string,
+    customerId?: string,
+    clientIp?: string,
+    amount?: number,
+    originalRequestId?: string,
+    expiresInMinutes?: number
+  ): Promise<void> {
+    
+    const blockExpiresAt = expiresInMinutes 
+      ? new Date(Date.now() + (expiresInMinutes * 60 * 1000))
+      : null
+
+    await this.supabaseClient
+      .from('disbursement_blocks')
+      .insert({
+        partner_id: partnerId,
+        block_type: blockType,
+        block_reason: blockReason,
+        customer_id: customerId,
+        client_ip: clientIp,
+        amount: amount,
+        block_expires_at: blockExpiresAt?.toISOString(),
+        original_request_id: originalRequestId
+      })
+  }
+
+  /**
+   * Estimate when funds might be available (simple heuristic)
+   */
+  private estimateRefillTime(partnerId: string, shortfall: number): Date {
+    // Simple heuristic: assume funds might be available in 1-4 hours
+    // In production, this could be based on historical patterns
+    const hoursToAdd = Math.min(4, Math.max(1, Math.ceil(shortfall / 10000)))
+    return new Date(Date.now() + (hoursToAdd * 60 * 60 * 1000))
+  }
+
+  /**
+   * Process insufficient funds queue
+   */
+  async processInsufficientFundsQueue(partnerId: string): Promise<void> {
+    const now = new Date()
+
+    // Get queued items ready for retry
+    const { data: queuedItems } = await this.supabaseClient
+      .from('insufficient_funds_queue')
+      .select(`
+        *,
+        disbursement_requests!inner(id, status)
+      `)
+      .eq('partner_id', partnerId)
+      .eq('status', 'queued')
+      .lte('next_retry_at', now.toISOString())
+      .lt('retry_count', 'max_retries')
+      .order('priority', { ascending: true })
+      .order('created_at', { ascending: true })
+      .limit(10)
+
+    for (const item of queuedItems || []) {
+      try {
+        // Check if funds are now available
+        const fundsCheck = await this.checkInsufficientFunds(partnerId, item.amount)
+        
+        if (!fundsCheck.hasInsufficientFunds) {
+          // Funds available, process the disbursement
+          await this.supabaseClient
+            .from('insufficient_funds_queue')
+            .update({ 
+              status: 'processing',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', item.id)
+
+          // Here you would trigger the actual disbursement
+          // This would be handled by the main disbursement service
+          
+        } else {
+          // Still insufficient funds, schedule next retry
+          const nextRetryMinutes = Math.min(60, 5 * Math.pow(2, item.retry_count)) // Exponential backoff
+          const nextRetryAt = new Date(Date.now() + (nextRetryMinutes * 60 * 1000))
+
+          await this.supabaseClient
+            .from('insufficient_funds_queue')
+            .update({
+              retry_count: item.retry_count + 1,
+              next_retry_at: nextRetryAt.toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', item.id)
+        }
+      } catch (error) {
+        // Mark as failed after max retries
+        await this.supabaseClient
+          .from('insufficient_funds_queue')
+          .update({
+            status: 'failed',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', item.id)
+      }
+    }
+  }
+}

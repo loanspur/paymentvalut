@@ -61,9 +61,9 @@ x-api-key: your_partner_api_key
 
 | Partner | Tenant ID | API Key | Status |
 |---------|-----------|---------|--------|
-| Kulman Group Limited | kulman | kulmna_sk_live_1234567890abcdef | Active |
-| Finsef Limited | finsafe | finsef_sk_live_1234567890abcdef | Active |
-| ABC Limited | abc | abc_sk_live_1234567890abcdef | Active |
+| Kulman Group Limited | kulman | [API_KEY_HIDDEN] | Active |
+| Finsef Limited | finsafe | [API_KEY_HIDDEN] | Active |
+| ABC Limited | abc | [API_KEY_HIDDEN] | Active |
 
 ## Security Requirements
 
@@ -85,7 +85,7 @@ x-api-key: your_partner_api_key
 ## Request Headers
 \`\`\`json
 {
-  "x-api-key": "kulmna_sk_live_1234567890abcdef",
+  "x-api-key": "[YOUR_API_KEY]",
   "Content-Type": "application/json"
 }
 \`\`\`
@@ -198,7 +198,7 @@ x-api-key: your_partner_api_key
 
 ## Example Request
 \`\`\`bash
-curl -H "x-api-key: kulmna_sk_live_1234567890abcdef" \\
+curl -H "x-api-key: [YOUR_API_KEY]" \\
   "https://your-domain.com/api/transactions/status?conversation_id=AG_20250913_1234567890"
 \`\`\`
 
@@ -360,12 +360,12 @@ The system automatically extracts the following data from callbacks:
 // Partner configurations
 const PARTNERS = {
   kulman: {
-    apiKey: "kulmna_sk_live_1234567890abcdef",
+    apiKey: "[YOUR_API_KEY]",
     tenantId: "kulman",
     baseUrl: "https://your-domain.com"
   },
   finsafe: {
-    apiKey: "finsef_sk_live_1234567890abcdef",
+    apiKey: "[YOUR_API_KEY]",
     tenantId: "finsafe",
     baseUrl: "https://your-domain.com"
   }
@@ -420,7 +420,7 @@ async function checkTransactionStatus(conversationId, partner) {
 ### Send Money
 \`\`\`bash
 curl -X POST https://your-domain.com/api/disburse \\
-  -H "x-api-key: kulmna_sk_live_1234567890abcdef" \\
+  -H "x-api-key: [YOUR_API_KEY]" \\
   -H "Content-Type: application/json" \\
   -d '{
     "amount": 100,
@@ -434,7 +434,7 @@ curl -X POST https://your-domain.com/api/disburse \\
 
 ### Check Status
 \`\`\`bash
-curl -H "x-api-key: kulmna_sk_live_1234567890abcdef" \\
+curl -H "x-api-key: [YOUR_API_KEY]" \\
   "https://your-domain.com/api/transactions/status?conversation_id=AG_20250913_1234567890"
 \`\`\`
 
@@ -446,11 +446,11 @@ curl -H "x-api-key: kulmna_sk_live_1234567890abcdef" \\
 function sendMoney($partner, $amount, $phone, $clientRequestId) {
     $config = [
         'kulman' => [
-            'apiKey' => 'kulmna_sk_live_1234567890abcdef',
+            'apiKey' => '[YOUR_API_KEY]',
             'tenantId' => 'kulman'
         ],
         'finsafe' => [
-            'apiKey' => 'finsef_sk_live_1234567890abcdef',
+            'apiKey' => '[YOUR_API_KEY]',
             'tenantId' => 'finsafe'
         ]
     ];

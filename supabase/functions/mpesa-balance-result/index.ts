@@ -103,7 +103,7 @@ serve(async (req) => {
           balance_before: balanceBefore,
           balance_after: balanceAfter,
           utility_account_balance: utilityAccountBalance,
-          updated_at: new Date().toISOString()
+          callback_received_at: new Date().toISOString()
         })
         .eq('id', balanceRequest.id)
 

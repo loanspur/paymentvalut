@@ -175,8 +175,24 @@ export async function PUT(request: NextRequest) {
 
     if (updateError) {
       console.error('Error updating monitoring config:', updateError)
+      console.error('Config data being inserted:', configData)
+      
+      // Provide more helpful error messages for common constraint violations
+      let errorMessage = 'Failed to update monitoring configuration'
+      if (updateError.message.includes('variance_drop_threshold_range')) {
+        errorMessage = 'Variance drop threshold is outside the allowed range. Please contact support to fix the database constraint.'
+      } else if (updateError.message.includes('variance_drop_threshold_min')) {
+        errorMessage = 'Variance drop threshold must be at least 1 KES'
+      } else if (updateError.message.includes('check constraint')) {
+        errorMessage = 'One or more values violate database constraints. Please check your input values.'
+      }
+      
       return NextResponse.json(
-        { error: 'Failed to update monitoring configuration' },
+        { 
+          error: errorMessage,
+          details: updateError.message,
+          configData: configData
+        },
         { status: 500 }
       )
     }

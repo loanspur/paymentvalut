@@ -26,6 +26,7 @@ import {
   Wifi,
   WifiOff
 } from 'lucide-react'
+import NotificationSystem, { useNotifications } from '../../components/NotificationSystem'
 
 interface Tenant {
   id: string
@@ -68,6 +69,9 @@ export default function TransactionMonitoringPage() {
   const [lastRefresh, setLastRefresh] = useState(new Date())
   const [configs, setConfigs] = useState<Record<string, TenantConfig>>({})
   const [isSaving, setIsSaving] = useState(false)
+  
+  // Notification system
+  const { notifications, addNotification, removeNotification } = useNotifications()
 
   // Fetch tenants data with real balances
   const fetchTenants = async () => {
@@ -158,11 +162,11 @@ export default function TransactionMonitoringPage() {
               id: data.config.id,
               partner_id: data.config.partner_id,
               balance_threshold: data.config.working_account_threshold || 1000,
-              variance_threshold: 20, // 20% variance threshold
-              variance_drop_threshold: 5000, // 5000 KES drop threshold for alerts
+              variance_threshold: 20, // 20% variance threshold (not used in current system)
+              variance_drop_threshold: data.config.variance_drop_threshold || 5000, // Use saved value from database
               check_interval_minutes: data.config.check_interval_minutes || 15,
               slack_webhook_url: data.config.slack_webhook_url || '',
-              slack_channel: data.config.slack_channel || '#alerts',
+              slack_channel: data.config.slack_channel || '#mpesa-alerts', // Use saved value from database
               is_enabled: data.config.is_enabled || false,
               last_checked_at: data.config.last_checked_at || ''
             }
@@ -203,10 +207,37 @@ export default function TransactionMonitoringPage() {
             ...prev,
             [tenantId]: { ...prev[tenantId], ...config }
           }))
+          
+          // Show success notification
+          addNotification({
+            type: 'success',
+            title: 'Configuration Saved',
+            message: 'Monitoring configuration has been updated successfully.'
+          })
+        } else {
+          // Show error notification for API error
+          addNotification({
+            type: 'error',
+            title: 'Save Failed',
+            message: data.error || 'Failed to save configuration. Please try again.'
+          })
         }
+      } else {
+        // Show error notification for HTTP error
+        const errorData = await response.json().catch(() => ({}))
+        addNotification({
+          type: 'error',
+          title: 'Save Failed',
+          message: errorData.error || `HTTP ${response.status}: Failed to save configuration.`
+        })
       }
     } catch (error) {
       console.error('Error saving tenant config:', error)
+      addNotification({
+        type: 'error',
+        title: 'Save Failed',
+        message: 'Network error occurred while saving configuration. Please check your connection and try again.'
+      })
     } finally {
       setIsSaving(false)
     }
@@ -667,6 +698,12 @@ export default function TransactionMonitoringPage() {
           </div>
         </div>
       </div>
+      
+      {/* Notification System */}
+      <NotificationSystem 
+        notifications={notifications} 
+        onRemove={removeNotification} 
+      />
     </div>
   )
 }

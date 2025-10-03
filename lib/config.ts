@@ -27,7 +27,7 @@ export const config = {
   // Default values
   defaults: {
     mpesaEnvironment: process.env.MPESA_ENVIRONMENT || 'sandbox',
-    initiatorName: process.env.MPESA_INITIATOR_NAME || 'testapi',
+    initiatorName: process.env.MPESA_INITIATOR_NAME || 'default_initiator',
     commandId: 'BusinessPayment'
   }
 }

@@ -16,7 +16,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { partner_id, all_tenants } = body
 
-    console.log(`🔄 [Balance Trigger] Request received:`, { partner_id, all_tenants })
 
     // Get the Supabase project URL from environment
     if (!supabaseUrl) {
@@ -39,7 +38,6 @@ export async function POST(request: NextRequest) {
         .eq('is_mpesa_configured', true)
 
       if (partnersError) {
-        console.error('❌ [Balance Trigger] Error fetching partners:', partnersError)
         return NextResponse.json(
           { error: 'Failed to fetch partners' },
           { status: 500 }
@@ -54,12 +52,10 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      console.log(`📊 [Balance Trigger] Triggering balance checks for ${partners.length} partners`)
 
       // Trigger balance check for each partner
       const balanceCheckPromises = partners.map(async (partner) => {
         try {
-          console.log(`🔄 [Balance Trigger] Triggering balance check for partner ${partner.id} (${partner.name})`)
           
              const response = await fetch(edgeFunctionUrl, {
                method: 'POST',
@@ -76,7 +72,6 @@ export async function POST(request: NextRequest) {
           const responseData = await response.json()
 
           if (!response.ok) {
-            console.error(`❌ [Balance Trigger] Error for partner ${partner.id}:`, responseData)
             return {
               partner_id: partner.id,
               partner_name: partner.name,
@@ -86,7 +81,6 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          console.log(`✅ [Balance Trigger] Success for partner ${partner.id}:`, responseData)
           return {
             partner_id: partner.id,
             partner_name: partner.name,
@@ -94,7 +88,6 @@ export async function POST(request: NextRequest) {
             data: responseData
           }
         } catch (error: any) {
-          console.error(`❌ [Balance Trigger] Exception for partner ${partner.id}:`, error)
           return {
             partner_id: partner.id,
             partner_name: partner.name,
@@ -108,7 +101,6 @@ export async function POST(request: NextRequest) {
 
     } else if (partner_id) {
       // Single partner balance check
-      console.log(`🔄 [Balance Trigger] Triggering balance check for partner ${partner_id}`)
 
              const response = await fetch(edgeFunctionUrl, {
                method: 'POST',
@@ -125,7 +117,6 @@ export async function POST(request: NextRequest) {
       const responseData = await response.json()
 
       if (!response.ok) {
-        console.error('❌ [Balance Trigger] Edge Function error:', responseData)
         return NextResponse.json(
           { 
             error: 'Failed to trigger balance check',
@@ -136,7 +127,6 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      console.log('✅ [Balance Trigger] Balance check triggered successfully:', responseData)
       results = [{
         partner_id: partner_id,
         success: true,
@@ -165,7 +155,6 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error: any) {
-    console.error('❌ [Balance Trigger] Error:', error)
     return NextResponse.json(
       { 
         error: 'Internal server error',

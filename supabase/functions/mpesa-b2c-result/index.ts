@@ -54,7 +54,75 @@ serve(async (req) => {
     const originatorConversationId = Result.OriginatorConversationID
     const transactionId = Result.TransactionID
 
-    // Find the disbursement request by conversation ID
+    // First, try to find a balance request by conversation ID
+    let { data: balanceRequest, error: balanceError } = await supabaseClient
+      .from('balance_requests')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .single()
+
+    if (!balanceError && balanceRequest) {
+      console.log('✅ [M-Pesa Callback] Found balance request:', balanceRequest.id)
+      
+      // Extract balance information from ResultParameters
+      let balanceBefore = null
+      let balanceAfter = null
+      let utilityAccountBalance = null
+
+      if (Result.ResultParameters?.ResultParameter) {
+        for (const param of Result.ResultParameters.ResultParameter) {
+          switch (param.Key) {
+            case 'AccountBalance':
+              balanceAfter = parseFloat(param.Value)
+              break
+            case 'B2CUtilityAccountAvailableFunds':
+              utilityAccountBalance = parseFloat(param.Value)
+              break
+            case 'B2CWorkingAccountAvailableFunds':
+              balanceBefore = parseFloat(param.Value)
+              break
+          }
+        }
+      }
+
+      // Determine the final status based on result code
+      let finalStatus = 'failed'
+      if (Result.ResultCode === 0) {
+        finalStatus = 'completed'
+      } else if (Result.ResultCode === 1) {
+        finalStatus = 'pending'
+      }
+
+      // Update the balance request status with balance information
+      const { error: updateError } = await supabaseClient
+        .from('balance_requests')
+        .update({
+          status: finalStatus,
+          result_code: Result.ResultCode.toString(),
+          result_desc: Result.ResultDesc,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          utility_account_balance: utilityAccountBalance,
+          callback_received_at: new Date().toISOString()
+        })
+        .eq('id', balanceRequest.id)
+
+      if (updateError) {
+        console.error('❌ [M-Pesa Callback] Error updating balance request:', updateError)
+      } else {
+        console.log('✅ [M-Pesa Callback] Balance request updated successfully:', {
+          id: balanceRequest.id,
+          status: finalStatus,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          utility_account_balance: utilityAccountBalance
+        })
+      }
+
+      return new Response('OK', { status: 200 })
+    }
+
+    // If not a balance request, try to find a disbursement request by conversation ID
     let { data: disbursementRequest, error: findError } = await supabaseClient
       .from('disbursement_requests')
       .select('*')
@@ -251,24 +319,38 @@ serve(async (req) => {
       finalStatus
     })
 
-    // Build update object with only existing columns
+    // Build update object with only basic columns that definitely exist
     const updateData: any = {
       status: finalStatus,
       result_code: Result.ResultCode.toString(),
       result_desc: Result.ResultDesc,
-      transaction_id: mpesaTransactionId, // Use receipt number as primary ID
-      receipt_number: receiptNumber,
-      transaction_amount: transactionAmount,
-      transaction_date: transactionDate,
-      customer_name: customerName,
       updated_at: new Date().toISOString()
     }
 
-    // Add balance data if available (only use columns that definitely exist)
+    // Only add columns that we know exist from the basic schema
+    if (mpesaTransactionId) {
+      updateData.transaction_id = mpesaTransactionId
+    }
+    
+    if (receiptNumber) {
+      updateData.receipt_number = receiptNumber
+    }
+    
+    if (transactionAmount !== null) {
+      updateData.transaction_amount = transactionAmount
+    }
+    
+    if (transactionDate) {
+      updateData.transaction_date = transactionDate
+    }
+    
+    if (customerName) {
+      updateData.customer_name = customerName
+    }
+    
+    // Add balance information if available
     if (utilityAccountBalance !== null) {
-      // Only add the new columns that we created in the migration
       updateData.utility_balance_at_transaction = utilityAccountBalance
-      // Don't add mpesa_utility_account_balance as it might not exist
     }
     
     if (workingAccountBalance !== null) {
@@ -277,12 +359,6 @@ serve(async (req) => {
     
     if (chargesAccountBalance !== null) {
       updateData.charges_balance_at_transaction = chargesAccountBalance
-    }
-
-    // Add balance timestamps if we have any balance data
-    if (utilityAccountBalance !== null || workingAccountBalance !== null || chargesAccountBalance !== null) {
-      updateData.balance_updated_at = new Date().toISOString()
-      updateData.balance_updated_at_transaction = new Date().toISOString()
     }
 
     console.log('🔍 [M-Pesa Callback] Update data:', updateData)
@@ -309,17 +385,16 @@ serve(async (req) => {
           status: finalStatus,
           result_code: Result.ResultCode.toString(),
           result_desc: Result.ResultDesc,
-          transaction_id: mpesaTransactionId,
-          receipt_number: receiptNumber,
-          transaction_amount: transactionAmount,
-          transaction_date: transactionDate,
-          customer_name: customerName,
           updated_at: new Date().toISOString()
         }
         
-        // Only add balance fields that we know exist (new columns from migration)
-        if (utilityAccountBalance !== null) {
-          fallbackData.utility_balance_at_transaction = utilityAccountBalance
+        // Only add fields that we know exist from the basic schema
+        if (mpesaTransactionId) {
+          fallbackData.transaction_id = mpesaTransactionId
+        }
+        
+        if (receiptNumber) {
+          fallbackData.receipt_number = receiptNumber
         }
         
         const { error: fallbackError } = await supabaseClient

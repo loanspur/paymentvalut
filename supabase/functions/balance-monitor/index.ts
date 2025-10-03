@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { CredentialManager } from '../_shared/credential-manager.ts'
 
 // CORS headers for Edge Function
 const corsHeaders = {
@@ -126,7 +127,6 @@ class CredentialManager {
       .single()
 
     if (error) {
-      console.error(`❌ [CredentialManager] Error fetching partner ${partnerId}:`, error)
       throw new Error(`Partner not found: ${error.message}`)
     }
 
@@ -134,29 +134,17 @@ class CredentialManager {
       throw new Error(`Partner with ID ${partnerId} not found`)
     }
 
-    console.log(`🔍 [CredentialManager] Partner ${partner.name} (${partnerId}):`, {
-      hasEncryptedCredentials: !!partner.encrypted_credentials,
-      hasConsumerKey: !!partner.consumer_key,
-      hasConsumerSecret: !!partner.consumer_secret,
-      hasInitiatorPassword: !!partner.initiator_password,
-      hasSecurityCredential: !!partner.security_credential,
-      environment: partner.mpesa_environment
-    })
-
     // Try to use encrypted credentials first
     if (partner.encrypted_credentials) {
       try {
-        console.log(`🔓 [CredentialManager] Decrypting credentials for ${partner.name}`)
         return await this.decryptCredentials(partner.encrypted_credentials, passphrase)
       } catch (decryptError) {
-        console.error(`❌ [CredentialManager] Failed to decrypt credentials for ${partner.name}:`, decryptError)
         // Fall through to use plain text credentials
       }
     }
 
     // Fallback to plain text credentials if encrypted ones are not available or fail to decrypt
     if (partner.consumer_key && partner.consumer_secret && partner.initiator_password && partner.security_credential) {
-      console.log(`📝 [CredentialManager] Using plain text credentials for ${partner.name}`)
       return {
         consumer_key: partner.consumer_key,
         consumer_secret: partner.consumer_secret,
@@ -280,7 +268,6 @@ serve(async (req) => {
 
     // If table doesn't exist, try partner_balance_configs
     if (configError && configError.code === 'PGRST205') {
-      console.log('balance_monitoring_config not found, trying partner_balance_configs')
       let fallbackQuery = supabaseClient
         .from('partner_balance_configs')
         .select('*')
@@ -345,7 +332,6 @@ serve(async (req) => {
         try {
           balanceData = await getCurrentBalance(supabaseClient, partner)
         } catch (balanceError) {
-          console.error(`❌ [Balance Monitor] Failed to get balance for ${partner.name}:`, balanceError)
           results.push({
             partner_id: config.partner_id,
             partner_name: partner.name,
@@ -378,7 +364,6 @@ serve(async (req) => {
             .eq('id', config.id)
         }
 
-        console.log(`🔍 [Balance Monitor] Balance data for ${partner.name}:`, balanceData)
         
         results.push({
           partner_id: config.partner_id,
@@ -422,25 +407,14 @@ serve(async (req) => {
 
 async function getCurrentBalance(supabaseClient: any, partner: Partner): Promise<BalanceData> {
   try {
-    console.log(`🔍 Getting real-time balance for ${partner.name} (${partner.mpesa_shortcode})`)
     
     // Get credentials from vault
     const vaultPassphrase = Deno.env.get('MPESA_VAULT_PASSPHRASE') || 'mpesa-vault-passphrase-2025'
     
     let credentials
     try {
-      console.log(`🔍 [Balance Monitor] Retrieving credentials for ${partner.name} (${partner.id})`)
       credentials = await CredentialManager.getPartnerCredentials(partner.id, vaultPassphrase)
-      console.log('✅ Credentials retrieved from vault for balance check:', {
-        partnerId: partner.id,
-        partnerName: partner.name,
-        hasConsumerKey: !!credentials.consumer_key,
-        hasConsumerSecret: !!credentials.consumer_secret,
-        hasSecurityCredential: !!credentials.security_credential,
-        environment: credentials.environment
-      })
     } catch (vaultError) {
-      console.error(`❌ [Balance Monitor] Failed to retrieve credentials for ${partner.name} (${partner.id}):`, vaultError)
       throw new Error(`Failed to retrieve M-Pesa credentials for ${partner.name}: ${vaultError.message}`)
     }
     
@@ -457,7 +431,7 @@ async function getCurrentBalance(supabaseClient: any, partner: Partner): Promise
       : 'https://sandbox.safaricom.co.ke/mpesa/accountbalance/v1/query'
 
     const balanceRequest = {
-      Initiator: credentials.initiator_name || 'testapi',
+      Initiator: credentials.initiator_name || process.env.DEFAULT_INITIATOR_NAME || 'default_initiator',
       SecurityCredential: credentials.security_credential,
       CommandID: 'AccountBalance',
       PartyA: partner.mpesa_shortcode,
@@ -485,21 +459,18 @@ async function getCurrentBalance(supabaseClient: any, partner: Partner): Promise
 
     // Parse the balance response (this is an asynchronous response for account balance)
     if (balanceData.ResponseCode === '0') {
-      console.log(`✅ [Balance Monitor] Balance request initiated for ${partner.name}`)
-      
       // Store the balance request in the database
       const { error: insertError } = await supabaseClient
         .from('balance_requests')
         .insert({
           partner_id: partner.id,
-          request_id: balanceData.OriginatorConversationID,
+          conversation_id: balanceData.ConversationID,
+          originator_conversation_id: balanceData.OriginatorConversationID,
+          shortcode: partner.mpesa_shortcode,
+          initiator_name: credentials.initiator_name || process.env.DEFAULT_INITIATOR_NAME || 'default_initiator',
           status: 'pending',
-          created_at: new Date().toISOString()
+          mpesa_response: balanceData
         })
-
-      if (insertError) {
-        console.error('Error storing balance request:', insertError)
-      }
 
       // Wait a moment for the callback to potentially arrive
       await new Promise(resolve => setTimeout(resolve, 2000))
@@ -507,7 +478,7 @@ async function getCurrentBalance(supabaseClient: any, partner: Partner): Promise
       // Try to get the latest balance from the database (from callback or previous requests)
       const { data: latestBalance, error: balanceError } = await supabaseClient
         .from('balance_requests')
-        .select('utility_account_balance, balance_after, updated_at')
+        .select('utility_account_balance, balance_after, updated_at, status')
         .eq('partner_id', partner.id)
         .eq('status', 'completed')
         .order('updated_at', { ascending: false })
@@ -515,7 +486,6 @@ async function getCurrentBalance(supabaseClient: any, partner: Partner): Promise
         .single()
 
       if (latestBalance && !balanceError) {
-        console.log(`✅ [Balance Monitor] Found balance from balance_requests for ${partner.name}:`, latestBalance)
         return {
           utility_account_balance: latestBalance.utility_account_balance || latestBalance.balance_after
         }
@@ -533,13 +503,10 @@ async function getCurrentBalance(supabaseClient: any, partner: Partner): Promise
         .single()
 
       if (latestDisbursement && !disbursementError) {
-        console.log(`✅ [Balance Monitor] Found balance from disbursement_requests for ${partner.name}:`, latestDisbursement)
         return {
           utility_account_balance: latestDisbursement.utility_balance_at_transaction
         }
       }
-
-      console.log(`⚠️ [Balance Monitor] No balance data found for ${partner.name}`)
       // If no recent balance found, return null
       return {
         utility_account_balance: null
@@ -549,7 +516,6 @@ async function getCurrentBalance(supabaseClient: any, partner: Partner): Promise
     }
 
   } catch (error) {
-    console.error(`❌ [Balance Monitor] Error getting balance for ${partner.name}:`, error)
     return {
       utility_account_balance: null
     }
@@ -593,18 +559,59 @@ async function checkBalanceThresholds(
 
   // Check utility account balance only
   if (balanceData.utility_account_balance !== null) {
-    const threshold = config.utility_account_threshold
-    if (balanceData.utility_account_balance < threshold) {
-      const alert = await createBalanceAlert(
-        supabaseClient,
-        config,
-        partner,
-        'utility',
-        balanceData.utility_account_balance,
-        threshold,
-        'low_balance'
-      )
-      if (alert) alerts.push(alert)
+    // Check for variance drop threshold first
+    const varianceDropThreshold = config.variance_drop_threshold || 0
+    
+    if (varianceDropThreshold > 0) {
+      // Get the previous balance to calculate variance
+      const { data: previousBalance, error: prevError } = await supabaseClient
+        .from('balance_requests')
+        .select('utility_account_balance, created_at')
+        .eq('partner_id', config.partner_id)
+        .eq('status', 'completed')
+        .not('utility_account_balance', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .offset(1) // Skip the current record to get the previous one
+
+      if (!prevError && previousBalance && previousBalance.length > 0) {
+        const previousBalanceAmount = previousBalance[0].utility_account_balance
+        const currentBalanceAmount = balanceData.utility_account_balance
+        const varianceDrop = previousBalanceAmount - currentBalanceAmount
+
+
+        // Only send alert if variance drop exceeds the threshold
+        if (varianceDrop > varianceDropThreshold) {
+          const alert = await createBalanceAlert(
+            supabaseClient,
+            config,
+            partner,
+            'utility',
+            currentBalanceAmount,
+            previousBalanceAmount,
+            'variance_drop',
+            varianceDrop
+          )
+          if (alert) alerts.push(alert)
+        }
+      }
+    }
+
+    // Only check low balance threshold if variance drop threshold is not set or is 0
+    if (!config.variance_drop_threshold || config.variance_drop_threshold <= 0) {
+      const threshold = config.utility_account_threshold
+      if (balanceData.utility_account_balance < threshold) {
+        const alert = await createBalanceAlert(
+          supabaseClient,
+          config,
+          partner,
+          'utility',
+          balanceData.utility_account_balance,
+          threshold,
+          'low_balance'
+        )
+        if (alert) alerts.push(alert)
+      }
     }
   }
 
@@ -618,7 +625,8 @@ async function createBalanceAlert(
   accountType: string,
   currentBalance: number,
   threshold: number,
-  alertType: string
+  alertType: string,
+  varianceDrop?: number
 ): Promise<any | null> {
   // Check if we already sent an alert recently (within last hour)
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
@@ -636,11 +644,23 @@ async function createBalanceAlert(
     return null // Don't send duplicate alerts
   }
 
-  const alertMessage = `🚨 Low Utility Balance Alert for ${partner.name}\n` +
-    `Current Utility Balance: KES ${currentBalance.toLocaleString()}\n` +
-    `Threshold: KES ${threshold.toLocaleString()}\n` +
-    `Short Code: ${partner.mpesa_shortcode}\n` +
-    `Time: ${new Date().toISOString()}`
+  let alertMessage = ''
+  
+  if (alertType === 'variance_drop') {
+    alertMessage = `🚨 Variance Drop Alert for ${partner.name}\n` +
+      `Current Utility Balance: KES ${currentBalance.toLocaleString()}\n` +
+      `Previous Balance: KES ${threshold.toLocaleString()}\n` +
+      `Variance Drop: KES ${varianceDrop?.toLocaleString()}\n` +
+      `Variance Drop Threshold: KES ${config.variance_drop_threshold?.toLocaleString()}\n` +
+      `Short Code: ${partner.mpesa_shortcode}\n` +
+      `Time: ${new Date().toISOString()}`
+  } else {
+    alertMessage = `🚨 Low Utility Balance Alert for ${partner.name}\n` +
+      `Current Utility Balance: KES ${currentBalance.toLocaleString()}\n` +
+      `Threshold: KES ${threshold.toLocaleString()}\n` +
+      `Short Code: ${partner.mpesa_shortcode}\n` +
+      `Time: ${new Date().toISOString()}`
+  }
 
   // Create alert record
   const { data: alert, error: alertError } = await supabaseClient

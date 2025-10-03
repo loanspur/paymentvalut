@@ -49,9 +49,9 @@ All API requests require a valid API key in the header.
 x-api-key: your_partner_api_key
 
 Available Partners & API Keys:
-• Kulman Group Limited - kulman - kulmna_sk_live_1234567890abcdef
-• Finsef Limited - finsafe - finsef_sk_live_1234567890abcdef
-• ABC Limited - abc - abc_sk_live_1234567890abcdef
+• Kulman Group Limited - kulman - [API_KEY_HIDDEN]
+• Finsef Limited - finsafe - [API_KEY_HIDDEN]
+• ABC Limited - abc - [API_KEY_HIDDEN]
 
 Security Requirements:
 • IP Whitelisting: Your USSD server IPs must be whitelisted
@@ -65,7 +65,7 @@ Security Requirements:
 
 Request Headers:
 {
-  "x-api-key": "kulmna_sk_live_1234567890abcdef",
+  "x-api-key": "[YOUR_API_KEY]",
   "Content-Type": "application/json"
 }
 

@@ -102,7 +102,7 @@ class CredentialManager {
   }
 
   // Get credentials for a partner (with decryption)
-  static async getPartnerCredentials(partnerId: string, passphrase: string): Promise<DecryptedCredentials> {
+  static async getPartnerCredentials(partnerId: string, passphrase: string, partnerData?: any): Promise<DecryptedCredentials> {
     const supabaseUrl = Deno.env.get('NEXT_PUBLIC_SUPABASE_URL') || Deno.env.get('SUPABASE_URL')
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
     
@@ -112,23 +112,80 @@ class CredentialManager {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // Get encrypted credentials from database
-    const { data: partner, error } = await supabase
-      .from('partners')
-      .select('encrypted_credentials')
-      .eq('id', partnerId)
-      .single()
+    let partner
+    if (partnerData) {
+      // Use provided partner data
+      partner = partnerData
+    } else {
+      // Try to get credentials from database, but handle missing columns gracefully
+      try {
+        const { data: partnerResult, error } = await supabase
+          .from('partners')
+          .select('encrypted_credentials, consumer_key, consumer_secret, initiator_password, security_credential, mpesa_shortcode, mpesa_environment')
+          .eq('id', partnerId)
+          .single()
 
-    if (error || !partner) {
-      throw new Error('Partner not found')
+        if (error || !partnerResult) {
+          throw new Error('Partner not found')
+        }
+        partner = partnerResult
+      } catch (selectError) {
+        // If credential columns don't exist, try with basic columns only
+        console.log('⚠️ [CredentialManager] Credential columns not found, trying basic columns')
+        const { data: partnerResult, error } = await supabase
+          .from('partners')
+          .select('id, name, mpesa_shortcode, mpesa_environment')
+          .eq('id', partnerId)
+          .single()
+
+        if (error || !partnerResult) {
+          throw new Error('Partner not found')
+        }
+        partner = partnerResult
+      }
     }
 
-    if (!partner.encrypted_credentials) {
-      throw new Error('No encrypted credentials found for partner')
+    // Debug: Log what we have
+    console.log('🔍 [CredentialManager] Partner data:', {
+      hasEncryptedCredentials: !!partner.encrypted_credentials,
+      hasConsumerKey: !!partner.consumer_key,
+      hasConsumerSecret: !!partner.consumer_secret,
+      hasInitiatorPassword: !!partner.initiator_password,
+      hasSecurityCredential: !!partner.security_credential,
+      securityCredentialLength: partner.security_credential ? partner.security_credential.length : 0,
+      securityCredentialPreview: partner.security_credential ? partner.security_credential.substring(0, 20) + '...' : 'null',
+      partnerId: partnerId
+    })
+
+    // Try to use encrypted credentials first
+    if (partner.encrypted_credentials) {
+      try {
+        console.log('🔐 [CredentialManager] Attempting to decrypt vault credentials')
+        return await this.decryptCredentials(partner.encrypted_credentials, passphrase)
+      } catch (decryptError) {
+        console.log('⚠️ [CredentialManager] Vault decryption failed, falling back to plain text credentials')
+        // Fall through to use plain text credentials
+      }
     }
 
-    // Decrypt credentials
-    return await this.decryptCredentials(partner.encrypted_credentials, passphrase)
+    // Fallback to plain text credentials if encrypted ones are not available or fail to decrypt
+    if (partner.consumer_key && partner.consumer_secret && partner.initiator_password) {
+      console.log('📝 [CredentialManager] Using plain text credentials as fallback')
+      return {
+        consumer_key: partner.consumer_key,
+        consumer_secret: partner.consumer_secret,
+        initiator_password: partner.initiator_password,
+        security_credential: partner.security_credential || partner.initiator_password,
+        shortcode: partner.mpesa_shortcode || '',
+        environment: partner.mpesa_environment || 'sandbox'
+      }
+    }
+
+    throw new Error(`No valid credentials found for partner ${partnerId}. Missing: ${[
+      !partner.consumer_key && 'consumer_key',
+      !partner.consumer_secret && 'consumer_secret', 
+      !partner.initiator_password && 'initiator_password'
+    ].filter(Boolean).join(', ')}`)
   }
 
   // Store encrypted credentials for a partner

@@ -7,7 +7,7 @@ POST https://your-project.supabase.co/functions/v1/disburse
 
 ## **2. Authentication**
 - **Header**: `x-api-key`
-- **Value**: `kulmna_sk_live_1234567890abcdef`
+- **Value**: `[YOUR_API_KEY]`
 
 ## **3. Request Format**
 ```json
@@ -89,7 +89,7 @@ The system uses these internal callback URLs for M-Pesa:
 ```bash
 curl -X POST https://your-project.supabase.co/functions/v1/disburse \
   -H "Content-Type: application/json" \
-  -H "x-api-key: kulmna_sk_live_1234567890abcdef" \
+  -H "x-api-key: [YOUR_API_KEY]" \
   -d '{
     "amount": 100,
     "msisdn": "254712345678",

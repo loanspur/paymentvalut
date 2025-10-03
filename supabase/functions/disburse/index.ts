@@ -1,76 +1,26 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { corsHeaders } from '../_shared/cors.ts'
+import { CredentialManager } from '../_shared/credential-manager.ts'
 
-interface DisburseRequest {
-  amount: number
-  msisdn: string
-  tenant_id: string
-  customer_id: string
-  client_request_id: string
-}
-
-interface DisburseResponse {
-  status: 'accepted' | 'rejected'
-  disbursement_id?: string
-  conversation_id?: string
-  will_callback?: boolean
-  error_code?: string
-  error_message?: string
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 serve(async (req) => {
-  // Handle CORS
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Get environment variables
-    const supabaseUrl = Deno.env.get('NEXT_PUBLIC_SUPABASE_URL') || Deno.env.get('SUPABASE_URL')
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    console.log('🔔 [Edge Function] Disbursement request received')
     
-  // Environment variables validated
-    
-    if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error(`Missing environment variables: supabaseUrl=${!!supabaseUrl}, serviceKey=${!!supabaseServiceKey}`)
-    }
-    
-    // Initialize Supabase client with service role key
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
-
-    // Get API key from headers
+    const body = await req.json()
     const apiKey = req.headers.get('x-api-key')
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({
-          status: 'rejected',
-          error_code: 'AUTH_1001',
-          error_message: 'API key required'
-        }),
-        { 
-          status: 401, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    // Verify API key hash
-    const encoder = new TextEncoder()
-    const data = encoder.encode(apiKey)
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-    const hashArray = Array.from(new Uint8Array(hashBuffer))
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
     
-    // Find partner by API key hash
-    const { data: partner, error: partnerError } = await supabaseClient
-      .from('partners')
-      .select('*')
-      .eq('api_key_hash', hashHex)
-      .eq('is_active', true)
-      .single()
-
-    if (partnerError || !partner) {
+    if (!apiKey) {
       return new Response(
         JSON.stringify({
           status: 'rejected',
@@ -84,215 +34,265 @@ serve(async (req) => {
       )
     }
 
-    // Check IP whitelisting if enabled
-    if (partner.ip_whitelist_enabled && partner.allowed_ips && partner.allowed_ips.length > 0) {
-      const clientIP = req.headers.get('x-forwarded-for') || 
-                      req.headers.get('x-real-ip') || 
-                      req.headers.get('cf-connecting-ip') ||
-                      'unknown'
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('NEXT_PUBLIC_SUPABASE_URL') || Deno.env.get('SUPABASE_URL')
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing Supabase environment variables')
+    }
+
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
+
+    // Validate API key
+    const { data: partner, error: partnerError } = await supabaseClient
+      .from('partners')
+      .select('id, name, mpesa_shortcode, mpesa_environment, is_mpesa_configured, mpesa_initiator_name')
+      .eq('api_key_hash', await hashAPIKey(apiKey))
+      .eq('is_active', true)
+      .single()
+
+    if (partnerError || !partner || !partner.is_mpesa_configured) {
+      return new Response(
+        JSON.stringify({
+          status: 'rejected',
+          error_code: 'AUTH_1002',
+          error_message: 'Invalid API key'
+        }),
+        { 
+          status: 401, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
+
+    // Get credentials from vault
+    const vaultPassphrase = Deno.env.get('MPESA_VAULT_PASSPHRASE') || 'mpesa-vault-passphrase-2025'
+    let credentials
+    try {
+      credentials = await CredentialManager.getPartnerCredentials(partner.id, vaultPassphrase)
+    } catch (vaultError) {
+      throw new Error(`Failed to retrieve M-Pesa credentials for ${partner.name}: ${vaultError.message}`)
+    }
+
+    const consumerKey = credentials.consumer_key
+    const consumerSecret = credentials.consumer_secret
+    const shortCode = credentials.shortcode || partner.mpesa_shortcode
+    const initiatorPassword = credentials.initiator_password
+    const environment = credentials.environment || partner.mpesa_environment || 'sandbox'
+
+    if (!consumerKey || !consumerSecret || !shortCode) {
+      throw new Error('M-Pesa credentials not configured for this partner')
+    }
+    
+    if (!initiatorPassword) {
+      throw new Error('M-Pesa InitiatorPassword not configured for this partner')
+    }
+
+    // Get access token with explicit logging
+    const baseUrl = environment === 'production' 
+      ? 'https://api.safaricom.co.ke' 
+      : 'https://sandbox.safaricom.co.ke'
+    
+    console.log('🎫 [Daraja] Getting OAuth token from:', baseUrl)
+    console.log('🎫 [Daraja] Using consumer key:', consumerKey.substring(0, 10) + '...')
       
-      // Extract the first IP from x-forwarded-for (in case of multiple proxies)
-      const requestIP = clientIP.split(',')[0].trim()
+    const tokenResponse = await fetch(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${btoa(`${consumerKey}:${consumerSecret}`)}`
+      }
+    })
+
+    const tokenData = await tokenResponse.json()
+    console.log('🎫 [Daraja] OAuth response status:', tokenResponse.status)
+    console.log('🎫 [Daraja] OAuth response body:', JSON.stringify(tokenData, null, 2))
+    
+    if (!tokenResponse.ok) {
+      throw new Error(`OAuth failed ${tokenResponse.status}: ${JSON.stringify(tokenData)}`)
+    }
+    
+    if (!tokenData.access_token) {
+      throw new Error('No access token received from M-Pesa')
+    }
+    
+    console.log('✅ [Daraja] OAuth token received successfully')
+
+    // Prepare B2C request
+    const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, -3)
+    
+    // Use ONLY the generated security credential, never fall back to plain password
+    if (!credentials.security_credential) {
+      throw new Error('Security credential not found in vault. Please generate and store the security credential in the partner form.')
+    }
+    const securityCredential = credentials.security_credential
+    
+    console.log('🔐 [Daraja] Using security credential from vault (length):', securityCredential.length)
+    
+    // Debug: Log the callback URLs being constructed
+    const resultURL = `${supabaseUrl}/functions/v1/mpesa-b2c-result`
+    const timeoutURL = `${supabaseUrl}/functions/v1/mpesa-b2c-timeout`
+    
+    console.log('🔗 [Daraja] Callback URLs being sent to M-Pesa:')
+    console.log('🔗 [Daraja] ResultURL:', resultURL)
+    console.log('🔗 [Daraja] QueueTimeOutURL:', timeoutURL)
+    console.log('🔗 [Daraja] Supabase URL:', supabaseUrl)
+    
+    const b2cRequest = {
+      InitiatorName: credentials.initiator_name || partner.mpesa_initiator_name || process.env.DEFAULT_INITIATOR_NAME || "default_initiator",
+      SecurityCredential: securityCredential,
+      CommandID: "BusinessPayment",
+      Amount: body.amount,
+      PartyA: shortCode,
+      PartyB: body.msisdn,
+      Remarks: `Disbursement ${body.client_request_id || 'manual'}`,
+      QueueTimeOutURL: timeoutURL,
+      ResultURL: resultURL,
+      Occasion: body.client_request_id || 'manual'
+    }
+
+    // Call M-Pesa B2C API with explicit logging
+    console.log('📤 [Daraja] Making B2C payment request to:', `${baseUrl}/mpesa/b2c/v1/paymentrequest`)
+    console.log('📤 [Daraja] B2C request payload:', JSON.stringify(b2cRequest, null, 2))
+    
+    const b2cResponse = await fetch(`${baseUrl}/mpesa/b2c/v1/paymentrequest`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${tokenData.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(b2cRequest)
+    })
+
+    const b2cData = await b2cResponse.json()
+    console.log('📥 [Daraja] B2C response status:', b2cResponse.status)
+    console.log('📥 [Daraja] B2C response body:', JSON.stringify(b2cData, null, 2))
+    
+    if (!b2cResponse.ok) {
+      throw new Error(`B2C API failed ${b2cResponse.status}: ${JSON.stringify(b2cData)}`)
+    }
+
+    // Check if M-Pesa transaction was successful
+    const isMpesaSuccess = b2cData.ResponseCode === '0'
+    
+    console.log('🔍 [Daraja] Transaction validation:', {
+      responseCode: b2cData.ResponseCode,
+      responseDescription: b2cData.ResponseDescription,
+      conversationId: b2cData.ConversationID,
+      originatorConversationId: b2cData.OriginatorConversationID,
+      isMpesaSuccess
+    })
+
+    // If M-Pesa transaction failed, throw an error
+    if (!isMpesaSuccess) {
+      console.log('⚠️ [Daraja] M-Pesa transaction failed:', b2cData.ResponseDescription)
+      throw new Error(`M-Pesa transaction failed: ${b2cData.ResponseDescription || 'Unknown error'}`)
+    }
+
+    // Create disbursement request record (only with basic columns that definitely exist)
+    const disbursementData: any = {
+      origin: 'ussd', // Use 'ussd' instead of 'api' to satisfy database constraint
+      tenant_id: body.tenant_id,
+      customer_id: body.customer_id,
+      client_request_id: body.client_request_id,
+      msisdn: body.msisdn,
+      amount: body.amount,
+      status: b2cData.ResponseCode === '0' ? 'accepted' : 'failed', // Use 'accepted' instead of 'pending'
+      partner_id: partner.id,
+      mpesa_shortcode: partner.mpesa_shortcode,
+      conversation_id: b2cData.ConversationID, // Add conversation ID for callback matching
+      originator_conversation_id: b2cData.OriginatorConversationID // Add originator conversation ID
+    }
+
+    // Try to insert with conversation IDs first
+    let { data: disbursementRequest, error: dbError } = await supabaseClient
+      .from('disbursement_requests')
+      .insert(disbursementData)
+      .select()
+      .single()
+
+    // If insert fails, try fallback without conversation IDs
+    if (dbError) {
+      console.error('Database error with conversation IDs:', dbError)
+      console.log('🔄 Attempting fallback insert without conversation IDs...')
       
-      if (!partner.allowed_ips.includes(requestIP)) {
-        console.log(`❌ IP whitelist violation: ${requestIP} not in allowed list:`, partner.allowed_ips)
+      // Create fallback data without conversation IDs
+      const fallbackData = {
+        origin: disbursementData.origin,
+        tenant_id: disbursementData.tenant_id,
+        customer_id: disbursementData.customer_id,
+        client_request_id: disbursementData.client_request_id,
+        msisdn: disbursementData.msisdn,
+        amount: disbursementData.amount,
+        status: disbursementData.status,
+        partner_id: disbursementData.partner_id,
+        mpesa_shortcode: disbursementData.mpesa_shortcode
+      }
+      
+      const { data: fallbackRequest, error: fallbackError } = await supabaseClient
+        .from('disbursement_requests')
+        .insert(fallbackData)
+        .select()
+        .single()
+      
+      if (fallbackError) {
+        console.error('Fallback insert also failed:', fallbackError)
         return new Response(
           JSON.stringify({
             status: 'rejected',
-            error_code: 'AUTH_1003',
-            error_message: 'IP address not whitelisted'
+            error_code: 'DB_1001',
+            error_message: `Database error: ${fallbackError.message}`
           }),
           { 
-            status: 403, 
+            status: 500, 
             headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
           }
         )
       }
       
-      console.log(`✅ IP whitelist check passed: ${requestIP} is allowed for partner ${partner.name}`)
+      disbursementRequest = fallbackRequest
+      console.log('✅ Fallback insert successful (without conversation IDs)')
+    } else {
+      console.log('✅ Insert successful (with conversation IDs)')
     }
 
-    // Parse request body
-    const body: DisburseRequest = await req.json()
-
-    // Validate request
-    if (!body.amount || !body.msisdn || !body.tenant_id || !body.customer_id || !body.client_request_id) {
-      return new Response(
-        JSON.stringify({
-          status: 'rejected',
-          error_code: 'B2C_1001',
-          error_message: 'Missing required fields'
-        }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    // Validate MSISDN format (Kenyan format)
-    const msisdnRegex = /^254[0-9]{9}$/
-    if (!msisdnRegex.test(body.msisdn)) {
-      return new Response(
-        JSON.stringify({
-          status: 'rejected',
-          error_code: 'B2C_1002',
-          error_message: 'Invalid MSISDN format. Use format: 254XXXXXXXXX'
-        }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    // Check for duplicate request (idempotency)
-    const { data: existingRequest } = await supabaseClient
-      .from('disbursement_requests')
-      .select('id, status, conversation_id')
-      .eq('client_request_id', body.client_request_id)
-      .eq('partner_id', partner.id)
-      .single()
-
-    if (existingRequest) {
+    // Return response based on M-Pesa response
+    if (b2cData.ResponseCode === '0') {
+      console.log('✅ [Daraja] B2C payment request accepted by M-Pesa')
       return new Response(
         JSON.stringify({
           status: 'accepted',
-          disbursement_id: existingRequest.id,
-          conversation_id: existingRequest.conversation_id,
-          will_callback: true
+          conversation_id: b2cData.ConversationID,
+          originator_conversation_id: b2cData.OriginatorConversationID,
+          disbursement_id: disbursementRequest?.id
         }),
         { 
           status: 200, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       )
-    }
-
-    // Create disbursement request in database
-    const { data: disbursementRequest, error: dbError } = await supabaseClient
-      .from('disbursement_requests')
-      .insert({
-        origin: 'ussd',
-        tenant_id: body.tenant_id,
-        customer_id: body.customer_id,
-        client_request_id: body.client_request_id,
-        msisdn: body.msisdn,
-        amount: body.amount,
-        status: 'queued',
-        partner_id: partner.id,
-        mpesa_shortcode: partner.mpesa_shortcode,
-        partner_shortcode_id: partner.id,
-        balance_updated_at: new Date().toISOString()
-      })
-      .select()
-      .single()
-
-    if (dbError) {
+    } else {
+      console.log('❌ [Daraja] B2C payment request rejected by M-Pesa:', b2cData.ResponseDescription)
       return new Response(
         JSON.stringify({
           status: 'rejected',
-          error_code: 'B2C_1003',
-          error_message: 'Database error'
+          error_code: b2cData.ResponseCode,
+          error_message: b2cData.ResponseDescription
         }),
         { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    // Call M-Pesa B2C API
-    const conversationId = `AG_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    
-    try {
-      const mpesaResponse = await callMpesaB2C({
-        amount: body.amount,
-        msisdn: body.msisdn,
-        conversationId,
-        disbursementId: disbursementRequest.id,
-        partnerId: partner.id
-      })
-
-      if (mpesaResponse.ResultCode === 0) {
-        // Update request status to success - M-Pesa accepted the transaction
-        await supabaseClient
-          .from('disbursement_requests')
-          .update({ 
-            status: 'success',
-            conversation_id: conversationId,
-            result_code: mpesaResponse.ResultCode.toString(),
-            result_desc: mpesaResponse.ResultDesc
-          })
-          .eq('id', disbursementRequest.id)
-
-        const response: DisburseResponse = {
-          status: 'success',
-          disbursement_id: disbursementRequest.id,
-          conversation_id: conversationId,
-          will_callback: true
-        }
-
-        return new Response(
-          JSON.stringify(response),
-          { 
-            status: 200, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-          }
-        )
-      } else {
-        // M-Pesa rejected the request
-        await supabaseClient
-          .from('disbursement_requests')
-          .update({ 
-            status: 'failed',
-            result_code: mpesaResponse.ResultCode.toString(),
-            result_desc: mpesaResponse.ResultDesc
-          })
-          .eq('id', disbursementRequest.id)
-
-        return new Response(
-          JSON.stringify({
-            status: 'rejected',
-            error_code: `B2C_${mpesaResponse.ResultCode}`,
-            error_message: mpesaResponse.ResultDesc
-          }),
-          { 
-            status: 400, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-          }
-        )
-      }
-    } catch (mpesaError) {
-      // Update request status to failed
-      await supabaseClient
-        .from('disbursement_requests')
-        .update({ 
-          status: 'failed',
-          result_desc: 'M-Pesa API error'
-        })
-        .eq('id', disbursementRequest.id)
-
-      return new Response(
-        JSON.stringify({
-          status: 'rejected',
-          error_code: 'B2C_1004',
-          error_message: 'M-Pesa service unavailable'
-        }),
-        { 
-          status: 503, 
+          status: 400, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       )
     }
 
   } catch (error) {
+    console.error('Error in disbursement:', error)
     return new Response(
       JSON.stringify({
         status: 'rejected',
-        error_code: 'B2C_1005',
-        error_message: 'Internal server error',
-        debug_info: error.message
+        error_code: 'B2C_1004',
+        error_message: error.message || 'M-Pesa service unavailable'
       }),
       { 
         status: 500, 
@@ -302,199 +302,11 @@ serve(async (req) => {
   }
 })
 
-async function callMpesaB2C(params: {
-  amount: number
-  msisdn: string
-  conversationId: string
-  disbursementId: string
-  partnerId: string
-}) {
-  // Get partner M-Pesa credentials from database
-  const supabaseClient = createClient(
-    Deno.env.get('SUPABASE_URL') ?? '',
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    }
-  )
-
-  const { data: partner, error: partnerError } = await supabaseClient
-    .from('partners')
-    .select('mpesa_shortcode, mpesa_consumer_key, mpesa_consumer_secret, mpesa_passkey, mpesa_environment, is_mpesa_configured, mpesa_initiator_name, mpesa_initiator_password')
-    .eq('id', params.partnerId)
-    .single()
-
-  if (partnerError || !partner || !partner.is_mpesa_configured) {
-    console.log('❌ Partner M-Pesa credentials not configured:', {
-      partnerError,
-      partner: partner ? {
-        id: partner.id,
-        name: partner.name,
-        is_mpesa_configured: partner.is_mpesa_configured
-      } : null
-    })
-    throw new Error('Partner M-Pesa credentials not configured')
-  }
-
-  const consumerKey = partner.mpesa_consumer_key
-  const consumerSecret = partner.mpesa_consumer_secret
-  const shortCode = partner.mpesa_shortcode
-  const passkey = partner.mpesa_passkey
-  const initiatorPassword = partner.mpesa_initiator_password
-  const environment = partner.mpesa_environment || 'sandbox'
-
-  if (!consumerKey || !consumerSecret || !shortCode) {
-    throw new Error('M-Pesa credentials not configured for this partner')
-  }
-  
-  if (!initiatorPassword) {
-    console.log('❌ M-Pesa InitiatorPassword not configured for partner:', {
-      partnerId: params.partnerId,
-      hasInitiatorPassword: !!partner.mpesa_initiator_password
-    })
-    throw new Error('M-Pesa InitiatorPassword not configured for this partner')
-  }
-  
-  // Note: Passkey is not required for B2C transactions according to Safaricom
-  
-  console.log('✅ M-Pesa credentials loaded:', {
-    partnerId: params.partnerId,
-    shortCode,
-    environment,
-    hasInitiatorPassword: !!initiatorPassword,
-    initiatorName: partner.mpesa_initiator_name
-  })
-
-  // Get access token
-  const baseUrl = environment === 'production' 
-    ? 'https://api.safaricom.co.ke' 
-    : 'https://sandbox.safaricom.co.ke'
-    
-  const tokenResponse = await fetch(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Basic ${btoa(`${consumerKey}:${consumerSecret}`)}`
-    }
-  })
-
-  const tokenData = await tokenResponse.json()
-  
-  if (!tokenResponse.ok) {
-    console.log('❌ M-Pesa Token Error:', {
-      status: tokenResponse.status,
-      statusText: tokenResponse.statusText,
-      response: tokenData
-    })
-    throw new Error(`M-Pesa token error: ${tokenResponse.status} - ${JSON.stringify(tokenData)}`)
-  }
-  
-  const accessToken = tokenData.access_token
-  
-  if (!accessToken) {
-    console.log('❌ No access token in response:', tokenData)
-    throw new Error('No access token received from M-Pesa')
-  }
-
-  // Prepare B2C request
-  const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, -3)
-  
-  // Use the pre-generated security credential from the database
-  // This is the encrypted credential provided by Safaricom/Daraja
-  const securityCredential = initiatorPassword
-  
-  console.log('🔐 Using stored Security Credential:', {
-    environment,
-    shortCode,
-    securityCredentialLength: securityCredential ? securityCredential.length : 0,
-    securityCredentialPreview: securityCredential ? securityCredential.substring(0, 20) + '...' : 'NULL'
-  })
-  
-  const b2cRequest = {
-    InitiatorName: partner.mpesa_initiator_name || "testapi",
-    SecurityCredential: securityCredential,
-    CommandID: "BusinessPayment",
-    Amount: params.amount,
-    PartyA: shortCode,
-    PartyB: params.msisdn,
-    Remarks: `Disbursement ${params.disbursementId}`,
-    QueueTimeOutURL: process.env.MPESA_CALLBACK_TIMEOUT_URL || "https://paymentvalut-ju.vercel.app/api/mpesa-callback/timeout",
-    ResultURL: process.env.MPESA_CALLBACK_RESULT_URL || "https://paymentvalut-ju.vercel.app/api/mpesa-callback/result",
-    Occasion: params.disbursementId
-  }
-
-  // Call M-Pesa B2C API
-  
-  // Log the complete request being sent to M-Pesa
-  console.log('🔵 M-Pesa B2C Request Details:', {
-    url: `${baseUrl}/mpesa/b2c/v1/paymentrequest`,
-    headers: {
-      'Authorization': `Bearer ${accessToken.substring(0, 20)}...`,
-      'Content-Type': 'application/json'
-    },
-    requestBody: b2cRequest,
-    timestamp: new Date().toISOString()
-  })
-
-  const b2cResponse = await fetch(`${baseUrl}/mpesa/b2c/v1/paymentrequest`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(b2cRequest)
-  })
-
-  // Log the complete response details
-  console.log('🔴 M-Pesa B2C Response Details:', {
-    status: b2cResponse.status,
-    statusText: b2cResponse.statusText,
-    headers: Object.fromEntries(b2cResponse.headers.entries()),
-    timestamp: new Date().toISOString()
-  })
-
-  if (!b2cResponse.ok) {
-    const errorText = await b2cResponse.text()
-    console.log('❌ M-Pesa API Error Response:', errorText)
-    throw new Error(`M-Pesa API error: ${b2cResponse.status} - ${errorText}`)
-  }
-
-  const b2cData = await b2cResponse.json()
-  
-  // Log the complete acknowledgement response from M-Pesa
-  console.log('✅ M-Pesa B2C Acknowledgement Response:', {
-    fullResponse: b2cData,
-    responseCode: b2cData.ResponseCode,
-    responseDescription: b2cData.ResponseDescription,
-    conversationId: b2cData.ConversationID,
-    originatorConversationId: b2cData.OriginatorConversationID,
-    timestamp: new Date().toISOString()
-  })
-  
-  if (b2cData.ResponseCode === '0') {
-    return {
-      ResultCode: 0,
-      ResultDesc: 'Success',
-      ConversationID: b2cData.ConversationID,
-      OriginatorConversationID: b2cData.OriginatorConversationID
-    }
-  } else {
-    // Handle non-numeric response codes
-    const responseCode = b2cData.ResponseCode
-    const numericCode = parseInt(responseCode)
-    
-    if (isNaN(numericCode)) {
-      return {
-        ResultCode: -1,
-        ResultDesc: `Invalid response code: ${responseCode}`
-      }
-    }
-    
-    return {
-      ResultCode: numericCode,
-      ResultDesc: b2cData.ResponseDescription || 'Unknown error'
-    }
-  }
+// Helper function to hash API key
+async function hashAPIKey(apiKey: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(apiKey)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 }

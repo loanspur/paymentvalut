@@ -108,7 +108,7 @@ Visit `http://localhost:3000` to access the admin interface.
 ```bash
 curl -X POST https://your-project.supabase.co/functions/v1/disburse \
   -H "Content-Type: application/json" \
-  -H "x-api-key: kulmna_sk_live_1234567890abcdef" \
+  -H "x-api-key: [YOUR_API_KEY]" \
   -d '{
     "amount": 1200,
     "msisdn": "2547XXXXXXXX",
@@ -122,7 +122,7 @@ curl -X POST https://your-project.supabase.co/functions/v1/disburse \
 ```bash
 curl -X POST https://your-project.supabase.co/functions/v1/disburse \
   -H "Content-Type: application/json" \
-  -H "x-api-key: finsef_sk_live_1234567890abcdef" \
+  -H "x-api-key: [YOUR_API_KEY]" \
   -d '{
     "amount": 1500,
     "msisdn": "2547XXXXXXXX",
@@ -136,7 +136,7 @@ curl -X POST https://your-project.supabase.co/functions/v1/disburse \
 ```bash
 curl -X POST https://your-project.supabase.co/functions/v1/disburse \
   -H "Content-Type: application/json" \
-  -H "x-api-key: abc_sk_live_1234567890abcdef" \
+  -H "x-api-key: [YOUR_API_KEY]" \
   -d '{
     "amount": 2000,
     "msisdn": "2547XXXXXXXX",

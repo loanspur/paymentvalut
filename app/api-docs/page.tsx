@@ -199,19 +199,19 @@ export default function APIDocsPage() {
                           <tr>
                             <td className="px-4 py-3 text-sm font-medium text-gray-900">Kulman Group Limited</td>
                             <td className="px-4 py-3 text-sm text-gray-600">kulman</td>
-                            <td className="px-4 py-3 text-sm font-mono text-gray-600">kulmna_sk_live_1234567890abcdef</td>
+                            <td className="px-4 py-3 text-sm font-mono text-gray-600">[API_KEY_HIDDEN]</td>
                             <td className="px-4 py-3"><span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">Active</span></td>
                           </tr>
                           <tr>
                             <td className="px-4 py-3 text-sm font-medium text-gray-900">Finsef Limited</td>
                             <td className="px-4 py-3 text-sm text-gray-600">finsafe</td>
-                            <td className="px-4 py-3 text-sm font-mono text-gray-600">finsef_sk_live_1234567890abcdef</td>
+                            <td className="px-4 py-3 text-sm font-mono text-gray-600">[API_KEY_HIDDEN]</td>
                             <td className="px-4 py-3"><span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">Active</span></td>
                           </tr>
                           <tr>
                             <td className="px-4 py-3 text-sm font-medium text-gray-900">ABC Limited</td>
                             <td className="px-4 py-3 text-sm text-gray-600">abc</td>
-                            <td className="px-4 py-3 text-sm font-mono text-gray-600">abc_sk_live_1234567890abcdef</td>
+                            <td className="px-4 py-3 text-sm font-mono text-gray-600">[API_KEY_HIDDEN]</td>
                             <td className="px-4 py-3"><span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">Active</span></td>
                           </tr>
                         </tbody>
@@ -246,7 +246,7 @@ export default function APIDocsPage() {
                     <h3 className="text-lg font-semibold text-gray-800">Request Headers</h3>
                     <div className="bg-gray-50 p-4 rounded-lg">
                       <pre className="text-sm">{`{
-  "x-api-key": "kulmna_sk_live_1234567890abcdef",
+  "x-api-key": "[YOUR_API_KEY]",
   "Content-Type": "application/json"
 }`}</pre>
                     </div>
@@ -426,7 +426,7 @@ export default function APIDocsPage() {
                   <div className="space-y-4">
                     <h3 className="text-lg font-semibold text-gray-800">Example Request</h3>
                     <div className="bg-gray-50 p-4 rounded-lg">
-                      <pre className="text-sm">{`curl -H "x-api-key: kulmna_sk_live_1234567890abcdef" \\
+                      <pre className="text-sm">{`curl -H "x-api-key: [YOUR_API_KEY]" \\
   "https://your-domain.com/api/transactions/status?conversation_id=AG_20250913_1234567890"`}</pre>
                     </div>
                   </div>
@@ -814,12 +814,12 @@ export default function APIDocsPage() {
                         <pre className="text-sm">{`// Partner configurations
 const PARTNERS = {
   kulman: {
-    apiKey: "kulmna_sk_live_1234567890abcdef",
+    apiKey: "[YOUR_API_KEY]",
     tenantId: "kulman",
     baseUrl: "https://your-domain.com"
   },
   finsafe: {
-    apiKey: "finsef_sk_live_1234567890abcdef",
+    apiKey: "[YOUR_API_KEY]",
     tenantId: "finsafe",
     baseUrl: "https://your-domain.com"
   }
@@ -877,7 +877,7 @@ async function checkTransactionStatus(conversationId, partner) {
                           <h4 className="font-semibold text-gray-700 mb-2">Send Money</h4>
                           <div className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto">
                             <pre className="text-sm">{`curl -X POST https://your-domain.com/api/disburse \\
-  -H "x-api-key: kulmna_sk_live_1234567890abcdef" \\
+  -H "x-api-key: [YOUR_API_KEY]" \\
   -H "Content-Type: application/json" \\
   -d '{
     "amount": 100,
@@ -893,7 +893,7 @@ async function checkTransactionStatus(conversationId, partner) {
                         <div>
                           <h4 className="font-semibold text-gray-700 mb-2">Check Status</h4>
                           <div className="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto">
-                            <pre className="text-sm">{`curl -H "x-api-key: kulmna_sk_live_1234567890abcdef" \\
+                            <pre className="text-sm">{`curl -H "x-api-key: [YOUR_API_KEY]" \\
   "https://your-domain.com/api/transactions/status?conversation_id=AG_20250913_1234567890"`}</pre>
                           </div>
                         </div>
@@ -908,11 +908,11 @@ async function checkTransactionStatus(conversationId, partner) {
 function sendMoney($partner, $amount, $phone, $clientRequestId) {
     $config = [
         'kulman' => [
-            'apiKey' => 'kulmna_sk_live_1234567890abcdef',
+            'apiKey' => '[YOUR_API_KEY]',
             'tenantId' => 'kulman'
         ],
         'finsafe' => [
-            'apiKey' => 'finsef_sk_live_1234567890abcdef',
+            'apiKey' => '[YOUR_API_KEY]',
             'tenantId' => 'finsafe'
         ]
     ];

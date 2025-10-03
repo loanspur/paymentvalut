@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function GET(request: NextRequest) {
   try {
-    const apiKey = 'kulman_1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
+    const apiKey = process.env.SAMPLE_API_KEY || 'your_sample_api_key_here'
     
     // Generate SHA-256 hash
     const encoder = new TextEncoder()

@@ -141,16 +141,24 @@ export default function PartnersPage() {
           mpesa_passkey: formData.mpesa_passkey,
           mpesa_initiator_name: formData.mpesa_initiator_name,
           mpesa_initiator_password: formData.mpesa_initiator_password,
+          security_credential: formData.security_credential, // Add security_credential to main record
           mpesa_environment: formData.mpesa_environment,
           is_active: formData.is_active,
           is_mpesa_configured: formData.is_mpesa_configured,
-          allowed_ips: formData.allowed_ips,
-          ip_whitelist_enabled: formData.ip_whitelist_enabled,
           updated_at: new Date().toISOString()
         }
 
-        // Only update API key if it was changed
-        if (formData.api_key && formData.api_key !== editingPartner.api_key) {
+        // Only include columns that exist in the database
+        // These columns might not exist in the current schema
+        if (formData.allowed_ips !== undefined) {
+          updateData.allowed_ips = formData.allowed_ips
+        }
+        if (formData.ip_whitelist_enabled !== undefined) {
+          updateData.ip_whitelist_enabled = formData.ip_whitelist_enabled
+        }
+
+        // Always update API key if provided
+        if (formData.api_key) {
           const apiKeyHashHex = await hashAPIKey(formData.api_key)
           updateData.api_key = formData.api_key
           updateData.api_key_hash = apiKeyHashHex
@@ -164,12 +172,79 @@ export default function PartnersPage() {
 
         if (error) {
           console.error('Error updating partner:', error)
+          
+          // Provide more specific error messages
+          let errorMessage = error.message
+          if (error.message.includes('allowed_ips')) {
+            errorMessage = 'Database schema issue: allowed_ips column missing. Please contact administrator.'
+          } else if (error.message.includes('ip_whitelist_enabled')) {
+            errorMessage = 'Database schema issue: ip_whitelist_enabled column missing. Please contact administrator.'
+          } else if (error.message.includes('Could not find')) {
+            errorMessage = 'Database schema issue: Some columns are missing. Please contact administrator.'
+          }
+          
           addNotification({
             type: 'error',
             title: 'Update Failed',
-            message: `Failed to update partner: ${error.message}`
+            message: errorMessage
           })
           return
+        }
+
+        // Store credentials in vault if M-Pesa credentials are provided
+        if (formData.mpesa_consumer_key && formData.mpesa_consumer_secret && formData.mpesa_initiator_password) {
+          const credentials = {
+            consumer_key: formData.mpesa_consumer_key,
+            consumer_secret: formData.mpesa_consumer_secret,
+            passkey: formData.mpesa_passkey || '',
+            initiator_name: formData.mpesa_initiator_name || '',
+            initiator_password: formData.mpesa_initiator_password,
+            security_credential: formData.security_credential,
+            environment: formData.mpesa_environment
+          }
+
+          try {
+            const response = await fetch('/api/partners/store-credentials', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                partnerId: editingPartner.id,
+                credentials
+              })
+            })
+
+            if (response.ok) {
+              addNotification({
+                type: 'success',
+                title: 'Vault Updated',
+                message: 'M-Pesa credentials stored securely in vault'
+              })
+            } else {
+              addNotification({
+                type: 'warning',
+                title: 'Vault Warning',
+                message: 'Partner updated but credentials not stored in vault'
+              })
+            }
+          } catch (vaultError) {
+            console.error('Vault error:', vaultError)
+            
+            // Provide more specific error messages for vault errors
+            let vaultErrorMessage = 'Partner updated but failed to store credentials in vault'
+            if (vaultError.message && vaultError.message.includes('encrypted_credentials')) {
+              vaultErrorMessage = 'Partner updated but database schema issue: encrypted_credentials column missing. Please contact administrator.'
+            } else if (vaultError.message && vaultError.message.includes('Could not find')) {
+              vaultErrorMessage = 'Partner updated but database schema issue: Some columns are missing. Please contact administrator.'
+            }
+            
+            addNotification({
+              type: 'warning',
+              title: 'Vault Warning',
+              message: vaultErrorMessage
+            })
+          }
         }
 
         addNotification({
@@ -193,14 +268,20 @@ export default function PartnersPage() {
           mpesa_passkey: formData.mpesa_passkey,
           mpesa_initiator_name: formData.mpesa_initiator_name,
           mpesa_initiator_password: formData.mpesa_initiator_password,
+          security_credential: formData.security_credential, // Add security_credential to main record
           mpesa_environment: formData.mpesa_environment,
           is_active: formData.is_active,
           is_mpesa_configured: formData.is_mpesa_configured,
-          allowed_ips: formData.allowed_ips,
-          ip_whitelist_enabled: formData.ip_whitelist_enabled,
-          api_key_hash: apiKeyHashHex,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          api_key: apiKey, // Add the actual API key
+          api_key_hash: apiKeyHashHex
+        }
+
+        // Only include columns that exist in the database
+        if (formData.allowed_ips !== undefined) {
+          insertData.allowed_ips = formData.allowed_ips
+        }
+        if (formData.ip_whitelist_enabled !== undefined) {
+          insertData.ip_whitelist_enabled = formData.ip_whitelist_enabled
         }
 
         const { data, error } = await supabase
@@ -210,10 +291,25 @@ export default function PartnersPage() {
 
         if (error) {
           console.error('Error adding partner:', error)
+          
+          // Provide more specific error messages
+          let errorMessage = error.message
+          if (error.message.includes('allowed_ips')) {
+            errorMessage = 'Database schema issue: allowed_ips column missing. Please contact administrator.'
+          } else if (error.message.includes('ip_whitelist_enabled')) {
+            errorMessage = 'Database schema issue: ip_whitelist_enabled column missing. Please contact administrator.'
+          } else if (error.message.includes('api_key')) {
+            errorMessage = 'Database schema issue: api_key column missing. Please contact administrator.'
+          } else if (error.message.includes('duplicate key')) {
+            errorMessage = 'Partner with this name or short code already exists.'
+          } else if (error.message.includes('Could not find')) {
+            errorMessage = 'Database schema issue: Some columns are missing. Please contact administrator.'
+          }
+          
           addNotification({
             type: 'error',
             title: 'Add Failed',
-            message: `Failed to add partner: ${error.message}`
+            message: errorMessage
           })
           return
         }
@@ -237,38 +333,39 @@ export default function PartnersPage() {
           }
 
           try {
-            const partnerId = editingPartner ? editingPartner.id : data[0].id
-          const response = await fetch('/api/partners/store-credentials', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              partnerId,
-              credentials
+            const partnerId = data[0].id
+            const response = await fetch('/api/partners/store-credentials', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                partnerId,
+                credentials
+              })
             })
-          })
 
-           if (response.ok) {
-             addNotification({
-               type: 'success',
-               title: 'Vault Updated',
-               message: 'M-Pesa credentials stored securely in vault'
-             })
-           } else {
-             addNotification({
-               type: 'warning',
-               title: 'Vault Warning',
-               message: 'Partner saved but credentials not stored in vault'
-             })
-           }
-         } catch (vaultError) {
-           addNotification({
-             type: 'error',
-             title: 'Vault Error',
-             message: 'Failed to store credentials in vault'
-           })
-         }
+            if (response.ok) {
+              addNotification({
+                type: 'success',
+                title: 'Vault Updated',
+                message: 'M-Pesa credentials stored securely in vault'
+              })
+            } else {
+              addNotification({
+                type: 'warning',
+                title: 'Vault Warning',
+                message: 'Partner saved but credentials not stored in vault'
+              })
+            }
+          } catch (vaultError) {
+            console.error('Vault error:', vaultError)
+            addNotification({
+              type: 'warning',
+              title: 'Vault Warning',
+              message: 'Partner saved but failed to store credentials in vault'
+            })
+          }
         }
       }
 
@@ -306,7 +403,7 @@ export default function PartnersPage() {
   }
 
   const handleEdit = (partner: Partner) => {
-    setFormData({
+    const formDataToSet = {
       name: partner.name || '',
       short_code: partner.short_code || '',
       mpesa_shortcode: partner.mpesa_shortcode || '',
@@ -322,7 +419,9 @@ export default function PartnersPage() {
       api_key: partner.api_key || '',
       allowed_ips: (partner as any).allowed_ips || [],
       ip_whitelist_enabled: (partner as any).ip_whitelist_enabled || false
-    })
+    }
+    
+    setFormData(formDataToSet)
     setEditingPartner(partner)
     setShowAddForm(true)
   }

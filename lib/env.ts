@@ -11,7 +11,7 @@ export const env = {
   // M-Pesa configuration
   mpesa: {
     environment: process.env.MPESA_ENVIRONMENT || 'sandbox',
-    initiatorName: process.env.MPESA_INITIATOR_NAME || 'testapi',
+    initiatorName: process.env.MPESA_INITIATOR_NAME || 'default_initiator',
     callbackTimeoutUrl: process.env.MPESA_CALLBACK_TIMEOUT_URL,
     callbackResultUrl: process.env.MPESA_CALLBACK_RESULT_URL
   },

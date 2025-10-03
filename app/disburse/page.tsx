@@ -81,8 +81,21 @@ export default function DisbursePage() {
         return
       }
 
-      // Use the working API key that was working before
-      const apiKeyToUse = 'kulmna_sk_live_1234567890abcdef'
+      if (!selectedPartner.api_key) {
+        addNotification({
+          type: 'error',
+          title: 'Invalid Partner',
+          message: 'Selected partner does not have a valid API key'
+        })
+        return
+      }
+      const apiKeyToUse = selectedPartner.api_key
+
+      console.log('🚀 [Frontend] Sending disbursement request:', {
+        url: '/api/disburse',
+        apiKey: apiKeyToUse ? apiKeyToUse.substring(0, 10) + '...' : 'none',
+        disbursementData
+      })
 
       const response = await fetch('/api/disburse', {
         method: 'POST',
@@ -94,6 +107,12 @@ export default function DisbursePage() {
       })
 
       const data = await response.json()
+
+      console.log('📥 [Frontend] Received response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: JSON.stringify(data, null, 2)
+      })
 
       if (response.ok && (data.status === 'accepted' || data.status === 'queued')) {
         addNotification({
@@ -115,7 +134,7 @@ export default function DisbursePage() {
         console.error('Disbursement failed:', {
           status: response.status,
           statusText: response.statusText,
-          data: data
+          data: JSON.stringify(data, null, 2)
         })
         
         addNotification({
