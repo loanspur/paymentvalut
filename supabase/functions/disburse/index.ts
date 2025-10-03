@@ -20,6 +20,67 @@ serve(async (req) => {
     const body = await req.json()
     const apiKey = req.headers.get('x-api-key')
     
+    // Validate required fields
+    if (!body.msisdn || !body.amount || !body.tenant_id || !body.customer_id || !body.client_request_id) {
+      return new Response(
+        JSON.stringify({
+          status: 'rejected',
+          error_code: 'VALIDATION_1002',
+          error_message: 'Missing required fields',
+          details: {
+            required_fields: ['msisdn', 'amount', 'tenant_id', 'customer_id', 'client_request_id'],
+            provided_fields: Object.keys(body)
+          }
+        }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
+    
+    // Validate phone number format
+    const msisdnRegex = /^254[0-9]{9}$/
+    if (!msisdnRegex.test(body.msisdn)) {
+      return new Response(
+        JSON.stringify({
+          status: 'rejected',
+          error_code: 'VALIDATION_1001',
+          error_message: 'Invalid phone number format',
+          details: {
+            field: 'msisdn',
+            value: body.msisdn,
+            expected_format: '254XXXXXXXXX (12 digits)'
+          }
+        }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
+    
+    // Validate amount
+    if (body.amount < 10 || body.amount > 150000) {
+      return new Response(
+        JSON.stringify({
+          status: 'rejected',
+          error_code: 'VALIDATION_1003',
+          error_message: 'Invalid amount',
+          details: {
+            field: 'amount',
+            value: body.amount,
+            min_amount: 10,
+            max_amount: 150000
+          }
+        }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
+    
     if (!apiKey) {
       return new Response(
         JSON.stringify({
@@ -160,6 +221,17 @@ serve(async (req) => {
       ResultURL: resultURL,
       Occasion: body.client_request_id || 'manual'
     }
+    
+    console.log('📤 M-Pesa B2C Request:', {
+      PartyA: shortCode,
+      PartyB: body.msisdn,
+      Amount: body.amount,
+      CommandID: "BusinessPayment",
+      Remarks: b2cRequest.Remarks,
+      ResultURL: resultURL,
+      QueueTimeOutURL: timeoutURL,
+      Occasion: b2cRequest.Occasion
+    })
 
     // Call M-Pesa B2C API
     

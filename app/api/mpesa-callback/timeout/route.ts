@@ -58,6 +58,53 @@ export async function POST(request: NextRequest) {
         raw_callback_data: callbackData
       })
 
+    // Send webhook to USSD backend if configured
+    const ussdWebhookUrl = process.env.USSD_WEBHOOK_URL
+    if (ussdWebhookUrl && disbursementRequest?.origin === 'ussd') {
+      try {
+        const webhookPayload = {
+          disbursement_id: disbursementRequest.id,
+          conversation_id: conversationId,
+          result_code: 'TIMEOUT',
+          result_desc: 'Transaction timeout',
+          transaction_receipt: null,
+          amount: disbursementRequest.amount,
+          msisdn: disbursementRequest.msisdn,
+          customer_name: disbursementRequest.customer_name,
+          processed_at: new Date().toISOString(),
+          status: 'failed'
+        }
+
+        console.log(`📤 Sending timeout webhook to USSD backend: ${ussdWebhookUrl}`)
+        
+        const webhookResponse = await fetch(ussdWebhookUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'PaymentVault-MPesa-Webhook/1.0'
+          },
+          body: JSON.stringify(webhookPayload),
+          // Disable SSL certificate verification for webhook delivery
+          // This is needed when the USSD backend has self-signed or invalid certificates
+          // @ts-ignore - Node.js fetch options
+          tls: {
+            rejectUnauthorized: false
+          }
+        })
+
+        if (webhookResponse.ok) {
+          console.log(`✅ Timeout webhook sent successfully to USSD backend (${webhookResponse.status})`)
+        } else {
+          console.error(`❌ Timeout webhook failed: ${webhookResponse.status} ${webhookResponse.statusText}`)
+        }
+      } catch (webhookError) {
+        console.error('❌ Error sending timeout webhook to USSD backend:', webhookError)
+        // Don't fail the callback processing if webhook fails
+      }
+    } else if (disbursementRequest?.origin === 'ussd') {
+      console.warn('⚠️ USSD webhook URL not configured, skipping timeout webhook notification')
+    }
+
     console.log('✅ M-Pesa timeout callback processed successfully')
     return NextResponse.json({ message: 'OK' }, { status: 200 })
 

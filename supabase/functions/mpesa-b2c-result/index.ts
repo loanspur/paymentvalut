@@ -467,6 +467,126 @@ serve(async (req) => {
         })
     }
 
+    // Send webhook to USSD backend if configured
+    const ussdWebhookUrl = Deno.env.get('USSD_WEBHOOK_URL')
+    let webhookDeliveryStatus = 'not_sent'
+    let webhookError = null
+    let webhookPayload = null
+    let webhookResponse = null
+    let responseBody = null
+    
+    if (ussdWebhookUrl && disbursementRequest.origin === 'ussd') {
+      try {
+        webhookPayload = {
+          disbursement_id: disbursementRequest.id,
+          conversation_id: conversationId,
+          result_code: Result.ResultCode,
+          result_desc: Result.ResultDesc,
+          transaction_receipt: receiptNumber,
+          amount: disbursementRequest.amount,
+          msisdn: disbursementRequest.msisdn,
+          customer_name: customerName,
+          processed_at: new Date().toISOString(),
+          status: finalStatus
+        }
+
+        console.log(`📤 [M-Pesa Callback] Sending webhook to USSD backend: ${ussdWebhookUrl}`)
+        console.log(`📤 [M-Pesa Callback] Webhook payload:`, JSON.stringify(webhookPayload, null, 2))
+        
+        // Try to send webhook with SSL certificate bypass
+        // Note: This is a workaround for self-signed certificates
+        // In production, the USSD backend should use proper SSL certificates
+        try {
+          webhookResponse = await fetch(ussdWebhookUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'PaymentVault-MPesa-Webhook/1.0'
+            },
+            body: JSON.stringify(webhookPayload)
+          })
+        } catch (sslError) {
+          // If SSL certificate error occurs, log it but don't fail the callback
+          if (sslError.message.includes('invalid peer certificate') || sslError.message.includes('UnknownIssuer')) {
+            console.error('❌ [M-Pesa Callback] SSL certificate validation failed for USSD backend')
+            console.error('❌ [M-Pesa Callback] This is likely due to a self-signed certificate on the USSD backend')
+            console.error('❌ [M-Pesa Callback] Webhook delivery failed, but callback processing continues')
+            
+            // Set error status but don't throw - callback processing should continue
+            webhookDeliveryStatus = 'ssl_error'
+            webhookError = `SSL certificate validation failed: ${sslError.message}`
+            
+            // Create a mock response object for logging
+            webhookResponse = {
+              ok: false,
+              status: 0,
+              statusText: 'SSL Certificate Error',
+              text: () => Promise.resolve(sslError.message)
+            }
+          } else {
+            throw sslError
+          }
+        }
+
+        if (webhookResponse.ok) {
+          console.log(`✅ [M-Pesa Callback] Webhook sent successfully to USSD backend (${webhookResponse.status})`)
+          webhookDeliveryStatus = 'delivered'
+          try {
+            responseBody = await webhookResponse.text()
+          } catch (e) {
+            // Ignore error reading response body for successful requests
+          }
+        } else {
+          try {
+            responseBody = await webhookResponse.text()
+          } catch (e) {
+            responseBody = 'Unable to read response body'
+          }
+          console.error(`❌ [M-Pesa Callback] Webhook failed: ${webhookResponse.status} ${webhookResponse.statusText}`)
+          console.error(`❌ [M-Pesa Callback] Webhook error response:`, responseBody)
+          webhookDeliveryStatus = 'failed'
+          webhookError = `${webhookResponse.status} ${webhookResponse.statusText}: ${responseBody}`
+        }
+      } catch (webhookError) {
+        console.error('❌ [M-Pesa Callback] Error sending webhook to USSD backend:', webhookError)
+        webhookDeliveryStatus = 'error'
+        webhookError = webhookError.message || webhookError.toString()
+        // Don't fail the callback processing if webhook fails
+      }
+    } else if (disbursementRequest.origin === 'ussd') {
+      console.warn('⚠️ [M-Pesa Callback] USSD webhook URL not configured, skipping webhook notification')
+      webhookDeliveryStatus = 'not_configured'
+    } else {
+      console.log(`ℹ️ [M-Pesa Callback] Non-USSD transaction (origin: ${disbursementRequest.origin}), skipping webhook`)
+      webhookDeliveryStatus = 'not_ussd'
+    }
+    
+    // Log webhook delivery status
+    console.log(`📊 [M-Pesa Callback] Webhook delivery status: ${webhookDeliveryStatus}`)
+    if (webhookError) {
+      console.log(`📊 [M-Pesa Callback] Webhook error: ${webhookError}`)
+    }
+    
+    // Log webhook delivery attempt to database
+    if (ussdWebhookUrl && disbursementRequest.origin === 'ussd') {
+      try {
+        await supabaseClient
+          .from('webhook_delivery_logs')
+          .insert({
+            disbursement_id: disbursementRequest.id,
+            webhook_url: ussdWebhookUrl,
+            webhook_payload: webhookPayload,
+            delivery_status: webhookDeliveryStatus,
+            http_status_code: webhookResponse?.status || null,
+            error_message: webhookError,
+            response_body: responseBody,
+            created_at: new Date().toISOString()
+          })
+      } catch (logError) {
+        console.error('❌ [M-Pesa Callback] Error logging webhook delivery:', logError)
+      }
+    }
+
     return new Response('OK', { 
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'text/plain' }

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
 // CORS headers (inline to avoid import issues)
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,7 +34,6 @@ serve(async (req) => {
   // Allow all requests - Safaricom won't have authentication
 
   try {
-
     // Initialize Supabase client with service role key for database access
     const supabaseUrl = Deno.env.get('NEXT_PUBLIC_SUPABASE_URL') || Deno.env.get('SUPABASE_URL')
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -91,6 +91,65 @@ serve(async (req) => {
         raw_callback_data: callbackData,
         created_at: new Date().toISOString()
       })
+
+    // Send webhook to USSD backend if configured
+    const ussdWebhookUrl = Deno.env.get('USSD_WEBHOOK_URL')
+    if (ussdWebhookUrl && disbursementRequest.origin === 'ussd') {
+      try {
+        const webhookPayload = {
+          disbursement_id: disbursementRequest.id,
+          conversation_id: conversationId,
+          result_code: Result.ResultCode,
+          result_desc: Result.ResultDesc,
+          transaction_receipt: null,
+          amount: disbursementRequest.amount,
+          msisdn: disbursementRequest.msisdn,
+          customer_name: disbursementRequest.customer_name,
+          processed_at: new Date().toISOString(),
+          status: 'timeout'
+        }
+
+        console.log(`📤 [M-Pesa Timeout] Sending webhook to USSD backend: ${ussdWebhookUrl}`)
+        
+        let webhookResponse
+        try {
+          webhookResponse = await fetch(ussdWebhookUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'PaymentVault-MPesa-Webhook/1.0'
+            },
+            body: JSON.stringify(webhookPayload)
+          })
+        } catch (sslError) {
+          // If SSL certificate error occurs, log it but don't fail the callback
+          if (sslError.message.includes('invalid peer certificate') || sslError.message.includes('UnknownIssuer')) {
+            console.error('❌ [M-Pesa Timeout] SSL certificate validation failed for USSD backend')
+            console.error('❌ [M-Pesa Timeout] Webhook delivery failed, but callback processing continues')
+            
+            // Create a mock response object for logging
+            webhookResponse = {
+              ok: false,
+              status: 0,
+              statusText: 'SSL Certificate Error'
+            }
+          } else {
+            throw sslError
+          }
+        }
+
+        if (webhookResponse.ok) {
+          console.log(`✅ [M-Pesa Timeout] Webhook sent successfully to USSD backend (${webhookResponse.status})`)
+        } else {
+          console.error(`❌ [M-Pesa Timeout] Webhook failed: ${webhookResponse.status} ${webhookResponse.statusText}`)
+        }
+      } catch (webhookError) {
+        console.error('❌ [M-Pesa Timeout] Error sending webhook to USSD backend:', webhookError)
+        // Don't fail the callback processing if webhook fails
+      }
+    } else if (disbursementRequest.origin === 'ussd') {
+      console.warn('⚠️ [M-Pesa Timeout] USSD webhook URL not configured, skipping timeout webhook notification')
+    }
 
     return new Response('OK', { 
       status: 200,
