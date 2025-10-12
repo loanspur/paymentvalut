@@ -160,7 +160,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto">
+      <div className="w-full">
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* System Status */}

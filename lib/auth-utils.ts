@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
+import { jwtVerify } from 'jose'
 
 interface User {
   id: string
@@ -27,9 +27,10 @@ export function requireAdmin(handler: (request: AuthRequest, user: User) => Prom
       }
 
       // Verify JWT token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any
+      const secret = new TextEncoder().encode(process.env.JWT_SECRET!)
+      const { payload } = await jwtVerify(token, secret)
       
-      if (!decoded) {
+      if (!payload) {
         return NextResponse.json(
           { error: 'Access denied', message: 'Invalid token' },
           { status: 401 }
@@ -37,7 +38,7 @@ export function requireAdmin(handler: (request: AuthRequest, user: User) => Prom
       }
 
       // Check if user is admin
-      if (decoded.role !== 'admin') {
+      if (payload.role !== 'admin') {
         return NextResponse.json(
           { error: 'Access denied', message: 'Admin privileges required' },
           { status: 403 }
@@ -45,7 +46,7 @@ export function requireAdmin(handler: (request: AuthRequest, user: User) => Prom
       }
 
       // Check if user is active
-      if (!decoded.is_active) {
+      if (!payload.isActive) {
         return NextResponse.json(
           { error: 'Access denied', message: 'Account is inactive' },
           { status: 403 }
@@ -54,11 +55,11 @@ export function requireAdmin(handler: (request: AuthRequest, user: User) => Prom
 
       // Create user object
       const user: User = {
-        id: decoded.id,
-        email: decoded.email,
-        role: decoded.role,
-        partner_id: decoded.partner_id,
-        is_active: decoded.is_active
+        id: payload.userId as string,
+        email: payload.email as string,
+        role: payload.role as string,
+        partner_id: payload.partner_id as string,
+        is_active: payload.isActive as boolean
       }
 
       // Add user to request object
@@ -92,9 +93,10 @@ export function requirePartner(handler: (request: AuthRequest, user: User) => Pr
       }
 
       // Verify JWT token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any
+      const secret = new TextEncoder().encode(process.env.JWT_SECRET!)
+      const { payload } = await jwtVerify(token, secret)
       
-      if (!decoded) {
+      if (!payload) {
         return NextResponse.json(
           { error: 'Access denied', message: 'Invalid token' },
           { status: 401 }
@@ -102,7 +104,7 @@ export function requirePartner(handler: (request: AuthRequest, user: User) => Pr
       }
 
       // Check if user is partner
-      if (decoded.role !== 'partner') {
+      if (payload.role !== 'partner') {
         return NextResponse.json(
           { error: 'Access denied', message: 'Partner privileges required' },
           { status: 403 }
@@ -110,7 +112,7 @@ export function requirePartner(handler: (request: AuthRequest, user: User) => Pr
       }
 
       // Check if user is active
-      if (!decoded.is_active) {
+      if (!payload.isActive) {
         return NextResponse.json(
           { error: 'Access denied', message: 'Account is inactive' },
           { status: 403 }
@@ -118,7 +120,7 @@ export function requirePartner(handler: (request: AuthRequest, user: User) => Pr
       }
 
       // Check if user has partner_id
-      if (!decoded.partner_id) {
+      if (!payload.partner_id) {
         return NextResponse.json(
           { error: 'Access denied', message: 'Partner ID required' },
           { status: 403 }
@@ -127,11 +129,11 @@ export function requirePartner(handler: (request: AuthRequest, user: User) => Pr
 
       // Create user object
       const user: User = {
-        id: decoded.id,
-        email: decoded.email,
-        role: decoded.role,
-        partner_id: decoded.partner_id,
-        is_active: decoded.is_active
+        id: payload.userId as string,
+        email: payload.email as string,
+        role: payload.role as string,
+        partner_id: payload.partner_id as string,
+        is_active: payload.isActive as boolean
       }
 
       // Add user to request object

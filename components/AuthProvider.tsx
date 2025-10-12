@@ -9,6 +9,8 @@ interface User {
   email: string
   role: string
   name?: string
+  first_name?: string
+  last_name?: string
 }
 
 interface AuthContextType {
@@ -43,40 +45,86 @@ export default function AuthProvider({ children }: AuthProviderProps) {
 
   // Check authentication status on mount
   useEffect(() => {
-    const checkAuthStatus = async () => {
+    const checkAuthStatus = async (retryCount = 0) => {
       try {
-        const response = await fetch('/api/auth/check', {
+        const response = await fetch('/api/auth/me', {
           method: 'GET',
-          credentials: 'include'
+          credentials: 'include',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
         })
         
         if (response.ok) {
           const data = await response.json()
-          if (data.user) {
+          if (data.success && data.user && data.user.id && data.user.email) {
             setUser(data.user)
+          } else {
+            setUser(null)
           }
+        } else if (response.status === 401) {
+          // Clear any stale authentication data
+          setUser(null)
+        } else {
+          // Retry once for server errors
+          if (response.status >= 500 && retryCount < 1) {
+            setTimeout(() => checkAuthStatus(retryCount + 1), 1000)
+            return
+          }
+          setUser(null)
         }
       } catch (error) {
         console.error('Auth check error:', error)
+        // Retry once for network errors
+        if (retryCount < 1) {
+          setTimeout(() => checkAuthStatus(retryCount + 1), 1000)
+          return
+        }
+        setUser(null)
       } finally {
-        setIsLoading(false)
+        if (retryCount === 0) {
+          setIsLoading(false)
+        }
       }
     }
 
-    checkAuthStatus()
-  }, [])
+    // Only check auth if not on a public route
+    if (!isPublicRoute) {
+      checkAuthStatus()
+    } else {
+      setIsLoading(false)
+    }
+  }, [isPublicRoute])
 
   const logout = async () => {
     try {
-      await fetch('/api/auth/secure-logout', { method: 'POST' })
+      setIsLoading(true)
+      console.log('🔄 Starting logout process...')
+      
+      const response = await fetch('/api/auth/secure-logout', { 
+        method: 'POST',
+        credentials: 'include'
+      })
+      
+      console.log('📡 Logout API response:', response.status, response.ok)
+      
       if (typeof window !== 'undefined') {
         localStorage.removeItem('auth_token')
         localStorage.removeItem('user')
+        console.log('🗑️ Cleared localStorage')
       }
+      
       setUser(null)
+      console.log('👤 User state cleared')
+      
       router.push('/secure-login')
+      console.log('🔄 Redirected to login page')
+      
     } catch (error) {
-      console.error('Logout error:', error)
+      console.error('❌ Logout error:', error)
+    } finally {
+      setIsLoading(false)
     }
   }
 

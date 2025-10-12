@@ -47,7 +47,7 @@ serve(async (req) => {
 
     // Parse the callback data
     const callbackData: MpesaResultCallback = await req.json()
-    console.log('🔔 [Balance Callback] M-Pesa callback received:', JSON.stringify(callbackData, null, 2))
+    // Process M-Pesa balance callback
 
     const { Result } = callbackData
     const conversationId = Result.ConversationID
@@ -62,12 +62,12 @@ serve(async (req) => {
       .single()
 
     if (!balanceError && balanceRequest) {
-      console.log('✅ [Balance Callback] Found balance request:', balanceRequest.id)
-      
       // Extract balance information from ResultParameters
       let balanceBefore = null
       let balanceAfter = null
       let utilityAccountBalance = null
+      let workingAccountBalance = null
+      let chargesAccountBalance = null
 
       if (Result.ResultParameters?.ResultParameter) {
         for (const param of Result.ResultParameters.ResultParameter) {
@@ -79,7 +79,10 @@ serve(async (req) => {
               utilityAccountBalance = parseFloat(param.Value)
               break
             case 'B2CWorkingAccountAvailableFunds':
-              balanceBefore = parseFloat(param.Value)
+              workingAccountBalance = parseFloat(param.Value)
+              break
+            case 'B2CChargesAccountAvailableFunds':
+              chargesAccountBalance = parseFloat(param.Value)
               break
           }
         }
@@ -103,27 +106,21 @@ serve(async (req) => {
           balance_before: balanceBefore,
           balance_after: balanceAfter,
           utility_account_balance: utilityAccountBalance,
+          working_account_balance: workingAccountBalance,
+          charges_account_balance: chargesAccountBalance,
           callback_received_at: new Date().toISOString()
         })
         .eq('id', balanceRequest.id)
 
       if (updateError) {
-        console.error('❌ [Balance Callback] Error updating balance request:', updateError)
-      } else {
-        console.log('✅ [Balance Callback] Balance request updated successfully:', {
-          id: balanceRequest.id,
-          status: finalStatus,
-          balance_before: balanceBefore,
-          balance_after: balanceAfter,
-          utility_account_balance: utilityAccountBalance
-        })
+        console.error('Error updating balance request:', updateError)
       }
 
       return new Response('OK', { status: 200 })
     }
 
     // If not a balance request, try to find a disbursement request
-    console.log('🔍 [Balance Callback] Not a balance request, checking disbursement requests...')
+    // Not a balance request, checking disbursement requests
     
     let { data: disbursementRequest, error: findError } = await supabaseClient
       .from('disbursement_requests')
@@ -133,7 +130,7 @@ serve(async (req) => {
 
     // If not found by conversation_id, try to find by Occasion (disbursement ID)
     if (findError || !disbursementRequest) {
-      console.log(`🔍 [Balance Callback] Disbursement not found by conversation_id: ${conversationId}, trying Occasion field`)
+      // Disbursement not found by conversation_id, trying Occasion field
       
       // Extract Occasion from ResultParameters if available
       let occasion = null
@@ -147,7 +144,7 @@ serve(async (req) => {
       }
       
       if (occasion) {
-        console.log(`🔍 [Balance Callback] Trying to find disbursement by Occasion: ${occasion}`)
+        // Trying to find disbursement by Occasion
         const { data: disbursementByOccasion, error: occasionError } = await supabaseClient
           .from('disbursement_requests')
           .select('*')
@@ -157,18 +154,18 @@ serve(async (req) => {
         if (!occasionError && disbursementByOccasion) {
           disbursementRequest = disbursementByOccasion
           findError = null
-          console.log(`✅ [Balance Callback] Found disbursement by Occasion: ${occasion}`)
+          // Found disbursement by Occasion
         }
       }
     }
 
     if (findError || !disbursementRequest) {
-      console.log(`❌ [Balance Callback] No matching request found for conversation_id: ${conversationId}`)
+      // No matching request found
       return new Response('OK', { status: 200 })
     }
 
     // Handle disbursement request (existing logic)
-    console.log('✅ [Balance Callback] Found disbursement request:', disbursementRequest.id)
+    // Found disbursement request
 
     // Extract transaction details from ResultParameters
     let receiptNumber = null
@@ -225,13 +222,6 @@ serve(async (req) => {
 
     if (updateError) {
       console.error('❌ [Balance Callback] Error updating disbursement request:', updateError)
-    } else {
-      console.log('✅ [Balance Callback] Disbursement request updated successfully:', {
-        id: disbursementRequest.id,
-        status: finalStatus,
-        receipt_number: receiptNumber,
-        transaction_amount: transactionAmount
-      })
     }
 
     return new Response('OK', { status: 200 })

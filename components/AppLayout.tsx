@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { useAuth } from './AuthProvider'
 import { usePathname } from 'next/navigation'
 import Sidebar from './Sidebar'
@@ -13,6 +14,8 @@ interface AppLayoutProps {
 export default function AppLayout({ children }: AppLayoutProps) {
   const { user } = useAuth()
   const pathname = usePathname()
+
+  // Prevent auto-scroll conflicts with fixed elements
 
   // Public routes that don't need the protected layout
   const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup', '/request-password-reset', '/reset-password']
@@ -30,15 +33,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
       
       {/* Main content area */}
       <div className="flex-1 flex flex-col lg:ml-0">
-        {/* Top header */}
-        <header className="bg-white border-b border-gray-200 px-4 py-4 lg:px-6">
+        {/* Header - using sticky instead of fixed */}
+        <header className="sticky top-0 bg-white border-b border-gray-200 px-4 py-4 lg:px-6 shadow-sm z-20">
           <div className="flex items-center justify-between">
             {/* Page title */}
             <div>
-              <h1 className="text-2xl font-semibold text-gray-900">
+              <h1 className="text-xl font-semibold text-gray-900">
                 {getPageTitle(pathname)}
               </h1>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-gray-500">
                 {getPageDescription(pathname)}
               </p>
             </div>
@@ -89,9 +92,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </header>
 
         {/* Main content */}
-        <main className="flex-1 p-4 lg:p-6">
-          <div className="max-w-7xl mx-auto">
-            {pathname !== '/transactions' && pathname !== '/partners' && pathname !== '/history' && pathname !== '/admin-dashboard' && <Breadcrumb />}
+        <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
+          <div className="w-full">
+            {pathname !== '/' && pathname !== '/transactions' && pathname !== '/partners' && pathname !== '/history' && pathname !== '/admin-dashboard' && pathname !== '/profile' && pathname !== '/disburse' && <Breadcrumb />}
             {children}
           </div>
         </main>

@@ -38,7 +38,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Additional role-based protection for admin routes
-  if (request.nextUrl.pathname.startsWith('/admin-dashboard') && decoded.role !== 'admin') {
+  if (request.nextUrl.pathname.startsWith('/admin-dashboard') && !['admin', 'super_admin'].includes(decoded.role)) {
     return NextResponse.redirect(new URL('/secure-login', request.url))
   }
 

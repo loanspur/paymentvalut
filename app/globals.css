@@ -82,6 +82,25 @@
     scroll-margin: 0;
     scroll-padding: 0;
   }
+
+  /* Smooth scrolling for the entire app */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Ensure proper z-index stacking */
+  .sidebar-fixed {
+    z-index: 30;
+  }
+
+
+  .mobile-overlay {
+    z-index: 40;
+  }
+
+  .mobile-menu-button {
+    z-index: 50;
+  }
 }
 
 

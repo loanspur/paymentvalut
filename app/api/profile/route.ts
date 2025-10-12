@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
   try {
     // Authentication check
     const token = request.cookies.get('auth_token')?.value
+    
     if (!token) {
       return NextResponse.json({
         error: 'Access denied',
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
 
     // Decode the JWT token to get user ID
     const decoded = await verifyToken(token)
+    
     if (!decoded || !decoded.userId) {
       return NextResponse.json({
         error: 'Invalid authentication',
@@ -41,7 +43,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get current user with all profile information
-    const { data: user, error: userError } = await supabase
+    let { data: user, error: userError } = await supabase
       .from('users')
       .select(`
         id,
@@ -68,10 +70,49 @@ export async function GET(request: NextRequest) {
       .single()
 
     if (userError || !user) {
-      return NextResponse.json({
-        error: 'Invalid authentication',
-        message: 'User not found'
-      }, { status: 401 })
+      console.error('Profile API - User not found in database:', {
+        userId: decoded.userId,
+        email: decoded.email,
+        error: userError?.message
+      })
+
+      // Try to find user by email as fallback
+      const { data: userByEmail, error: emailError } = await supabase
+        .from('users')
+        .select(`
+          id,
+          email,
+          first_name,
+          last_name,
+          phone_number,
+          department,
+          notes,
+          role,
+          partner_id,
+          profile_picture_url,
+          is_active,
+          email_verified,
+          last_login_at,
+          last_activity_at,
+          last_password_change,
+          password_change_required,
+          two_factor_enabled,
+          created_at,
+          updated_at
+        `)
+        .eq('email', decoded.email)
+        .single()
+
+      if (emailError || !userByEmail) {
+        return NextResponse.json({
+          error: 'User not found',
+          message: 'User profile not found in database',
+          details: `User ID: ${decoded.userId}, Email: ${decoded.email}`
+        }, { status: 404 })
+      }
+      
+      // Use the user found by email
+      user = userByEmail
     }
 
     // Get user's accessible shortcodes (non-blocking)

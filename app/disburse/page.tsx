@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Send, Phone, CreditCard, RefreshCw, Building2 } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Send, Phone, CreditCard, RefreshCw, Building2, Shield } from 'lucide-react'
 import NotificationSystem, { useNotifications } from '../../components/NotificationSystem'
+import { useAuth } from '../../components/AuthProvider'
+import { useRouter } from 'next/navigation'
 
 interface Partner {
   id: string
@@ -18,6 +20,7 @@ export default function DisbursePage() {
   const [partners, setPartners] = useState<Partner[]>([])
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const partnersLoadedRef = useRef(false)
   const [disbursementForm, setDisbursementForm] = useState({
     partner_id: '',
     amount: '',
@@ -28,21 +31,19 @@ export default function DisbursePage() {
   })
 
   const { notifications, addNotification, removeNotification } = useNotifications()
+  const { user, isAuthenticated, isLoading } = useAuth()
+  const router = useRouter()
 
-  useEffect(() => {
-    loadPartners()
-  }, [])
-
-  const loadPartners = async () => {
+  const loadPartners = useCallback(async () => {
     try {
       setLoading(true)
       const response = await fetch('/api/partners')
       const data = await response.json()
       if (data.success) {
         setPartners(data.partners)
+        partnersLoadedRef.current = true // Mark as loaded to prevent future calls
       }
     } catch (error) {
-      console.error('Failed to fetch partners:', error)
       addNotification({
         type: 'error',
         title: 'Error',
@@ -51,7 +52,40 @@ export default function DisbursePage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [addNotification])
+
+  // Authentication check effect
+  useEffect(() => {
+    // Wait for authentication check to complete
+    if (isLoading) {
+      return
+    }
+
+    // Check authentication and role
+    if (!isAuthenticated || !user) {
+      router.push('/login')
+      return
+    }
+
+    // Ensure user has super_admin role
+    if (user.role !== 'super_admin') {
+      addNotification({
+        type: 'error',
+        title: 'Access Denied',
+        message: 'Only super administrators can access the Send Money feature.'
+      })
+      router.push('/')
+      return
+    }
+  }, [isAuthenticated, user, isLoading, router, addNotification])
+
+  // Partners loading effect (separate from auth check)
+  useEffect(() => {
+    // Only load partners if user is authenticated and is super_admin
+    if (isAuthenticated && user?.role === 'super_admin' && !partnersLoadedRef.current) {
+      loadPartners()
+    }
+  }, [isAuthenticated, user?.role, loadPartners])
 
   const handleDisbursementSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -123,12 +157,6 @@ export default function DisbursePage() {
           client_request_id: ''
         })
       } else {
-        console.error('Disbursement failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          data: JSON.stringify(data, null, 2)
-        })
-        
         addNotification({
           type: 'error',
           title: 'Disbursement Failed',
@@ -182,6 +210,64 @@ export default function DisbursePage() {
     })
   }
 
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <>
+        <NotificationSystem 
+          notifications={notifications} 
+          onRemove={removeNotification} 
+        />
+        <div className="w-full">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900">Send Money</h1>
+            <p className="mt-2 text-gray-600">Initiate M-Pesa B2C disbursements to customers</p>
+          </div>
+          
+          <div className="bg-white shadow rounded-lg p-8 text-center">
+            <RefreshCw className="h-16 w-16 text-blue-500 mx-auto mb-4 animate-spin" />
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Loading...</h2>
+            <p className="text-gray-600 mb-4">
+              Verifying your access permissions...
+            </p>
+            <p className="text-sm text-gray-500">
+              Please wait while we check your authentication status.
+            </p>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  // Show access denied for non-super-admin users (only after loading is complete)
+  if (!isAuthenticated || user?.role !== 'super_admin') {
+    return (
+      <>
+        <NotificationSystem 
+          notifications={notifications} 
+          onRemove={removeNotification} 
+        />
+        <div className="w-full">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold text-gray-900">Send Money</h1>
+            <p className="mt-2 text-gray-600">Initiate M-Pesa B2C disbursements to customers</p>
+          </div>
+          
+          <div className="bg-white shadow rounded-lg p-8 text-center">
+            <Shield className="h-16 w-16 text-red-500 mx-auto mb-4" />
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+            <p className="text-gray-600 mb-4">
+              Only super administrators can access the Send Money feature.
+            </p>
+            <p className="text-sm text-gray-500">
+              Please contact your system administrator if you believe you should have access to this feature.
+            </p>
+          </div>
+        </div>
+      </>
+    )
+  }
+
   return (
     <>
       <NotificationSystem 
@@ -189,7 +275,7 @@ export default function DisbursePage() {
         onRemove={removeNotification} 
       />
 
-      <div className="max-w-4xl mx-auto">
+      <div className="w-full">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">Send Money</h1>
           <p className="mt-2 text-gray-600">Initiate M-Pesa B2C disbursements to customers</p>

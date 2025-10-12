@@ -61,7 +61,7 @@ export default function APIDocsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4">
+      <div className="w-full px-4">
         <div className="bg-white rounded-lg shadow-lg">
           {/* Header */}
           <div className="border-b border-gray-200 px-6 py-4">

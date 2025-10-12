@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useAuth } from './AuthProvider'
 import { 
   User, 
   Mail, 
@@ -31,7 +32,6 @@ interface UserProfile {
   profile_picture_url?: string
   is_active: boolean
   email_verified: boolean
-  last_login_at?: string
   last_activity_at?: string
   last_password_change?: string
   password_change_required: boolean
@@ -53,6 +53,7 @@ interface UserProfile {
 }
 
 export default function ProfileManager() {
+  const { user: authUser, isLoading: authLoading } = useAuth()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isEditing, setIsEditing] = useState(false)
@@ -84,12 +85,23 @@ export default function ProfileManager() {
   })
 
   useEffect(() => {
-    fetchProfile()
-  }, [])
+    // Wait for auth to be ready before fetching profile
+    if (!authLoading && authUser) {
+      fetchProfile()
+    } else if (!authLoading && !authUser) {
+      // User is not authenticated
+      setIsLoading(false)
+      setMessage('Please log in to view your profile')
+      setIsSuccess(false)
+    }
+  }, [authLoading, authUser])
 
   const fetchProfile = async () => {
     try {
-      const response = await fetch('/api/profile')
+      const response = await fetch('/api/user-management/profile', {
+        method: 'GET',
+        credentials: 'include'
+      })
       const data = await response.json()
 
       if (response.ok) {
@@ -103,12 +115,70 @@ export default function ProfileManager() {
           profile_picture_url: data.user.profile_picture_url || ''
         })
       } else {
-        setMessage(data.message || 'Failed to fetch profile')
-        setIsSuccess(false)
+        // If profile API fails, use auth user data as fallback
+        console.warn('Profile API failed, using auth user data:', data.message)
+        if (authUser) {
+          const fallbackProfile: UserProfile = {
+            id: authUser.id,
+            email: authUser.email,
+            first_name: authUser.name?.split(' ')[0] || '',
+            last_name: authUser.name?.split(' ').slice(1).join(' ') || '',
+            role: authUser.role,
+            is_active: true,
+            email_verified: true,
+            password_change_required: false,
+            two_factor_enabled: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }
+          setProfile(fallbackProfile)
+          setFormData({
+            first_name: fallbackProfile.first_name || '',
+            last_name: fallbackProfile.last_name || '',
+            phone_number: '',
+            department: '',
+            notes: '',
+            profile_picture_url: ''
+          })
+          setMessage('Profile loaded with limited information. The user account may need to be recreated in the database.')
+          setIsSuccess(true)
+        } else {
+          setMessage(data.message || 'Failed to fetch profile')
+          setIsSuccess(false)
+        }
       }
     } catch (error) {
-      setMessage('An error occurred while fetching profile')
-      setIsSuccess(false)
+      console.error('Profile fetch error:', error)
+      // If there's a network error, try to use auth user data
+      if (authUser) {
+        const fallbackProfile: UserProfile = {
+          id: authUser.id,
+          email: authUser.email,
+          first_name: authUser.name?.split(' ')[0] || '',
+          last_name: authUser.name?.split(' ').slice(1).join(' ') || '',
+          role: authUser.role,
+          is_active: true,
+          email_verified: true,
+          password_change_required: false,
+          two_factor_enabled: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+        setProfile(fallbackProfile)
+        setFormData({
+          first_name: fallbackProfile.first_name || '',
+          last_name: fallbackProfile.last_name || '',
+          phone_number: '',
+          department: '',
+          notes: '',
+          profile_picture_url: ''
+        })
+        setMessage('Profile loaded with limited information due to connection issues.')
+        setIsSuccess(true)
+      } else {
+        setMessage('An error occurred while fetching profile')
+        setIsSuccess(false)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -119,11 +189,12 @@ export default function ProfileManager() {
     setMessage('')
 
     try {
-      const response = await fetch('/api/profile', {
+      const response = await fetch('/api/user-management/profile', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(formData),
       })
 
@@ -163,11 +234,12 @@ export default function ProfileManager() {
     setMessage('')
 
     try {
-      const response = await fetch('/api/auth/change-password', {
+      const response = await fetch('/api/user-management/profile/password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           currentPassword: passwordData.currentPassword,
           newPassword: passwordData.newPassword
@@ -217,11 +289,13 @@ export default function ProfileManager() {
     return colors[role] || 'bg-gray-100 text-gray-800'
   }
 
-  if (isLoading) {
+  if (authLoading || isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-2 text-gray-600">Loading profile...</span>
+        <span className="ml-2 text-gray-600">
+          {authLoading ? 'Loading authentication...' : 'Loading profile...'}
+        </span>
       </div>
     )
   }

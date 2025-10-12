@@ -105,10 +105,18 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
 
   const fetchPermissions = async () => {
     try {
-      const response = await fetch(`/api/users/${user.id}/permissions`)
+      const response = await fetch(`/api/user-permissions?userId=${user.id}`, {
+        credentials: 'include'
+      })
       const data = await response.json()
       if (data.success) {
         setPermissions(data.permissions)
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Error',
+          message: data.message || 'Failed to fetch user permissions'
+        })
       }
     } catch (error) {
       addNotification({
@@ -121,10 +129,18 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
 
   const fetchShortcodeAccess = async () => {
     try {
-      const response = await fetch(`/api/users/${user.id}/permissions`)
+      const response = await fetch(`/api/user-shortcode-access?userId=${user.id}`, {
+        credentials: 'include'
+      })
       const data = await response.json()
       if (data.success) {
-        setShortcodeAccess(data.shortcode_access)
+        setShortcodeAccess(data.shortcodeAccess)
+      } else {
+        addNotification({
+          type: 'error',
+          title: 'Error',
+          message: data.message || 'Failed to fetch shortcode access'
+        })
       }
     } catch (error) {
       addNotification({
@@ -137,12 +153,16 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
 
   const fetchPartners = async () => {
     try {
+      console.log('🔍 Fetching partners...')
       const response = await fetch('/api/partners')
       const data = await response.json()
+      console.log('🔍 Partners response:', data)
       if (data.success) {
         setPartners(data.partners)
+        console.log('🔍 Partners set:', data.partners)
       }
     } catch (error) {
+      console.error('🔍 Partners fetch error:', error)
       addNotification({
         type: 'error',
         title: 'Error',
@@ -152,19 +172,34 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
   }
 
   const handleGrantPermission = async () => {
+    console.log('🔍 Granting permission with data:', {
+      userId: user.id,
+      permission_type: newPermission.permission_type,
+      resource_type: newPermission.resource_type,
+      resource_id: newPermission.resource_id || null,
+      expires_at: newPermission.expires_at || null
+    })
+    
     try {
-      const response = await fetch(`/api/users/${user.id}/permissions`, {
+      const response = await fetch('/api/user-permissions', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
-          type: 'permission',
-          ...newPermission
+          userId: user.id,
+          permission_type: newPermission.permission_type,
+          resource_type: newPermission.resource_type,
+          resource_id: newPermission.resource_id || null,
+          expires_at: newPermission.expires_at || null
         })
       })
 
+      console.log('🔍 Permission response status:', response.status)
       const data = await response.json()
+      console.log('🔍 Permission response data:', data)
+      
       if (data.success) {
         addNotification({
           type: 'success',
@@ -178,15 +213,17 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
           resource_id: '',
           expires_at: ''
         })
-        fetchPermissions()
+        // Refresh permissions list
+        await fetchPermissions()
       } else {
         addNotification({
           type: 'error',
           title: 'Error',
-          message: data.error || 'Failed to grant permission'
+          message: data.message || 'Failed to grant permission'
         })
       }
     } catch (error) {
+      console.error('🔍 Permission error:', error)
       addNotification({
         type: 'error',
         title: 'Error',
@@ -196,19 +233,32 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
   }
 
   const handleGrantShortcodeAccess = async () => {
+    console.log('🔍 Granting shortcode access with data:', {
+      userId: user.id,
+      shortcode_id: newShortcodeAccess.shortcode_id,
+      access_type: newShortcodeAccess.access_type,
+      expires_at: newShortcodeAccess.expires_at || null
+    })
+    
     try {
-      const response = await fetch(`/api/users/${user.id}/permissions`, {
+      const response = await fetch('/api/user-shortcode-access', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
-          type: 'shortcode_access',
-          ...newShortcodeAccess
+          userId: user.id,
+          shortcode_id: newShortcodeAccess.shortcode_id,
+          access_type: newShortcodeAccess.access_type,
+          expires_at: newShortcodeAccess.expires_at || null
         })
       })
 
+      console.log('🔍 Shortcode access response status:', response.status)
       const data = await response.json()
+      console.log('🔍 Shortcode access response data:', data)
+      
       if (data.success) {
         addNotification({
           type: 'success',
@@ -221,15 +271,17 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
           access_type: 'read',
           expires_at: ''
         })
-        fetchShortcodeAccess()
+        // Refresh shortcode access list
+        await fetchShortcodeAccess()
       } else {
         addNotification({
           type: 'error',
           title: 'Error',
-          message: data.error || 'Failed to grant shortcode access'
+          message: data.message || 'Failed to grant shortcode access'
         })
       }
     } catch (error) {
+      console.error('🔍 Shortcode access error:', error)
       addNotification({
         type: 'error',
         title: 'Error',
@@ -242,8 +294,9 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
     if (!confirm('Are you sure you want to revoke this permission?')) return
 
     try {
-      const response = await fetch(`/api/users/${user.id}/permissions?type=permission&permission_id=${permissionId}`, {
-        method: 'DELETE'
+      const response = await fetch(`/api/user-permissions?permissionId=${permissionId}`, {
+        method: 'DELETE',
+        credentials: 'include'
       })
 
       const data = await response.json()
@@ -253,12 +306,13 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
           title: 'Success',
           message: 'Permission revoked successfully'
         })
-        fetchPermissions()
+        // Refresh permissions list
+        await fetchPermissions()
       } else {
         addNotification({
           type: 'error',
           title: 'Error',
-          message: data.error || 'Failed to revoke permission'
+          message: data.message || 'Failed to revoke permission'
         })
       }
     } catch (error) {
@@ -274,8 +328,9 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
     if (!confirm('Are you sure you want to revoke this shortcode access?')) return
 
     try {
-      const response = await fetch(`/api/users/${user.id}/permissions?type=shortcode_access&access_id=${accessId}`, {
-        method: 'DELETE'
+      const response = await fetch(`/api/user-shortcode-access?accessId=${accessId}`, {
+        method: 'DELETE',
+        credentials: 'include'
       })
 
       const data = await response.json()
@@ -285,12 +340,13 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
           title: 'Success',
           message: 'Shortcode access revoked successfully'
         })
-        fetchShortcodeAccess()
+        // Refresh shortcode access list
+        await fetchShortcodeAccess()
       } else {
         addNotification({
           type: 'error',
           title: 'Error',
-          message: data.error || 'Failed to revoke shortcode access'
+          message: data.message || 'Failed to revoke shortcode access'
         })
       }
     } catch (error) {
@@ -404,8 +460,11 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
                   Specific Permissions
                 </h4>
                 <button
-                  onClick={() => setShowPermissionModal(true)}
-                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    console.log('🔍 Grant Permission button clicked')
+                    setShowPermissionModal(true)
+                  }}
+                  className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
                 >
                   <Plus className="w-4 h-4 mr-1" />
                   Grant Permission
@@ -492,8 +551,11 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
                   Shortcode Access
                 </h4>
                 <button
-                  onClick={() => setShowShortcodeModal(true)}
-                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    console.log('🔍 Grant Access button clicked')
+                    setShowShortcodeModal(true)
+                  }}
+                  className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
                 >
                   <Plus className="w-4 h-4 mr-1" />
                   Grant Access
@@ -585,7 +647,7 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
 
       {/* Grant Permission Modal */}
       {showPermissionModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-60">
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-[60]">
           <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 shadow-lg rounded-md bg-white">
             <div className="mt-3">
               <div className="flex items-center justify-between mb-4">
@@ -600,6 +662,7 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
 
               <form onSubmit={(e) => {
                 e.preventDefault()
+                console.log('🔍 Permission form submitted')
                 handleGrantPermission()
               }} className="space-y-4">
                 <div>
@@ -677,7 +740,7 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
 
       {/* Grant Shortcode Access Modal */}
       {showShortcodeModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-60">
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-[60]">
           <div className="relative top-20 mx-auto p-5 border w-11/12 md:w-1/2 shadow-lg rounded-md bg-white">
             <div className="mt-3">
               <div className="flex items-center justify-between mb-4">
@@ -692,6 +755,7 @@ export default function UserPermissionsManager({ user, onClose, onUpdate }: User
 
               <form onSubmit={(e) => {
                 e.preventDefault()
+                console.log('🔍 Shortcode access form submitted')
                 handleGrantShortcodeAccess()
               }} className="space-y-4">
                 <div>

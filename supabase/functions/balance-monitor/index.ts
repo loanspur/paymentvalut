@@ -141,10 +141,19 @@ serve(async (req) => {
           continue
         }
 
-        // Get current balance from M-Pesa API
+        // Get current balance - try fresh M-Pesa API call first, fallback to database
         let balanceData
+        let usedFreshData = false
         try {
-          balanceData = await getCurrentBalance(supabaseClient, partner)
+          // First try to get fresh balance from M-Pesa API
+          try {
+            balanceData = await getCurrentBalance(supabaseClient, partner)
+            usedFreshData = true
+          } catch (apiError) {
+            // Fallback to database data if API fails
+            balanceData = await getCurrentBalanceFromDatabase(supabaseClient, partner)
+            usedFreshData = false
+          }
         } catch (balanceError) {
           results.push({
             partner_id: config.partner_id,
@@ -187,7 +196,9 @@ serve(async (req) => {
             utility_account_balance: balanceData.utility_account_balance
           },
           alerts_sent: alerts.length,
-          alerts: alerts
+          alerts: alerts,
+          used_fresh_data: usedFreshData,
+          balance_amount: balanceData.utility_account_balance
         })
 
       } catch (error) {
@@ -218,6 +229,111 @@ serve(async (req) => {
     })
   }
 })
+
+async function getCurrentBalanceFromDatabase(supabaseClient: any, partner: Partner): Promise<BalanceData> {
+  try {
+    // First, try to get the most recent balance data from balance_requests table
+    const { data: balanceRequest, error: balanceError } = await supabaseClient
+      .from('balance_requests')
+      .select('utility_account_balance, working_account_balance, charges_account_balance, created_at, updated_at')
+      .eq('partner_id', partner.id)
+      .eq('status', 'completed')
+      .not('utility_account_balance', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (balanceRequest && !balanceError) {
+      return {
+        utility_account_balance: balanceRequest.utility_account_balance,
+        working_account_balance: balanceRequest.working_account_balance,
+        charges_account_balance: balanceRequest.charges_account_balance,
+        timestamp: balanceRequest.updated_at || balanceRequest.created_at
+      }
+    }
+
+    // Fallback: Get the most recent transaction balance data from disbursement_requests table
+    const { data: latestTransaction, error: transactionError } = await supabaseClient
+      .from('disbursement_requests')
+      .select(`
+        utility_balance_at_transaction,
+        working_balance_at_transaction,
+        charges_balance_at_transaction,
+        mpesa_utility_account_balance,
+        mpesa_working_account_balance,
+        mpesa_charges_account_balance,
+        balance_updated_at,
+        updated_at,
+        created_at
+      `)
+      .eq('partner_id', partner.id)
+      .not('utility_balance_at_transaction', 'is', null)
+      .order('balance_updated_at', { ascending: false, nullsFirst: false })
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (latestTransaction && !transactionError) {
+      // Use the most recent balance data available
+      const utilityBalance = latestTransaction.utility_balance_at_transaction || 
+                           latestTransaction.mpesa_utility_account_balance
+      const workingBalance = latestTransaction.working_balance_at_transaction || 
+                           latestTransaction.mpesa_working_account_balance
+      const chargesBalance = latestTransaction.charges_balance_at_transaction || 
+                           latestTransaction.mpesa_charges_account_balance
+      
+      const timestamp = latestTransaction.balance_updated_at || 
+                       latestTransaction.updated_at || 
+                       latestTransaction.created_at
+
+      return {
+        utility_account_balance: utilityBalance,
+        working_account_balance: workingBalance,
+        charges_account_balance: chargesBalance,
+        timestamp: timestamp
+      }
+    }
+
+    // If still no data, try any transaction with balance data
+    const { data: anyTransaction, error: anyError } = await supabaseClient
+      .from('disbursement_requests')
+      .select(`
+        utility_balance_at_transaction,
+        working_balance_at_transaction,
+        charges_balance_at_transaction,
+        mpesa_utility_account_balance,
+        mpesa_working_account_balance,
+        mpesa_charges_account_balance,
+        updated_at,
+        created_at
+      `)
+      .eq('partner_id', partner.id)
+      .or('utility_balance_at_transaction.not.is.null,mpesa_utility_account_balance.not.is.null')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (anyTransaction && !anyError) {
+      const utilityBalance = anyTransaction.utility_balance_at_transaction || 
+                           anyTransaction.mpesa_utility_account_balance
+      const workingBalance = anyTransaction.working_balance_at_transaction || 
+                           anyTransaction.mpesa_working_account_balance
+      const chargesBalance = anyTransaction.charges_balance_at_transaction || 
+                           anyTransaction.mpesa_charges_account_balance
+
+      return {
+        utility_account_balance: utilityBalance,
+        working_account_balance: workingBalance,
+        charges_account_balance: chargesBalance,
+        timestamp: anyTransaction.updated_at || anyTransaction.created_at
+      }
+    }
+
+    throw new Error(`No balance data found for partner ${partner.name} in any table`)
+  } catch (error) {
+    throw new Error(`Failed to get balance data from database: ${error.message}`)
+  }
+}
 
 async function getCurrentBalance(supabaseClient: any, partner: Partner): Promise<BalanceData> {
   try {
@@ -286,22 +402,39 @@ async function getCurrentBalance(supabaseClient: any, partner: Partner): Promise
           mpesa_response: balanceData
         })
 
-      // Wait a moment for the callback to potentially arrive
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      // Wait longer for the callback to arrive (M-Pesa can take 5-30 seconds)
+      await new Promise(resolve => setTimeout(resolve, 10000)) // Increased to 10 seconds
 
       // Try to get the latest balance from the database (from callback or previous requests)
-      const { data: latestBalance, error: balanceError } = await supabaseClient
+      let { data: latestBalance, error: balanceError } = await supabaseClient
         .from('balance_requests')
-        .select('utility_account_balance, balance_after, updated_at, status')
+        .select('utility_account_balance, balance_after, updated_at, status, conversation_id')
         .eq('partner_id', partner.id)
         .eq('status', 'completed')
         .order('updated_at', { ascending: false })
         .limit(1)
         .single()
 
+      // If no completed balance found, try to find the pending request we just created
+      if (!latestBalance || balanceError) {
+        const { data: pendingBalance } = await supabaseClient
+          .from('balance_requests')
+          .select('utility_account_balance, balance_after, updated_at, status, conversation_id')
+          .eq('partner_id', partner.id)
+          .eq('conversation_id', balanceData.ConversationID)
+          .single()
+        
+        if (pendingBalance) {
+          latestBalance = pendingBalance
+        }
+      }
+
       if (latestBalance && !balanceError) {
         return {
-          utility_account_balance: latestBalance.utility_account_balance || latestBalance.balance_after
+          utility_account_balance: latestBalance.utility_account_balance || latestBalance.balance_after,
+          working_account_balance: latestBalance.working_account_balance,
+          charges_account_balance: latestBalance.charges_account_balance,
+          timestamp: latestBalance.updated_at
         }
       }
 
@@ -326,7 +459,7 @@ async function getCurrentBalance(supabaseClient: any, partner: Partner): Promise
         utility_account_balance: null
       }
     } else {
-      throw new Error(`M-Pesa balance query failed: ${balanceData.ResponseDescription}`)
+      throw new Error(`M-Pesa balance query failed: ${balanceData.ResponseCode} - ${balanceData.ResponseDescription}`)
     }
 
   } catch (error) {
@@ -371,6 +504,7 @@ async function checkBalanceThresholds(
 ): Promise<any[]> {
   const alerts = []
 
+
   // Check utility account balance only
   if (balanceData.utility_account_balance !== null) {
     // Check for variance drop threshold first
@@ -385,11 +519,10 @@ async function checkBalanceThresholds(
         .eq('status', 'completed')
         .not('utility_account_balance', 'is', null)
         .order('created_at', { ascending: false })
-        .limit(1)
-        .offset(1) // Skip the current record to get the previous one
+        .limit(2) // Get 2 records to skip the current one
 
-      if (!prevError && previousBalance && previousBalance.length > 0) {
-        const previousBalanceAmount = previousBalance[0].utility_account_balance
+      if (!prevError && previousBalance && previousBalance.length > 1) {
+        const previousBalanceAmount = previousBalance[1].utility_account_balance
         const currentBalanceAmount = balanceData.utility_account_balance
         const varianceDrop = previousBalanceAmount - currentBalanceAmount
 
@@ -411,20 +544,21 @@ async function checkBalanceThresholds(
       }
     }
 
-    // Only check low balance threshold if variance drop threshold is not set or is 0
-    if (!config.variance_drop_threshold || config.variance_drop_threshold <= 0) {
-      const threshold = config.utility_account_threshold
-      if (balanceData.utility_account_balance < threshold) {
-        const alert = await createBalanceAlert(
-          supabaseClient,
-          config,
-          partner,
-          'utility',
-          balanceData.utility_account_balance,
-          threshold,
-          'low_balance'
-        )
-        if (alert) alerts.push(alert)
+    // Check low balance threshold (always check this regardless of variance drop threshold)
+    const threshold = config.utility_account_threshold
+    
+    if (balanceData.utility_account_balance < threshold) {
+      const alert = await createBalanceAlert(
+        supabaseClient,
+        config,
+        partner,
+        'utility',
+        balanceData.utility_account_balance,
+        threshold,
+        'low_balance'
+      )
+      if (alert) {
+        alerts.push(alert)
       }
     }
   }
@@ -442,10 +576,13 @@ async function createBalanceAlert(
   alertType: string,
   varianceDrop?: number
 ): Promise<any | null> {
+  // Creating balance alert
+
   // Check if we already sent an alert recently (within last hour)
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
   
-  const { data: recentAlert } = await supabaseClient
+  
+  const { data: recentAlert, error: recentAlertError } = await supabaseClient
     .from('balance_alerts')
     .select('id')
     .eq('partner_id', config.partner_id)
@@ -481,6 +618,7 @@ async function createBalanceAlert(
     .from('balance_alerts')
     .insert({
       partner_id: config.partner_id,
+      balance_check_id: null, // Set to null since we're not using balance_checks table
       alert_type: alertType,
       account_type: accountType,
       current_balance: currentBalance,
@@ -499,7 +637,6 @@ async function createBalanceAlert(
   if (config.slack_webhook_url) {
     try {
       await sendSlackAlert(config.slack_webhook_url, config.slack_channel, alertMessage)
-      
       // Update alert as sent
       await supabaseClient
         .from('balance_alerts')

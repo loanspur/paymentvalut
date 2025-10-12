@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useAuth } from './AuthProvider'
 import { 
   DollarSign, 
   Send, 
@@ -47,109 +48,107 @@ export default function Sidebar({ className = '' }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<string[]>(['core', 'management'])
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const { user, isAuthenticated, logout } = useAuth()
   const pathname = usePathname()
 
-  // Check if user is logged in
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('auth_token')
-      setIsLoggedIn(!!token)
-    }
-  }, [])
-
   const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' })
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth_token')
-        localStorage.removeItem('user')
-      }
-      setIsLoggedIn(false)
-      window.location.href = '/login'
-    } catch (error) {
-      console.error('Logout error:', error)
-    }
+    await logout()
   }
 
-  const navigationGroups: NavigationGroup[] = [
-    {
-      title: 'Core',
-      items: [
-        {
-          name: 'Dashboard',
-          href: '/',
-          icon: Home,
-          description: 'Overview & analytics'
-        },
-        {
-          name: 'Send Money',
-          href: '/disburse',
-          icon: Send,
-          description: 'Initiate disbursement',
-          badge: 'Primary'
-        }
-      ]
-    },
-    {
-      title: 'Management',
-      items: [
-        {
-          name: 'Partners',
-          href: '/partners',
-          icon: Building2,
-          description: 'Manage organizations'
-        },
-        {
-          name: 'Transaction Monitoring',
-          href: '/transactions',
-          icon: Activity,
-          description: 'Real-time transaction monitoring',
-          badge: 'Live'
-        },
-        {
-          name: 'Transaction History',
-          href: '/history',
-          icon: History,
-          description: 'View all transactions'
-        }
-      ]
-    },
-    {
-      title: 'Administration',
-      items: [
-        {
-          name: 'User Management',
-          href: '/admin-dashboard',
-          icon: Users,
-          description: 'Manage users & roles'
-        },
-        {
-          name: 'My Profile',
-          href: '/profile',
-          icon: User,
-          description: 'Manage your profile & password'
-        },
-        {
-          name: 'System Settings',
-          href: '/settings',
-          icon: Settings,
-          description: 'Configure system'
-        }
-      ]
-    },
-    {
-      title: 'Resources',
-      items: [
-        {
-          name: 'API Documentation',
-          href: '/api-docs',
-          icon: FileText,
-          description: 'Integration guides'
-        }
-      ]
-    }
-  ]
+  // Filter navigation based on user role
+  const getFilteredNavigationGroups = (): NavigationGroup[] => {
+    const isSuperAdmin = user?.role === 'super_admin'
+    const isAdmin = user?.role === 'admin'
+    const isPartnerAdmin = user?.role === 'partner_admin'
+    
+    const allGroups: NavigationGroup[] = [
+      {
+        title: 'Core',
+        items: [
+          {
+            name: 'Dashboard',
+            href: '/',
+            icon: Home,
+            description: 'Overview & analytics'
+          },
+          // Only show Send Money for super_admin
+          ...(isSuperAdmin ? [{
+            name: 'Send Money',
+            href: '/disburse',
+            icon: Send,
+            description: 'Initiate disbursement',
+            badge: 'Primary'
+          }] : [])
+        ]
+      },
+      {
+        title: 'Management',
+        items: [
+          // Only show Partners for super_admin and admin
+          ...(isSuperAdmin || isAdmin ? [{
+            name: 'Partners',
+            href: '/partners',
+            icon: Building2,
+            description: 'Manage organizations'
+          }] : []),
+          {
+            name: 'Transaction Monitoring',
+            href: '/transactions',
+            icon: Activity,
+            description: 'Real-time transaction monitoring',
+            badge: 'Live'
+          },
+          {
+            name: 'Transaction History',
+            href: '/history',
+            icon: History,
+            description: 'View all transactions'
+          }
+        ]
+      },
+      {
+        title: 'Administration',
+        items: [
+          // Only show User Management for super_admin and admin
+          ...(isSuperAdmin || isAdmin ? [{
+            name: 'User Management',
+            href: '/admin-dashboard',
+            icon: Users,
+            description: 'Manage users & roles'
+          }] : []),
+          {
+            name: 'My Profile',
+            href: '/profile',
+            icon: User,
+            description: 'Manage your profile & password'
+          },
+          // Only show System Settings for super_admin
+          ...(isSuperAdmin ? [{
+            name: 'System Settings',
+            href: '/settings',
+            icon: Settings,
+            description: 'Configure system'
+          }] : [])
+        ]
+      },
+      {
+        title: 'Resources',
+        items: [
+          {
+            name: 'API Documentation',
+            href: '/api-docs',
+            icon: FileText,
+            description: 'Integration guides'
+          }
+        ]
+      }
+    ]
+
+    // Filter out empty groups
+    return allGroups.filter(group => group.items.length > 0)
+  }
+
+  const navigationGroups = getFilteredNavigationGroups()
 
   const isActive = (href: string) => {
     if (href === '/') {
@@ -230,15 +229,16 @@ export default function Sidebar({ className = '' }: SidebarProps) {
       {/* Mobile overlay */}
       {isMobileOpen && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          className="fixed inset-0 bg-black bg-opacity-50 mobile-overlay lg:hidden"
           onClick={() => setIsMobileOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <div className={`
+        hidden lg:flex lg:flex-col lg:w-64 lg:bg-white lg:border-r lg:border-gray-200 lg:shadow-lg
         fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out
-        lg:translate-x-0 lg:static lg:inset-0
+        lg:relative lg:translate-x-0 lg:z-auto
         ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
         ${className}
       `}>
@@ -285,7 +285,7 @@ export default function Sidebar({ className = '' }: SidebarProps) {
           </nav>
 
           {/* User section */}
-          {isLoggedIn && (
+          {isAuthenticated && (
             <div className="border-t border-gray-200 p-4">
               {!isCollapsed ? (
                 <div className="flex items-center space-x-3">
@@ -294,11 +294,19 @@ export default function Sidebar({ className = '' }: SidebarProps) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">
-                      Admin User
+                      {user?.first_name && user?.last_name 
+                        ? `${user.first_name} ${user.last_name}` 
+                        : user?.email || 'User'
+                      }
                     </p>
                     <p className="text-xs text-gray-500 truncate">
-                      admin@example.com
+                      {user?.email || 'user@example.com'}
                     </p>
+                    {user?.role && (
+                      <p className="text-xs text-blue-600 truncate capitalize">
+                        {user.role.replace('_', ' ')}
+                      </p>
+                    )}
                   </div>
                   <div className="flex space-x-1">
                     <Link
@@ -348,7 +356,7 @@ export default function Sidebar({ className = '' }: SidebarProps) {
       {/* Mobile menu button */}
       <button
         onClick={() => setIsMobileOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-40 flex items-center justify-center w-10 h-10 bg-white border border-gray-200 rounded-lg shadow-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+        className="lg:hidden fixed top-4 left-4 z-50 flex items-center justify-center w-10 h-10 bg-white border border-gray-200 rounded-lg shadow-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors"
       >
         <Menu className="w-5 h-5" />
       </button>

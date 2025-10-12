@@ -1,0 +1,254 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { format, subDays, startOfDay, endOfDay } from 'date-fns'
+import { jwtVerify } from 'jose'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+export async function GET(request: NextRequest) {
+  try {
+    // Authentication check
+    const token = request.cookies.get('auth_token')?.value
+    
+    if (!token) {
+      return NextResponse.json({
+        error: 'Access denied',
+        message: 'Authentication required'
+      }, { status: 401 })
+    }
+
+    // Verify the JWT token
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key-change-in-production')
+    const { payload } = await jwtVerify(token, secret)
+    
+    if (!payload || !payload.userId) {
+      return NextResponse.json({
+        error: 'Invalid authentication',
+        message: 'Invalid token'
+      }, { status: 401 })
+    }
+
+    // Get current user from database
+    const { data: currentUser, error: userError } = await supabase
+      .from('users')
+      .select('id, role, partner_id, is_active')
+      .eq('id', payload.userId)
+      .single()
+
+    if (userError || !currentUser || !currentUser.is_active) {
+      return NextResponse.json({
+        error: 'Invalid authentication',
+        message: 'User not found or inactive'
+      }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const dateRange = searchParams.get('dateRange') || '7d'
+    const partnerId = searchParams.get('partnerId') || 'all'
+    const chartType = searchParams.get('chartType') || 'daily'
+
+    // Override partnerId based on user permissions
+    let effectivePartnerId = partnerId
+    if (currentUser.role !== 'super_admin' && currentUser.partner_id) {
+      effectivePartnerId = currentUser.partner_id
+    }
+
+    // Calculate date range
+    let days = 7
+    switch (dateRange) {
+      case '1d': days = 1; break
+      case '7d': days = 7; break
+      case '30d': days = 30; break
+      case '90d': days = 90; break
+    }
+
+    const endDate = new Date()
+    const startDate = subDays(endDate, days - 1)
+
+    if (chartType === 'daily') {
+      // Generate daily transaction data
+      const dailyData = []
+      for (let i = days - 1; i >= 0; i--) {
+        const date = subDays(new Date(), i)
+        const dayStart = startOfDay(date)
+        const dayEnd = endOfDay(date)
+
+        // Build query for this day
+        let query = supabase
+          .from('disbursement_requests')
+          .select('amount, status, created_at')
+          .gte('created_at', dayStart.toISOString())
+          .lte('created_at', dayEnd.toISOString())
+
+        if (effectivePartnerId !== 'all') {
+          query = query.eq('partner_id', effectivePartnerId)
+        }
+
+        const { data: transactions, error } = await query
+
+        if (error) {
+          // Error fetching daily transactions
+          continue
+        }
+
+        const totalTransactions = transactions?.length || 0
+        const totalAmount = transactions?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0
+        const successfulTransactions = transactions?.filter(t => t.status === 'success').length || 0
+        const successRate = totalTransactions > 0 ? (successfulTransactions / totalTransactions) * 100 : 0
+
+        dailyData.push({
+          date: format(date, 'MMM dd'),
+          transactions: totalTransactions,
+          amount: totalAmount,
+          successRate: Math.round(successRate * 100) / 100
+        })
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: dailyData
+      })
+    }
+
+    if (chartType === 'status') {
+      // Get status distribution
+      let query = supabase
+        .from('disbursement_requests')
+        .select('status')
+        .gte('created_at', startDate.toISOString())
+        .lte('created_at', endDate.toISOString())
+
+      if (effectivePartnerId !== 'all') {
+        query = query.eq('partner_id', effectivePartnerId)
+      }
+
+      const { data: transactions, error } = await query
+
+      if (error) {
+        // Error fetching status data
+        return NextResponse.json({ error: 'Failed to fetch status data' }, { status: 500 })
+      }
+
+      const statusCounts = transactions?.reduce((acc, transaction) => {
+        acc[transaction.status] = (acc[transaction.status] || 0) + 1
+        return acc
+      }, {} as Record<string, number>) || {}
+
+      const statusData = [
+        { name: 'Success', value: statusCounts.success || 0, color: '#10B981' },
+        { name: 'Failed', value: statusCounts.failed || 0, color: '#EF4444' },
+        { name: 'Pending', value: statusCounts.pending || 0, color: '#F59E0B' },
+        { name: 'Queued', value: statusCounts.queued || 0, color: '#6B7280' },
+        { name: 'Accepted', value: statusCounts.accepted || 0, color: '#3B82F6' }
+      ].filter(item => item.value > 0)
+
+      return NextResponse.json({
+        success: true,
+        data: statusData
+      })
+    }
+
+    if (chartType === 'partner') {
+      // Get partner performance data
+      const { data: partners, error: partnersError } = await supabase
+        .from('partners')
+        .select('id, name, short_code, mpesa_shortcode')
+        .eq('is_active', true)
+
+      if (partnersError) {
+        // Error fetching partners
+        return NextResponse.json({ error: 'Failed to fetch partners' }, { status: 500 })
+      }
+
+      const partnerData = await Promise.all(
+        partners.map(async (partner) => {
+          let query = supabase
+            .from('disbursement_requests')
+            .select('amount, status')
+            .eq('partner_id', partner.id)
+            .gte('created_at', startDate.toISOString())
+            .lte('created_at', endDate.toISOString())
+
+          const { data: transactions, error } = await query
+
+          if (error) {
+            // Error fetching transactions for partner
+            return null
+          }
+
+          const totalTransactions = transactions?.length || 0
+          const totalAmount = transactions?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0
+          const successfulTransactions = transactions?.filter(t => t.status === 'success').length || 0
+          const successRate = totalTransactions > 0 ? (successfulTransactions / totalTransactions) * 100 : 0
+
+          return {
+            name: partner.name,
+            transactions: totalTransactions,
+            amount: totalAmount,
+            successRate: Math.round(successRate * 100) / 100
+          }
+        })
+      )
+
+      return NextResponse.json({
+        success: true,
+        data: partnerData.filter(Boolean)
+      })
+    }
+
+    if (chartType === 'balance') {
+      // Get balance trends from balance_requests table
+      const { data: balanceData, error } = await supabase
+        .from('balance_requests')
+        .select('utility_account_balance, working_account_balance, charges_account_balance, created_at')
+        .eq('status', 'completed')
+        .gte('created_at', startDate.toISOString())
+        .lte('created_at', endDate.toISOString())
+        .order('created_at', { ascending: true })
+
+      if (error) {
+        // Error fetching balance data
+        return NextResponse.json({ error: 'Failed to fetch balance data' }, { status: 500 })
+      }
+
+      // Group by date and get latest balance for each day
+      const dailyBalances = new Map()
+      
+      balanceData?.forEach(record => {
+        const date = format(new Date(record.created_at), 'MMM dd')
+        const existing = dailyBalances.get(date)
+        
+        if (!existing || new Date(record.created_at) > new Date(existing.created_at)) {
+          dailyBalances.set(date, {
+            date,
+            utility: record.utility_account_balance || 0,
+            working: record.working_account_balance || 0,
+            charges: record.charges_account_balance || 0,
+            created_at: record.created_at
+          })
+        }
+      })
+
+      const balanceTrends = Array.from(dailyBalances.values()).sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      )
+
+      return NextResponse.json({
+        success: true,
+        data: balanceTrends
+      })
+    }
+
+    return NextResponse.json({ error: 'Invalid chart type' }, { status: 400 })
+
+  } catch (error) {
+    // Error fetching chart data
+    return NextResponse.json(
+      { error: 'Internal server error', details: error.message },
+      { status: 500 }
+    )
+  }
+}

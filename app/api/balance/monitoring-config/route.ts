@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { DEFAULT_VALUES } from '../../../../lib/constants'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -51,8 +52,8 @@ export async function GET(request: NextRequest) {
           id: legacyConfig.id,
           partner_id: legacyConfig.partner_id,
           working_account_threshold: legacyConfig.low_balance_threshold,
-          utility_account_threshold: 500.00, // Default
-          charges_account_threshold: 200.00, // Default
+          utility_account_threshold: DEFAULT_VALUES.MONITORING.UTILITY_ACCOUNT_THRESHOLD,
+          charges_account_threshold: DEFAULT_VALUES.MONITORING.CHARGES_ACCOUNT_THRESHOLD,
           check_interval_minutes: legacyConfig.check_interval_minutes,
           slack_webhook_url: legacyConfig.slack_webhook_url,
           slack_channel: legacyConfig.slack_channel,
@@ -71,13 +72,13 @@ export async function GET(request: NextRequest) {
       config: {
         id: null,
         partner_id: partnerId,
-        working_account_threshold: 1000.00,
-        utility_account_threshold: 500.00,
-        charges_account_threshold: 200.00,
-        variance_drop_threshold: 5000.00,
-        check_interval_minutes: 15,
+        working_account_threshold: DEFAULT_VALUES.MONITORING.WORKING_ACCOUNT_THRESHOLD,
+        utility_account_threshold: DEFAULT_VALUES.MONITORING.UTILITY_ACCOUNT_THRESHOLD,
+        charges_account_threshold: DEFAULT_VALUES.MONITORING.CHARGES_ACCOUNT_THRESHOLD,
+        variance_drop_threshold: DEFAULT_VALUES.MONITORING.VARIANCE_DROP_THRESHOLD,
+        check_interval_minutes: DEFAULT_VALUES.MONITORING.CHECK_INTERVAL_MINUTES,
         slack_webhook_url: '',
-        slack_channel: '#mpesa-alerts',
+        slack_channel: DEFAULT_VALUES.MONITORING.SLACK_CHANNEL,
         is_enabled: true,
         last_checked_at: null,
         last_alert_sent_at: null,
@@ -87,7 +88,6 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Error fetching monitoring config:', error)
     return NextResponse.json(
       { 
         error: 'Internal server error',
@@ -115,6 +115,8 @@ export async function PUT(request: NextRequest) {
       is_enabled
     } = body
 
+    // Processing config update request
+
     if (!partner_id) {
       return NextResponse.json(
         { error: 'Partner ID is required' },
@@ -123,9 +125,23 @@ export async function PUT(request: NextRequest) {
     }
 
     // Validate thresholds
-    if (working_account_threshold < 0 || utility_account_threshold < 0 || charges_account_threshold < 0) {
+    if (working_account_threshold === undefined || working_account_threshold < 0) {
       return NextResponse.json(
-        { error: 'Thresholds must be positive numbers' },
+        { error: 'Working account threshold must be a positive number' },
+        { status: 400 }
+      )
+    }
+    
+    if (utility_account_threshold === undefined || utility_account_threshold < 0) {
+      return NextResponse.json(
+        { error: 'Utility account threshold must be a positive number' },
+        { status: 400 }
+      )
+    }
+    
+    if (charges_account_threshold === undefined || charges_account_threshold < 0) {
+      return NextResponse.json(
+        { error: 'Charges account threshold must be a positive number' },
         { status: 400 }
       )
     }
@@ -153,17 +169,21 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    const configData = {
+    const configData: any = {
       partner_id,
       working_account_threshold: parseFloat(working_account_threshold),
       utility_account_threshold: parseFloat(utility_account_threshold),
       charges_account_threshold: parseFloat(charges_account_threshold),
-      variance_drop_threshold: variance_drop_threshold ? parseFloat(variance_drop_threshold) : 5000.00,
       check_interval_minutes: parseInt(check_interval_minutes),
       slack_webhook_url: slack_webhook_url || null,
       slack_channel: slack_channel || '#mpesa-alerts',
       is_enabled: Boolean(is_enabled),
       updated_at: new Date().toISOString()
+    }
+
+    // Only add variance_drop_threshold if it's provided and the column exists
+    if (variance_drop_threshold) {
+      configData.variance_drop_threshold = parseFloat(variance_drop_threshold)
     }
 
     // Try to update in balance_monitoring_config first
@@ -174,8 +194,6 @@ export async function PUT(request: NextRequest) {
       .single()
 
     if (updateError) {
-      console.error('Error updating monitoring config:', updateError)
-      console.error('Config data being inserted:', configData)
       
       // Provide more helpful error messages for common constraint violations
       let errorMessage = 'Failed to update monitoring configuration'
@@ -185,19 +203,24 @@ export async function PUT(request: NextRequest) {
         errorMessage = 'Variance drop threshold must be at least 1 KES'
       } else if (updateError.message.includes('check constraint')) {
         errorMessage = 'One or more values violate database constraints. Please check your input values.'
+      } else if (updateError.message.includes('column') && updateError.message.includes('does not exist')) {
+        errorMessage = 'Database schema issue detected. Please run the latest migration to add missing columns.'
+      } else if (updateError.message.includes('foreign key')) {
+        errorMessage = 'Invalid partner ID provided.'
       }
       
       return NextResponse.json(
         { 
           error: errorMessage,
           details: updateError.message,
-          configData: configData
+          configData: configData,
+          errorCode: updateError.code
         },
         { status: 500 }
       )
     }
 
-    console.log(`✅ Updated monitoring config for partner ${partner_id}`)
+    // Monitoring config updated successfully
 
     return NextResponse.json({
       success: true,
@@ -205,7 +228,6 @@ export async function PUT(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Error updating monitoring config:', error)
     return NextResponse.json(
       { 
         error: 'Internal server error',

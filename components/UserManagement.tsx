@@ -30,7 +30,6 @@ interface User {
   partner_id?: string
   is_active: boolean
   email_verified?: boolean
-  last_login_at?: string
   last_activity_at?: string
   notes?: string
   created_at: string
@@ -108,7 +107,9 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch('/api/users')
+      const response = await fetch('/api/user-management', {
+        credentials: 'include'
+      })
       const data = await response.json()
       if (data.success) {
         setUsers(data.users)
@@ -116,7 +117,7 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
         addNotification({
           type: 'error',
           title: 'Error',
-          message: 'Failed to fetch users'
+          message: data.message || 'Failed to fetch users'
         })
       }
     } catch (error) {
@@ -146,11 +147,12 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
 
   const handleCreateUser = async () => {
     try {
-      const response = await fetch('/api/users', {
+      const response = await fetch('/api/user-management', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify(userForm)
       })
 
@@ -212,15 +214,34 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
     if (!editingUser) return
 
     try {
-      const response = await fetch(`/api/users/${editingUser.id}`, {
+      console.log('🔍 Frontend: Updating user with data:', userForm)
+      console.log('🔍 Frontend: User ID:', editingUser.id)
+      
+      const response = await fetch(`/api/user-management/${editingUser.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify(userForm)
       })
+      
+      console.log('🔍 Frontend: Response status:', response.status)
+
+      if (!response.ok) {
+        console.log('🔍 Frontend: Response not OK:', response.status, response.statusText)
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        console.log('🔍 Frontend: Error data:', errorData)
+        addNotification({
+          type: 'error',
+          title: 'Error',
+          message: errorData.error || errorData.message || `Server error: ${response.status}`
+        })
+        return
+      }
 
       const data = await response.json()
+      console.log('🔍 Frontend: Success data:', data)
       if (data.success) {
         addNotification({
           type: 'success',
@@ -239,10 +260,11 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
         })
       }
     } catch (error) {
+      console.log('🔍 Frontend: Catch error:', error)
       addNotification({
         type: 'error',
         title: 'Error',
-        message: 'Failed to update user'
+        message: 'Failed to update user: ' + (error instanceof Error ? error.message : 'Unknown error')
       })
     }
   }
@@ -251,8 +273,9 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
     if (!confirm('Are you sure you want to delete this user?')) return
 
     try {
-      const response = await fetch(`/api/users/${userId}`, {
-        method: 'DELETE'
+      const response = await fetch(`/api/user-management/${userId}`, {
+        method: 'DELETE',
+        credentials: 'include'
       })
 
       const data = await response.json()
@@ -375,7 +398,7 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
                 resetForm()
                 setShowUserModal(true)
               }}
-              className="btn btn-primary"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
             >
               <Plus className="w-4 h-4 mr-2" />
               Add User
@@ -453,8 +476,8 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {user.last_login_at ? 
-                          new Date(user.last_login_at).toLocaleDateString() : 
+                        {user.last_activity_at ? 
+                          new Date(user.last_activity_at).toLocaleString() : 
                           'Never'
                         }
                       </td>
@@ -498,7 +521,7 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
                   resetForm()
                   setShowUserModal(true)
                 }}
-                className="btn btn-primary"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
               >
                 <Plus className="w-4 h-4 mr-2" />
                 Add User

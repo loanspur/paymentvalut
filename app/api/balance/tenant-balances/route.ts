@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { jwtVerify } from 'jose'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -13,15 +14,57 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 // Get latest balance data for all tenants
 export async function GET(request: NextRequest) {
   try {
-    // Get all active partners with M-Pesa configuration
-    const { data: partners, error: partnersError } = await supabase
+    // Authentication check
+    const token = request.cookies.get('auth_token')?.value
+    
+    if (!token) {
+      return NextResponse.json({
+        error: 'Access denied',
+        message: 'Authentication required'
+      }, { status: 401 })
+    }
+
+    // Verify the JWT token
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key-change-in-production')
+    const { payload } = await jwtVerify(token, secret)
+    
+    if (!payload || !payload.userId) {
+      return NextResponse.json({
+        error: 'Invalid authentication',
+        message: 'Invalid token'
+      }, { status: 401 })
+    }
+
+    // Get current user from database
+    const { data: currentUser, error: userError } = await supabase
+      .from('users')
+      .select('id, role, partner_id, is_active')
+      .eq('id', payload.userId)
+      .single()
+
+    if (userError || !currentUser || !currentUser.is_active) {
+      return NextResponse.json({
+        error: 'Invalid authentication',
+        message: 'User not found or inactive'
+      }, { status: 401 })
+    }
+
+    // Build query for partners based on user role
+    let partnersQuery = supabase
       .from('partners')
       .select('id, name, short_code, mpesa_shortcode')
       .eq('is_active', true)
       .eq('is_mpesa_configured', true)
 
+    // If user is not super_admin, limit to their partner
+    if (currentUser.role !== 'super_admin' && currentUser.partner_id) {
+      partnersQuery = partnersQuery.eq('id', currentUser.partner_id)
+    }
+
+    const { data: partners, error: partnersError } = await partnersQuery
+
     if (partnersError) {
-      console.error('Error fetching partners:', partnersError)
+      // Error fetching partners
       return NextResponse.json(
         { error: 'Failed to fetch partners' },
         { status: 500 }
@@ -62,7 +105,7 @@ export async function GET(request: NextRequest) {
         let balanceData = null
         let source = 'N/A'
 
-        // First, try to get from disbursement_requests
+        // First, try to get from disbursement_requests (transaction balance data)
         if (!disbursementError && latestDisbursement) {
           balanceData = {
             source: 'disbursement_requests',
@@ -83,6 +126,8 @@ export async function GET(request: NextRequest) {
             status,
             balance_after,
             utility_account_balance,
+            working_account_balance,
+            charges_account_balance,
             created_at,
             updated_at
           `)
@@ -102,8 +147,8 @@ export async function GET(request: NextRequest) {
             balanceData = {
               source: 'balance_requests',
               utility_balance: balanceRequest.utility_account_balance,
-              working_balance: balanceRequest.balance_after,
-              charges_balance: null,
+              working_balance: balanceRequest.working_account_balance,
+              charges_balance: balanceRequest.charges_account_balance,
               last_updated: balanceRequest.updated_at || balanceRequest.created_at
             }
             source = 'balance_requests'
@@ -138,21 +183,22 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Debug logging
-        console.log(`🔍 [Tenant Balances] Partner: ${partner.name}`, {
-          hasBalanceData: !!balanceData,
-          balanceData: balanceData,
-          source: source,
-          disbursementError: disbursementError?.message,
-          balanceError: balanceError?.message
-        })
+        // Processing partner balance data
 
         return {
           id: partner.id,
           name: partner.name,
           short_code: partner.short_code,
           mpesa_shortcode: partner.mpesa_shortcode,
-          balance_data: balanceData ? { ...balanceData, source } : null
+          balance_data: balanceData ? { 
+            ...balanceData, 
+            source,
+            lastChecked: balanceData.last_updated, // Map last_updated to lastChecked for frontend
+            currentBalance: balanceData.utility_balance,
+            utility_balance: balanceData.utility_balance,
+            working_balance: balanceData.working_balance,
+            charges_balance: balanceData.charges_balance
+          } : null
         }
       })
     )
@@ -163,7 +209,7 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error: any) {
-    console.error('Error fetching tenant balances:', error)
+    // Error fetching tenant balances
     return NextResponse.json(
       { 
         error: 'Internal server error',

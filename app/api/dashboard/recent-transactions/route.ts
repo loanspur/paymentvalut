@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { jwtVerify } from 'jose'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -8,28 +9,68 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 export async function GET(request: NextRequest) {
   try {
+    // Authentication check
+    const token = request.cookies.get('auth_token')?.value
+    
+    if (!token) {
+      return NextResponse.json({
+        error: 'Access denied',
+        message: 'Authentication required'
+      }, { status: 401 })
+    }
+
+    // Verify the JWT token
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key-change-in-production')
+    const { payload } = await jwtVerify(token, secret)
+    
+    if (!payload || !payload.userId) {
+      return NextResponse.json({
+        error: 'Invalid authentication',
+        message: 'Invalid token'
+      }, { status: 401 })
+    }
+
+    // Get current user from database
+    const { data: currentUser, error: userError } = await supabase
+      .from('users')
+      .select('id, role, partner_id, is_active')
+      .eq('id', payload.userId)
+      .single()
+
+    if (userError || !currentUser || !currentUser.is_active) {
+      return NextResponse.json({
+        error: 'Invalid authentication',
+        message: 'User not found or inactive'
+      }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const limit = parseInt(searchParams.get('limit') || '10')
 
+    // Build query for disbursement requests based on user role
+    let disbursementQuery = supabase.from('disbursement_requests').select('*')
+    if (currentUser.role !== 'super_admin' && currentUser.partner_id) {
+      disbursementQuery = disbursementQuery.eq('partner_id', currentUser.partner_id)
+    }
 
     // Get recent disbursement requests with all M-Pesa fields
-    const { data: transactions, error } = await supabase
-      .from('disbursement_requests')
-      .select('*')
+    const { data: transactions, error } = await disbursementQuery
       .order('created_at', { ascending: false })
       .limit(limit)
 
-    // Get partners data separately
-    const { data: partners, error: partnersError } = await supabase
-      .from('partners')
-      .select('id, name, short_code')
+    // Get partners data separately - also filter by user role
+    let partnersQuery = supabase.from('partners').select('id, name, short_code, mpesa_shortcode')
+    if (currentUser.role !== 'super_admin' && currentUser.partner_id) {
+      partnersQuery = partnersQuery.eq('id', currentUser.partner_id)
+    }
+    const { data: partners, error: partnersError } = await partnersQuery
 
     if (partnersError) {
-      console.error('Error fetching partners:', partnersError)
+      // Error fetching partners
     }
 
     if (error) {
-      console.error('Error fetching recent transactions:', error)
+      // Error fetching recent transactions
       return NextResponse.json(
         { error: 'Failed to fetch transactions', details: error.message },
         { status: 500 }
@@ -94,7 +135,7 @@ export async function GET(request: NextRequest) {
       return {
         id: transaction.id,
         partner: partner?.name || 'Unknown',
-        shortCode: partner?.short_code || '',
+        shortCode: partner?.short_code || partner?.mpesa_shortcode || 'N/A',
         amount: transaction.amount,
         msisdn: transaction.msisdn,
         status: transaction.status,
@@ -122,7 +163,7 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('❌ Error fetching recent transactions:', error)
+    // Error fetching recent transactions
     return NextResponse.json(
       { error: 'Internal server error', details: error.message },
       { status: 500 }

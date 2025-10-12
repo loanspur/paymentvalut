@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import jwt from 'jsonwebtoken'
-import { supabase } from '../../../../lib/supabase'
+import { jwtVerify } from 'jose'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 
 export async function GET(request: NextRequest) {
   try {
-    const sessionToken = request.headers.get('authorization')?.replace('Bearer ', '')
+    const token = request.cookies.get('auth_token')?.value
 
-    if (!sessionToken) {
+    if (!token) {
       return NextResponse.json(
         { error: 'Session token required' },
         { status: 401 }
@@ -15,9 +20,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Verify JWT token
-    const decoded = jwt.verify(sessionToken, process.env.JWT_SECRET!) as any
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key-change-in-production')
+    const { payload } = await jwtVerify(token, secret)
     
-    if (!decoded) {
+    if (!payload) {
       return NextResponse.json(
         { error: 'Invalid session' },
         { status: 401 }
@@ -28,13 +34,20 @@ export async function GET(request: NextRequest) {
     const { data: user, error } = await supabase
       .from('users')
       .select('*')
-      .eq('id', decoded.userId || decoded.id)
+      .eq('id', payload.userId)
       .single()
 
-    if (error || !user) {
+    if (error) {
       return NextResponse.json(
-        { error: 'Invalid session' },
-        { status: 401 }
+        { error: 'Database error', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
       )
     }
 
@@ -52,9 +65,9 @@ export async function GET(request: NextRequest) {
         id: user.id,
         email: user.email,
         role: user.role,
-        partner_id: user.partner_id,
+        partner_id: user.partner_id || null,
         is_active: user.is_active,
-        last_login_at: user.last_login_at,
+        last_activity_at: user.last_activity_at,
         created_at: user.created_at
       }
     })

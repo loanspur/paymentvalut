@@ -65,6 +65,15 @@ export async function POST(request: NextRequest) {
 
     console.log('✅ Login successful for:', email, 'Role:', user.role)
 
+    // Update last login time
+    await supabase
+      .from('users')
+      .update({ 
+        last_activity_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', user.id)
+
     // Create response with secure cookie
     const response = NextResponse.json({
       success: true,

@@ -22,11 +22,8 @@ export default function SecureLoginPage() {
     e.stopPropagation()
     
     if (isSubmitting) {
-      console.log('🔍 Already submitting, ignoring')
       return
     }
-    
-    console.log('🔍 Form submitted, preventing default behavior')
     setIsSubmitting(true)
     setIsLoading(true)
     setError('')
@@ -41,28 +38,22 @@ export default function SecureLoginPage() {
       })
 
       const data = await response.json()
-      console.log('🔍 Login response:', data)
 
       if (response.ok) {
-        console.log('✅ Login successful, redirecting...')
         // Use a more reliable redirect method
         setTimeout(() => {
           if (data.user.role === 'admin') {
-            console.log('🔄 Redirecting to admin dashboard')
             window.location.replace('/admin-dashboard')
           } else {
-            console.log('🔄 Redirecting to home')
             window.location.replace('/')
           }
         }, 100)
       } else {
-        console.log('❌ Login failed:', data.error)
         setError(data.error || 'Login failed')
         setIsLoading(false)
         setIsSubmitting(false)
       }
     } catch (error) {
-      console.error('❌ Login error:', error)
       setError('Network error. Please try again.')
       setIsLoading(false)
       setIsSubmitting(false)
@@ -104,7 +95,7 @@ export default function SecureLoginPage() {
                   value={formData.email}
                   onChange={(e) => setFormData({...formData, email: e.target.value})}
                   className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                  placeholder="admin@mpesavault.com"
+                  placeholder="Enter your email address"
                 />
               </div>
             </div>

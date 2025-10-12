@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useAuth } from './AuthProvider'
 import { 
   DollarSign, 
   Send, 
@@ -25,75 +26,75 @@ interface NavigationProps {
 
 export default function Navigation({ className = '' }: NavigationProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const { user, isAuthenticated, logout } = useAuth()
   const pathname = usePathname()
-
-  // Check if user is logged in (client-side only)
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('auth_token')
-      setIsLoggedIn(!!token)
-    }
-  }, [])
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' })
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth_token')
-        localStorage.removeItem('user')
-      }
-      setIsLoggedIn(false)
-      window.location.href = '/login'
+      await logout()
     } catch (error) {
       console.error('Logout error:', error)
     }
   }
 
-  const navigationItems = [
-    {
-      name: 'Dashboard',
-      href: '/',
-      icon: Home,
-      description: 'Main dashboard'
-    },
-    {
-      name: 'Send Money',
-      href: '/disburse',
-      icon: Send,
-      description: 'Initiate disbursement'
-    },
-    {
-      name: 'Partners',
-      href: '/partners',
-      icon: Building2,
-      description: 'Manage partners'
-    },
-    {
-      name: 'History',
-      href: '/history',
-      icon: History,
-      description: 'Transaction history'
-    },
-    {
-      name: 'Settings',
-      href: '/settings',
-      icon: Settings,
-      description: 'System settings'
-    },
-    {
-      name: 'API Docs',
-      href: '/api-docs',
-      icon: FileText,
-      description: 'USSD API documentation'
-    },
-    {
-      name: 'Admin',
-      href: '/admin-dashboard',
-      icon: Shield,
-      description: 'User management & activity tracking'
-    }
-  ]
+  // Filter navigation items based on user role
+  const getFilteredNavigationItems = () => {
+    const isSuperAdmin = user?.role === 'super_admin'
+    const isAdmin = user?.role === 'admin'
+    
+    const allItems = [
+      {
+        name: 'Dashboard',
+        href: '/',
+        icon: Home,
+        description: 'Main dashboard'
+      },
+      // Only show Send Money for super_admin
+      ...(isSuperAdmin ? [{
+        name: 'Send Money',
+        href: '/disburse',
+        icon: Send,
+        description: 'Initiate disbursement'
+      }] : []),
+      // Only show Partners for super_admin and admin
+      ...(isSuperAdmin || isAdmin ? [{
+        name: 'Partners',
+        href: '/partners',
+        icon: Building2,
+        description: 'Manage partners'
+      }] : []),
+      {
+        name: 'History',
+        href: '/history',
+        icon: History,
+        description: 'Transaction history'
+      },
+      // Only show Settings for super_admin
+      ...(isSuperAdmin ? [{
+        name: 'Settings',
+        href: '/settings',
+        icon: Settings,
+        description: 'System settings'
+      }] : []),
+      {
+        name: 'API Docs',
+        href: '/api-docs',
+        icon: FileText,
+        description: 'USSD API documentation'
+      },
+      // Only show Admin for super_admin and admin
+      ...(isSuperAdmin || isAdmin ? [{
+        name: 'Admin',
+        href: '/admin-dashboard',
+        icon: Shield,
+        description: 'User management & activity tracking'
+      }] : [])
+    ]
+    
+    return allItems
+  }
+
+  const navigationItems = getFilteredNavigationItems()
 
   const isActive = (href: string) => {
     if (href === '/') {
@@ -140,7 +141,7 @@ export default function Navigation({ className = '' }: NavigationProps) {
         })}
         
         {/* Logout Button */}
-        {isLoggedIn && (
+        {isAuthenticated && (
           <button
             onClick={handleLogout}
             className="group flex items-center px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors"
@@ -175,7 +176,7 @@ export default function Navigation({ className = '' }: NavigationProps) {
             })}
             
             {/* Mobile Logout Button */}
-            {isLoggedIn && (
+            {isAuthenticated && (
               <button
                 onClick={() => {
                   handleLogout()
@@ -197,74 +198,74 @@ export default function Navigation({ className = '' }: NavigationProps) {
 // Sidebar Navigation Component
 export function SidebarNavigation({ className = '' }: NavigationProps) {
   const pathname = usePathname()
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
-
-  // Check if user is logged in (client-side only)
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('auth_token')
-      setIsLoggedIn(!!token)
-    }
-  }, [])
+  const { user, isAuthenticated, logout } = useAuth()
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' })
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth_token')
-        localStorage.removeItem('user')
-      }
-      setIsLoggedIn(false)
-      window.location.href = '/login'
+      await logout()
     } catch (error) {
       console.error('Logout error:', error)
     }
   }
 
-  const navigationItems = [
-    {
-      name: 'Dashboard',
-      href: '/',
-      icon: Home,
-      description: 'Main dashboard'
-    },
-    {
-      name: 'Send Money',
-      href: '/disburse',
-      icon: Send,
-      description: 'Initiate disbursement'
-    },
-    {
-      name: 'Partners',
-      href: '/partners',
-      icon: Building2,
-      description: 'Manage partners'
-    },
-    {
-      name: 'History',
-      href: '/history',
-      icon: History,
-      description: 'Transaction history'
-    },
-    {
-      name: 'Settings',
-      href: '/settings',
-      icon: Settings,
-      description: 'System settings'
-    },
-    {
-      name: 'API Docs',
-      href: '/api-docs',
-      icon: FileText,
-      description: 'USSD API documentation'
-    },
-    {
-      name: 'Admin',
-      href: '/admin-dashboard',
-      icon: Shield,
-      description: 'User management & activity tracking'
-    }
-  ]
+  // Filter navigation items based on user role
+  const getFilteredNavigationItems = () => {
+    const isSuperAdmin = user?.role === 'super_admin'
+    const isAdmin = user?.role === 'admin'
+    
+    const allItems = [
+      {
+        name: 'Dashboard',
+        href: '/',
+        icon: Home,
+        description: 'Main dashboard'
+      },
+      // Only show Send Money for super_admin
+      ...(isSuperAdmin ? [{
+        name: 'Send Money',
+        href: '/disburse',
+        icon: Send,
+        description: 'Initiate disbursement'
+      }] : []),
+      // Only show Partners for super_admin and admin
+      ...(isSuperAdmin || isAdmin ? [{
+        name: 'Partners',
+        href: '/partners',
+        icon: Building2,
+        description: 'Manage partners'
+      }] : []),
+      {
+        name: 'History',
+        href: '/history',
+        icon: History,
+        description: 'Transaction history'
+      },
+      // Only show Settings for super_admin
+      ...(isSuperAdmin ? [{
+        name: 'Settings',
+        href: '/settings',
+        icon: Settings,
+        description: 'System settings'
+      }] : []),
+      {
+        name: 'API Docs',
+        href: '/api-docs',
+        icon: FileText,
+        description: 'USSD API documentation'
+      },
+      // Only show Admin for super_admin and admin
+      ...(isSuperAdmin || isAdmin ? [{
+        name: 'Admin',
+        href: '/admin-dashboard',
+        icon: Shield,
+        description: 'User management & activity tracking'
+      }] : [])
+    ]
+    
+    return allItems
+  }
+
+  const navigationItems = getFilteredNavigationItems()
 
   const isActive = (href: string) => {
     if (href === '/') {
@@ -306,7 +307,7 @@ export function SidebarNavigation({ className = '' }: NavigationProps) {
       </nav>
 
       {/* Logout Button */}
-      {isLoggedIn && (
+      {isAuthenticated && (
         <div className="px-4 py-4 border-t border-gray-200">
           <button
             onClick={handleLogout}

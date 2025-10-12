@@ -51,7 +51,9 @@ export default function AdminDashboard() {
 
   const loadUsers = async () => {
     try {
-      const response = await fetch('/api/users')
+      const response = await fetch('/api/user-management', {
+        credentials: 'include'
+      })
 
       if (response.ok) {
         const data = await response.json()

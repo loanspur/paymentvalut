@@ -95,34 +95,23 @@ export async function POST(request: NextRequest) {
     const passwordHash = await bcrypt.hash(newPassword, saltRounds)
 
     // Update the user's password
-    const { error: updateError } = await supabase
+    const { data: updatedUser, error: updateError } = await supabase
       .from('users')
       .update({
         password_hash: passwordHash,
-        last_password_change: new Date().toISOString(),
-        password_change_required: false,
         updated_at: new Date().toISOString()
       })
       .eq('id', currentUser.id)
+      .eq('is_active', true)
+      .select('id, email, updated_at')
+      .single()
 
     if (updateError) {
       console.error('Error updating password:', updateError)
       return NextResponse.json({
         error: 'Failed to update password',
-        message: 'Please try again later'
+        message: updateError.message
       }, { status: 500 })
-    }
-
-    // Invalidate all existing sessions except current one
-    const { error: sessionError } = await supabase
-      .from('user_sessions')
-      .update({ is_active: false })
-      .eq('user_id', currentUser.id)
-      .neq('session_token', token)
-
-    if (sessionError) {
-      console.error('Error invalidating other sessions:', sessionError)
-      // Don't fail the request since password was updated successfully
     }
 
     return NextResponse.json({
