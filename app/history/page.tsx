@@ -344,20 +344,20 @@ export default function HistoryPage() {
   }
 
   const setQuickDateRange = (range: string) => {
-    const now = new Date()
+      const now = new Date()
     let startDate = ''
     let endDate = now.toISOString().split('T')[0]
-
+      
     switch (range) {
-      case 'today':
+        case 'today':
         startDate = now.toISOString().split('T')[0]
         break
-      case 'week':
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        case 'week':
+          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
         startDate = weekAgo.toISOString().split('T')[0]
         break
-      case 'month':
-        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+        case 'month':
+          const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
         startDate = monthAgo.toISOString().split('T')[0]
         break
       case 'quarter':
@@ -405,37 +405,37 @@ export default function HistoryPage() {
         <div className="p-6">
           {/* Search and Filters Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Search
-              </label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Search transactions..."
-                />
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Search
+            </label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Search transactions..."
+              />
             </div>
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Status
-              </label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="all">All Status</option>
-                <option value="success">Success</option>
-                <option value="queued">Queued</option>
-                <option value="accepted">Accepted</option>
-                <option value="failed">Failed</option>
-              </select>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Status
+            </label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="all">All Status</option>
+              <option value="success">Success</option>
+              <option value="queued">Queued</option>
+              <option value="accepted">Accepted</option>
+              <option value="failed">Failed</option>
+            </select>
             </div>
           </div>
 
@@ -443,10 +443,10 @@ export default function HistoryPage() {
           <div className="border-t border-gray-200 pt-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Export Date Range */}
-              <div>
+          <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">
                   Export Date Range
-                </label>
+            </label>
                 
                 {/* Quick Date Range Buttons */}
                 <div className="flex flex-wrap gap-2 mb-3">
@@ -505,7 +505,7 @@ export default function HistoryPage() {
                     />
                   </div>
                 </div>
-              </div>
+          </div>
 
               {/* Export Buttons */}
               <div>
@@ -527,7 +527,7 @@ export default function HistoryPage() {
                     Export CSV
                   </button>
                   
-                  <button
+            <button
                     onClick={exportToJSON}
                     disabled={isExporting || filteredDisbursements.length === 0}
                     className="w-full flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm"
@@ -538,7 +538,7 @@ export default function HistoryPage() {
                       <FileText className="w-4 h-4 mr-2" />
                     )}
                     Export JSON
-                  </button>
+            </button>
                 </div>
               </div>
 
@@ -579,17 +579,17 @@ export default function HistoryPage() {
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h2 className="text-lg font-medium text-gray-900">
+          <h2 className="text-lg font-medium text-gray-900">
                 Partner Transactions
-              </h2>
+          </h2>
               <p className="text-sm text-gray-500">
                 Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} transactions
               </p>
             </div>
             <div className="flex items-center gap-4">
-              <div className="flex items-center text-sm text-gray-500">
-                <RefreshCw className="h-4 w-4 mr-1" />
-                Auto-refresh: 30s
+          <div className="flex items-center text-sm text-gray-500">
+            <RefreshCw className="h-4 w-4 mr-1" />
+            Auto-refresh: 30s
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-sm text-gray-600">Show:</label>

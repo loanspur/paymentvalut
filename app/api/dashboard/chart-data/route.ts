@@ -152,11 +152,18 @@ export async function GET(request: NextRequest) {
     }
 
     if (chartType === 'partner') {
-      // Get partner performance data
-      const { data: partners, error: partnersError } = await supabase
+      // Get comprehensive partner performance data
+      let partnersQuery = supabase
         .from('partners')
         .select('id, name, short_code, mpesa_shortcode')
         .eq('is_active', true)
+
+      // Filter partners based on user permissions and requested partner
+      if (effectivePartnerId && effectivePartnerId !== 'all') {
+        partnersQuery = partnersQuery.eq('id', effectivePartnerId)
+      }
+
+      const { data: partners, error: partnersError } = await partnersQuery
 
       if (partnersError) {
         // Error fetching partners
@@ -165,14 +172,15 @@ export async function GET(request: NextRequest) {
 
       const partnerData = await Promise.all(
         partners.map(async (partner) => {
-          let query = supabase
+          // Get overall performance data
+          let overallQuery = supabase
             .from('disbursement_requests')
-            .select('amount, status')
+            .select('amount, status, created_at')
             .eq('partner_id', partner.id)
             .gte('created_at', startDate.toISOString())
             .lte('created_at', endDate.toISOString())
 
-          const { data: transactions, error } = await query
+          const { data: transactions, error } = await overallQuery
 
           if (error) {
             // Error fetching transactions for partner
@@ -182,20 +190,60 @@ export async function GET(request: NextRequest) {
           const totalTransactions = transactions?.length || 0
           const totalAmount = transactions?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0
           const successfulTransactions = transactions?.filter(t => t.status === 'success').length || 0
+          const failedTransactions = transactions?.filter(t => t.status === 'failed').length || 0
           const successRate = totalTransactions > 0 ? (successfulTransactions / totalTransactions) * 100 : 0
+          const averageTransactionValue = totalTransactions > 0 ? totalAmount / totalTransactions : 0
+
+          // Get daily performance data for time series
+          const dailyData = new Map()
+          transactions?.forEach(transaction => {
+            const date = format(new Date(transaction.created_at), 'MMM dd')
+            const existing = dailyData.get(date) || {
+              date,
+              transactions: 0,
+              amount: 0,
+              successful: 0,
+              failed: 0
+            }
+            
+            existing.transactions += 1
+            existing.amount += transaction.amount || 0
+            if (transaction.status === 'success') existing.successful += 1
+            if (transaction.status === 'failed') existing.failed += 1
+            
+            dailyData.set(date, existing)
+          })
+
+          const dailyPerformance = Array.from(dailyData.values()).sort((a, b) => 
+            new Date(a.date).getTime() - new Date(b.date).getTime()
+          )
 
           return {
             name: partner.name,
-            transactions: totalTransactions,
-            amount: totalAmount,
-            successRate: Math.round(successRate * 100) / 100
+            shortCode: partner.short_code || partner.mpesa_shortcode || 'N/A',
+            // Overall metrics
+            totalTransactions,
+            totalAmount,
+            successfulTransactions,
+            failedTransactions,
+            successRate: Math.round(successRate * 100) / 100,
+            averageTransactionValue: Math.round(averageTransactionValue * 100) / 100,
+            // Time series data
+            dailyPerformance,
+            // Performance indicators
+            performanceScore: Math.round((successRate * 0.4 + (totalTransactions > 0 ? 100 : 0) * 0.3 + (totalAmount > 0 ? 100 : 0) * 0.3) * 100) / 100
           }
         })
       )
 
+      // Sort by performance score for better visualization
+      const sortedPartnerData = partnerData
+        .filter(Boolean)
+        .sort((a, b) => b.performanceScore - a.performanceScore)
+
       return NextResponse.json({
         success: true,
-        data: partnerData.filter(Boolean)
+        data: sortedPartnerData
       })
     }
 
@@ -239,6 +287,126 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         data: balanceTrends
+      })
+    }
+
+    if (chartType === 'transaction-analytics') {
+      // Get comprehensive transaction analytics
+      let partnersQuery = supabase
+        .from('partners')
+        .select('id, name, short_code, mpesa_shortcode')
+        .eq('is_active', true)
+
+      // Filter partners based on user permissions and requested partner
+      if (effectivePartnerId && effectivePartnerId !== 'all') {
+        partnersQuery = partnersQuery.eq('id', effectivePartnerId)
+      }
+
+      const { data: partners, error: partnersError } = await partnersQuery
+
+      if (partnersError) {
+        return NextResponse.json({ error: 'Failed to fetch partners' }, { status: 500 })
+      }
+
+      const analyticsData = await Promise.all(
+        partners.map(async (partner) => {
+          // Get transaction data for the partner
+          let transactionQuery = supabase
+            .from('disbursement_requests')
+            .select('amount, status, created_at')
+            .eq('partner_id', partner.id)
+            .gte('created_at', startDate.toISOString())
+            .lte('created_at', endDate.toISOString())
+            .order('created_at', { ascending: true })
+
+          const { data: transactions, error } = await transactionQuery
+
+          if (error) {
+            return null
+          }
+
+          if (!transactions || transactions.length === 0) {
+            return {
+              partnerId: partner.id,
+              partnerName: partner.name,
+              shortCode: partner.short_code || partner.mpesa_shortcode || 'N/A',
+              averageTransactionAmount: 0,
+              totalTransactions: 0,
+              transactionsPerHour: 0,
+              transactionsPerMinute: 0,
+              dailyAverages: [],
+              hourlyDistribution: [],
+              peakHours: []
+            }
+          }
+
+          // Calculate average transaction amount over time
+          const dailyAverages = new Map()
+          const hourlyDistribution = new Map()
+          let totalAmount = 0
+          let totalTransactions = transactions.length
+
+          transactions.forEach(transaction => {
+            totalAmount += transaction.amount || 0
+            
+            // Daily averages
+            const date = format(new Date(transaction.created_at), 'MMM dd')
+            const hour = new Date(transaction.created_at).getHours()
+            
+            if (!dailyAverages.has(date)) {
+              dailyAverages.set(date, { date, totalAmount: 0, count: 0, average: 0 })
+            }
+            
+            const dailyData = dailyAverages.get(date)
+            dailyData.totalAmount += transaction.amount || 0
+            dailyData.count += 1
+            dailyData.average = dailyData.totalAmount / dailyData.count
+            
+            // Hourly distribution
+            if (!hourlyDistribution.has(hour)) {
+              hourlyDistribution.set(hour, { hour, count: 0, amount: 0 })
+            }
+            
+            const hourlyData = hourlyDistribution.get(hour)
+            hourlyData.count += 1
+            hourlyData.amount += transaction.amount || 0
+          })
+
+          const averageTransactionAmount = totalAmount / totalTransactions
+          
+          // Calculate transactions per hour and minute
+          const timeSpanHours = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60)
+          const timeSpanMinutes = (endDate.getTime() - startDate.getTime()) / (1000 * 60)
+          
+          const transactionsPerHour = timeSpanHours > 0 ? totalTransactions / timeSpanHours : 0
+          const transactionsPerMinute = timeSpanMinutes > 0 ? totalTransactions / timeSpanMinutes : 0
+
+          // Find peak hours (top 3 hours with most transactions)
+          const peakHours = Array.from(hourlyDistribution.values())
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 3)
+            .map(h => ({ hour: h.hour, count: h.count, amount: h.amount }))
+
+          return {
+            partnerId: partner.id,
+            partnerName: partner.name,
+            shortCode: partner.short_code || partner.mpesa_shortcode || 'N/A',
+            averageTransactionAmount: Math.round(averageTransactionAmount * 100) / 100,
+            totalTransactions,
+            transactionsPerHour: Math.round(transactionsPerHour * 100) / 100,
+            transactionsPerMinute: Math.round(transactionsPerMinute * 1000) / 1000,
+            dailyAverages: Array.from(dailyAverages.values()).sort((a, b) => 
+              new Date(a.date).getTime() - new Date(b.date).getTime()
+            ),
+            hourlyDistribution: Array.from(hourlyDistribution.values()).sort((a, b) => a.hour - b.hour),
+            peakHours
+          }
+        })
+      )
+
+      return NextResponse.json({
+        success: true,
+        data: analyticsData.filter(Boolean)
       })
     }
 

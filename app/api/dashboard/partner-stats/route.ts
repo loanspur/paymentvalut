@@ -44,7 +44,11 @@ export async function GET(request: NextRequest) {
       }, { status: 401 })
     }
 
-    // Build query for partners based on user role
+    // Get partner filter from query parameters
+    const { searchParams } = new URL(request.url)
+    const requestedPartnerId = searchParams.get('partnerId')
+
+    // Build query for partners based on user role and request
     let partnersQuery = supabase.from('partners').select(`
       id,
       name,
@@ -55,7 +59,13 @@ export async function GET(request: NextRequest) {
       created_at
     `).eq('is_active', true)
 
-    if (currentUser.role !== 'super_admin' && currentUser.partner_id) {
+    if (currentUser.role === 'super_admin') {
+      // Super admin can filter by any partner or see all partners
+      if (requestedPartnerId && requestedPartnerId !== 'all') {
+        partnersQuery = partnersQuery.eq('id', requestedPartnerId)
+      }
+    } else if (currentUser.partner_id) {
+      // Non-super admin users are limited to their own partner
       partnersQuery = partnersQuery.eq('id', currentUser.partner_id)
     }
 

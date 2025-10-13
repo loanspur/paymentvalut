@@ -46,10 +46,18 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const limit = parseInt(searchParams.get('limit') || '10')
+    const requestedPartnerId = searchParams.get('partnerId')
 
-    // Build query for disbursement requests based on user role
+    // Build query for disbursement requests based on user role and request
     let disbursementQuery = supabase.from('disbursement_requests').select('*')
-    if (currentUser.role !== 'super_admin' && currentUser.partner_id) {
+    
+    if (currentUser.role === 'super_admin') {
+      // Super admin can filter by any partner or see all data
+      if (requestedPartnerId && requestedPartnerId !== 'all') {
+        disbursementQuery = disbursementQuery.eq('partner_id', requestedPartnerId)
+      }
+    } else if (currentUser.partner_id) {
+      // Non-super admin users are limited to their own partner
       disbursementQuery = disbursementQuery.eq('partner_id', currentUser.partner_id)
     }
 

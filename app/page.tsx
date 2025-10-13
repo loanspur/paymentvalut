@@ -14,7 +14,8 @@ import {
   LineChart,
   Filter,
   Calendar,
-  Download
+  Download,
+  Clock
 } from 'lucide-react'
 import { 
   LineChart as RechartsLineChart, 
@@ -46,11 +47,13 @@ export default function Dashboard() {
   })
   const [recentTransactions, setRecentTransactions] = useState([])
   const [partnerStats, setPartnerStats] = useState([])
+  const [allPartners, setAllPartners] = useState([])
   const [chartData, setChartData] = useState({
     dailyTransactions: [],
     partnerPerformance: [],
     statusDistribution: [],
-    balanceTrends: []
+    balanceTrends: [],
+    transactionAnalytics: []
   })
   const [filters, setFilters] = useState({
     dateRange: '7d',
@@ -63,7 +66,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadUserInfo()
-    loadDashboardData()
+    loadAllPartners()
     
     // Refresh data every 30 seconds
     const interval = setInterval(() => {
@@ -71,6 +74,21 @@ export default function Dashboard() {
     }, AUTO_REFRESH_INTERVALS.DASHBOARD)
 
     return () => clearInterval(interval)
+  }, [])
+
+  // Load dashboard data when filters change
+  useEffect(() => {
+    if (filters.partnerId) {
+      loadDashboardData()
+      loadChartData()
+    }
+  }, [filters.partnerId, filters.dateRange])
+
+  // Load initial dashboard data
+  useEffect(() => {
+    if (filters.partnerId) {
+      loadDashboardData()
+    }
   }, [])
 
   const loadUserInfo = async () => {
@@ -100,10 +118,25 @@ export default function Dashboard() {
     }
   }
 
+  const loadAllPartners = async () => {
+    try {
+      const response = await fetch('/api/partners')
+      if (response.ok) {
+        const partnersData = await response.json()
+        if (partnersData.success) {
+          setAllPartners(partnersData.partners || [])
+        }
+      }
+    } catch (error) {
+      // Error loading partners
+    }
+  }
+
   const loadDashboardData = async () => {
     try {
       // Fetch dashboard statistics
-      const statsResponse = await fetch('/api/dashboard/stats-simple')
+      const statsUrl = `/api/dashboard/stats?partnerId=${filters.partnerId}`
+      const statsResponse = await fetch(statsUrl)
       if (statsResponse.ok) {
         const statsData = await statsResponse.json()
         if (statsData.success) {
@@ -112,7 +145,8 @@ export default function Dashboard() {
       }
 
       // Fetch recent transactions
-      const transactionsResponse = await fetch('/api/dashboard/recent-transactions-simple?limit=10')
+      const transactionsUrl = `/api/dashboard/recent-transactions?limit=10&partnerId=${filters.partnerId}`
+      const transactionsResponse = await fetch(transactionsUrl)
       if (transactionsResponse.ok) {
         const transactionsData = await transactionsResponse.json()
         if (transactionsData.success) {
@@ -121,7 +155,8 @@ export default function Dashboard() {
       }
 
       // Fetch partner statistics
-      const partnersResponse = await fetch('/api/dashboard/partner-stats-simple')
+      const partnersUrl = `/api/dashboard/partner-stats?partnerId=${filters.partnerId}`
+      const partnersResponse = await fetch(partnersUrl)
       if (partnersResponse.ok) {
         const partnersData = await partnersResponse.json()
         if (partnersData.success) {
@@ -144,25 +179,28 @@ export default function Dashboard() {
   const loadChartData = async () => {
     try {
       // Fetch all chart data in parallel
-      const [dailyRes, statusRes, partnerRes, balanceRes] = await Promise.all([
+      const [dailyRes, statusRes, partnerRes, balanceRes, analyticsRes] = await Promise.all([
         fetch(`/api/dashboard/chart-data?chartType=daily&dateRange=${filters.dateRange}&partnerId=${filters.partnerId}`),
         fetch(`/api/dashboard/chart-data?chartType=status&dateRange=${filters.dateRange}&partnerId=${filters.partnerId}`),
         fetch(`/api/dashboard/chart-data?chartType=partner&dateRange=${filters.dateRange}&partnerId=${filters.partnerId}`),
-        fetch(`/api/dashboard/chart-data?chartType=balance&dateRange=${filters.dateRange}&partnerId=${filters.partnerId}`)
+        fetch(`/api/dashboard/chart-data?chartType=balance&dateRange=${filters.dateRange}&partnerId=${filters.partnerId}`),
+        fetch(`/api/dashboard/chart-data?chartType=transaction-analytics&dateRange=${filters.dateRange}&partnerId=${filters.partnerId}`)
       ])
 
-      const [dailyData, statusData, partnerData, balanceData] = await Promise.all([
+      const [dailyData, statusData, partnerData, balanceData, analyticsData] = await Promise.all([
         dailyRes.json(),
         statusRes.json(),
         partnerRes.json(),
-        balanceRes.json()
+        balanceRes.json(),
+        analyticsRes.json()
       ])
 
       setChartData({
         dailyTransactions: dailyData.success ? dailyData.data : [],
         partnerPerformance: partnerData.success ? partnerData.data : [],
         statusDistribution: statusData.success ? statusData.data : [],
-        balanceTrends: balanceData.success ? balanceData.data : []
+        balanceTrends: balanceData.success ? balanceData.data : [],
+        transactionAnalytics: analyticsData.success ? analyticsData.data : []
       })
 
     } catch (error) {
@@ -175,8 +213,7 @@ export default function Dashboard() {
       ...prev,
       [filterType]: value
     }))
-    // Reload chart data when filters change
-    setTimeout(() => loadChartData(), 100)
+    // Data will be reloaded automatically by useEffect when filters change
   }
 
   const handleDateRangeChange = (range) => {
@@ -184,8 +221,7 @@ export default function Dashboard() {
       ...prev,
       dateRange: range
     }))
-    // Reload chart data when date range changes
-    setTimeout(() => loadChartData(), 100)
+    // Data will be reloaded automatically by useEffect when filters change
   }
 
   const exportData = () => {
@@ -227,6 +263,12 @@ export default function Dashboard() {
             <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
             <p className="text-sm text-gray-500 mt-1">
               Last updated: {lastUpdated.toLocaleTimeString()}
+              {filters.partnerId !== 'all' && (
+                <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  <Building2 className="w-3 h-3 mr-1" />
+                  {allPartners.find(p => p.id === filters.partnerId)?.name || 'Selected Partner'}
+                </span>
+              )}
             </p>
           </div>
           
@@ -258,12 +300,12 @@ export default function Dashboard() {
               >
                 {userPartnerId && userPartnerId !== 'all' ? (
                   <option value={userPartnerId}>
-                    {partnerStats.find(p => p.id === userPartnerId)?.name || 'Your Partner'}
+                    {allPartners.find(p => p.id === userPartnerId)?.name || 'Your Partner'}
                   </option>
                 ) : (
                   <>
                     <option value="all">All Partners</option>
-                    {partnerStats.map(partner => (
+                    {allPartners.map(partner => (
                       <option key={partner.id} value={partner.id}>
                         {partner.name}
                       </option>
@@ -386,7 +428,14 @@ export default function Dashboard() {
             <div className="space-y-6">
               {/* Daily Transactions Chart */}
               <div className="bg-gray-50 rounded-lg p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Daily Transaction Volume</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  Daily Transaction Volume
+                  {filters.partnerId !== 'all' && (
+                    <span className="ml-2 text-sm font-normal text-gray-500">
+                      - {allPartners.find(p => p.id === filters.partnerId)?.name || 'Selected Partner'}
+                    </span>
+                  )}
+                </h3>
                 {chartData.dailyTransactions.length > 0 ? (
                   <ResponsiveContainer width="100%" height={300}>
                     <RechartsLineChart data={chartData.dailyTransactions}>
@@ -417,7 +466,14 @@ export default function Dashboard() {
               {/* Status Distribution */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-gray-50 rounded-lg p-6">
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">Transaction Status Distribution</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">
+                    Transaction Status Distribution
+                    {filters.partnerId !== 'all' && (
+                      <span className="ml-2 text-sm font-normal text-gray-500">
+                        - {allPartners.find(p => p.id === filters.partnerId)?.name || 'Selected Partner'}
+                      </span>
+                    )}
+                  </h3>
                   {chartData.statusDistribution.length > 0 ? (
                     <ResponsiveContainer width="100%" height={250}>
                       <RechartsPieChart>
@@ -491,7 +547,14 @@ export default function Dashboard() {
             <div className="space-y-6">
               {/* Transaction Volume Chart */}
               <div className="bg-gray-50 rounded-lg p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Transaction Volume Over Time</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">
+                  Transaction Volume Over Time
+                  {filters.partnerId !== 'all' && (
+                    <span className="ml-2 text-sm font-normal text-gray-500">
+                      - {allPartners.find(p => p.id === filters.partnerId)?.name || 'Selected Partner'}
+                    </span>
+                  )}
+                </h3>
                 <ResponsiveContainer width="100%" height={400}>
                   <RechartsBarChart data={chartData.dailyTransactions}>
                     <CartesianGrid strokeDasharray="3 3" />
@@ -559,62 +622,258 @@ export default function Dashboard() {
 
           {activeTab === 'partners' && (
             <div className="space-y-6">
-              {/* Partner Performance Chart */}
-              <div className="bg-gray-50 rounded-lg p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Partner Performance</h3>
-                <ResponsiveContainer width="100%" height={400}>
-                  <RechartsBarChart data={chartData.partnerPerformance} layout="horizontal">
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" />
-                    <YAxis dataKey="name" type="category" width={120} />
-                    <Tooltip formatter={(value) => [value, 'Transactions']} />
-                    <Bar dataKey="transactions" fill="#8B5CF6" />
-                  </RechartsBarChart>
-                </ResponsiveContainer>
+              {/* Partner Performance Overview */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Performance Comparison Chart */}
+                <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Performance Comparison
+                      {filters.partnerId !== 'all' && (
+                        <span className="ml-2 text-sm font-normal text-gray-500">
+                          - {allPartners.find(p => p.id === filters.partnerId)?.name || 'Selected Partner'}
+                        </span>
+                      )}
+                    </h3>
+                    <div className="flex items-center space-x-2 text-sm text-gray-500">
+                      <div className="flex items-center space-x-1">
+                        <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                        <span>Transactions</span>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                        <span>Success Rate</span>
+                      </div>
+                    </div>
+                  </div>
+                  {chartData.partnerPerformance.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <RechartsBarChart data={chartData.partnerPerformance} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis 
+                          dataKey="name" 
+                          tick={{ fontSize: 12 }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={80}
+                        />
+                        <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 12 }} />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
+                        <Tooltip 
+                          formatter={(value, name) => [
+                            name === 'totalTransactions' ? value : `${value}%`,
+                            name === 'totalTransactions' ? 'Transactions' : 'Success Rate'
+                          ]}
+                          labelStyle={{ color: '#374151' }}
+                          contentStyle={{ 
+                            backgroundColor: '#fff', 
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                          }}
+                        />
+                        <Bar yAxisId="left" dataKey="totalTransactions" fill="#3B82F6" radius={[2, 2, 0, 0]} />
+                        <Bar yAxisId="right" dataKey="successRate" fill="#10B981" radius={[2, 2, 0, 0]} />
+                      </RechartsBarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-64 text-gray-500">
+                      <div className="text-center">
+                        <Building2 className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                        <p className="text-lg font-medium">No partner data available</p>
+                        <p className="text-sm">Partner performance data will appear here</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Performance Metrics */}
+                <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">Performance Metrics</h3>
+                  {chartData.partnerPerformance.length > 0 ? (
+                    <div className="space-y-4">
+                      {chartData.partnerPerformance.slice(0, 4).map((partner, index) => (
+                        <div key={partner.name} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-semibold ${
+                              index === 0 ? 'bg-yellow-500' : 
+                              index === 1 ? 'bg-gray-400' : 
+                              index === 2 ? 'bg-orange-500' : 'bg-blue-500'
+                            }`}>
+                              {index + 1}
+                            </div>
+                            <div>
+                              <div className="font-medium text-gray-900">{partner.name}</div>
+                              <div className="text-sm text-gray-500">{partner.shortCode}</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-semibold text-gray-900">
+                              {partner.totalTransactions} transactions
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {partner.successRate}% success rate
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-64 text-gray-500">
+                      <div className="text-center">
+                        <TrendingUp className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                        <p className="text-lg font-medium">No metrics available</p>
+                        <p className="text-sm">Performance metrics will appear here</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Partner Stats Table */}
-              <div className="bg-white rounded-lg overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <h3 className="text-lg font-medium text-gray-900">Partner Statistics</h3>
+              {/* Transaction Volume Over Time */}
+              <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Transaction Volume Over Time</h3>
+                {chartData.partnerPerformance.length > 0 && chartData.partnerPerformance[0]?.dailyPerformance?.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={350}>
+                    <RechartsLineChart data={chartData.partnerPerformance[0].dailyPerformance} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis 
+                        dataKey="date" 
+                        tick={{ fontSize: 12 }}
+                        tickLine={{ stroke: '#d1d5db' }}
+                      />
+                      <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 12 }} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
+                      <Tooltip 
+                        formatter={(value, name) => [
+                          name === 'transactions' ? value : `KES ${Number(value).toLocaleString()}`,
+                          name === 'transactions' ? 'Transactions' : 'Amount'
+                        ]}
+                        labelStyle={{ color: '#374151' }}
+                        contentStyle={{ 
+                          backgroundColor: '#fff', 
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '8px',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                        }}
+                      />
+                      <Line 
+                        yAxisId="left" 
+                        type="monotone" 
+                        dataKey="transactions" 
+                        stroke="#3B82F6" 
+                        strokeWidth={3}
+                        dot={{ fill: '#3B82F6', strokeWidth: 2, r: 4 }}
+                        activeDot={{ r: 6, stroke: '#3B82F6', strokeWidth: 2 }}
+                      />
+                      <Line 
+                        yAxisId="right" 
+                        type="monotone" 
+                        dataKey="amount" 
+                        stroke="#10B981" 
+                        strokeWidth={3}
+                        dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
+                        activeDot={{ r: 6, stroke: '#10B981', strokeWidth: 2 }}
+                      />
+                    </RechartsLineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-64 text-gray-500">
+                    <div className="text-center">
+                      <LineChart className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                      <p className="text-lg font-medium">No time series data available</p>
+                      <p className="text-sm">Transaction volume over time will appear here</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Enhanced Partner Statistics Table */}
+              <div className="bg-white rounded-lg overflow-hidden shadow-sm border border-gray-200">
+                <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                  <h3 className="text-lg font-semibold text-gray-900">Detailed Partner Statistics</h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {filters.partnerId === 'all' 
+                      ? 'Comprehensive performance metrics for all partners' 
+                      : `Performance metrics for ${allPartners.find(p => p.id === filters.partnerId)?.name || 'selected partner'}`
+                    }
+                  </p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Partner</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Transactions</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Amount</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Today</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Success Rate</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Partner</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Transactions</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Amount</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg. Transaction</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Success Rate</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Performance Score</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                      {partnerStats.map((partner) => (
-                        <tr key={partner.id}>
+                      {chartData.partnerPerformance.map((partner, index) => (
+                        <tr key={partner.name} className="hover:bg-gray-50 transition-colors">
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">{partner.name}</div>
-                              <div className="text-sm text-gray-500">{partner.shortCode}</div>
+                            <div className="flex items-center">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-semibold mr-3 ${
+                                index === 0 ? 'bg-yellow-500' : 
+                                index === 1 ? 'bg-gray-400' : 
+                                index === 2 ? 'bg-orange-500' : 'bg-blue-500'
+                              }`}>
+                                {index + 1}
+                              </div>
+                              <div>
+                                <div className="text-sm font-semibold text-gray-900">{partner.name}</div>
+                                <div className="text-sm text-gray-500">{partner.shortCode}</div>
+                              </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {partner.totalTransactions}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            KES {partner.totalAmount.toLocaleString()}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {partner.todayTransactions} ({partner.todayAmount > 0 ? `KES ${partner.todayAmount.toLocaleString()}` : 'No activity'})
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{partner.totalTransactions}</div>
+                            <div className="text-xs text-gray-500">
+                              {partner.successfulTransactions} successful, {partner.failedTransactions} failed
+                            </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                              partner.successRate >= 95 ? 'bg-green-100 text-green-800' :
-                              partner.successRate >= 80 ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-red-100 text-red-800'
-                            }`}>
-                              {partner.successRate}%
-                            </span>
+                            <div className="text-sm font-semibold text-gray-900">KES {partner.totalAmount.toLocaleString()}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm text-gray-900">KES {partner.averageTransactionValue.toLocaleString()}</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center">
+                              <div className="text-sm font-semibold text-gray-900 mr-3">{partner.successRate}%</div>
+                              <div className="w-20 bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className={`h-2 rounded-full transition-all duration-300 ${
+                                    partner.successRate >= 95 ? 'bg-green-500' :
+                                    partner.successRate >= 85 ? 'bg-green-400' :
+                                    partner.successRate >= 70 ? 'bg-yellow-500' : 'bg-red-500'
+                                  }`}
+                                  style={{ width: `${Math.min(partner.successRate, 100)}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center">
+                              <div className={`text-sm font-semibold ${
+                                partner.performanceScore >= 80 ? 'text-green-600' :
+                                partner.performanceScore >= 60 ? 'text-yellow-600' : 'text-red-600'
+                              }`}>
+                                {partner.performanceScore}
+                              </div>
+                              <div className="ml-2 w-16 bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className={`h-2 rounded-full transition-all duration-300 ${
+                                    partner.performanceScore >= 80 ? 'bg-green-500' :
+                                    partner.performanceScore >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                                  }`}
+                                  style={{ width: `${Math.min(partner.performanceScore, 100)}%` }}
+                                ></div>
+                              </div>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -627,28 +886,178 @@ export default function Dashboard() {
 
           {activeTab === 'balances' && (
             <div className="space-y-6">
-              {/* Balance Trends Chart */}
-              <div className="bg-gray-50 rounded-lg p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Balance Trends</h3>
-                <ResponsiveContainer width="100%" height={400}>
-                  <RechartsLineChart data={chartData.balanceTrends}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip formatter={(value) => [`KES ${value.toLocaleString()}`, 'Balance']} />
-                    <Legend />
-                    <Line type="monotone" dataKey="utility" stroke="#3B82F6" strokeWidth={2} name="Utility Account" />
-                    <Line type="monotone" dataKey="working" stroke="#10B981" strokeWidth={2} name="Working Account" />
-                    <Line type="monotone" dataKey="charges" stroke="#F59E0B" strokeWidth={2} name="Charges Account" />
-                  </RechartsLineChart>
-                </ResponsiveContainer>
+              {/* Transaction Analytics Overview */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Average Transaction Amounts Over Time */}
+                <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">
+                    Average Transaction Amounts Over Time
+                    {filters.partnerId !== 'all' && (
+                      <span className="ml-2 text-sm font-normal text-gray-500">
+                        - {allPartners.find(p => p.id === filters.partnerId)?.name || 'Selected Partner'}
+                      </span>
+                    )}
+                  </h3>
+                  {chartData.transactionAnalytics.length > 0 && chartData.transactionAnalytics[0]?.dailyAverages?.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <RechartsLineChart data={chartData.transactionAnalytics[0].dailyAverages} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis 
+                          dataKey="date" 
+                          tick={{ fontSize: 12 }}
+                          tickLine={{ stroke: '#d1d5db' }}
+                        />
+                        <YAxis tick={{ fontSize: 12 }} />
+                        <Tooltip 
+                          formatter={(value) => [`KES ${Number(value).toLocaleString()}`, 'Average Amount']}
+                          labelStyle={{ color: '#374151' }}
+                          contentStyle={{ 
+                            backgroundColor: '#fff', 
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                          }}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="average" 
+                          stroke="#8B5CF6" 
+                          strokeWidth={3}
+                          dot={{ fill: '#8B5CF6', strokeWidth: 2, r: 4 }}
+                          activeDot={{ r: 6, stroke: '#8B5CF6', strokeWidth: 2 }}
+                        />
+                      </RechartsLineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-64 text-gray-500">
+                      <div className="text-center">
+                        <BarChart3 className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                        <p className="text-lg font-medium">No transaction data available</p>
+                        <p className="text-sm">Average transaction amounts will appear here</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Transaction Frequency Statistics */}
+                <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">
+                    Transaction Frequency Statistics
+                    {filters.partnerId !== 'all' && (
+                      <span className="ml-2 text-sm font-normal text-gray-500">
+                        - {allPartners.find(p => p.id === filters.partnerId)?.name || 'Selected Partner'}
+                      </span>
+                    )}
+                  </h3>
+                  {chartData.transactionAnalytics.length > 0 ? (
+                    <div className="space-y-4">
+                      {chartData.transactionAnalytics.slice(0, 4).map((partner, index) => (
+                        <div key={partner.partnerId} className="p-4 bg-gray-50 rounded-lg">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center space-x-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-semibold ${
+                                index === 0 ? 'bg-yellow-500' : 
+                                index === 1 ? 'bg-gray-400' : 
+                                index === 2 ? 'bg-orange-500' : 'bg-blue-500'
+                              }`}>
+                                {index + 1}
+                              </div>
+                              <div>
+                                <div className="font-semibold text-gray-900">{partner.partnerName}</div>
+                                <div className="text-sm text-gray-500">{partner.shortCode}</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <div className="text-gray-500">Per Hour</div>
+                              <div className="font-semibold text-gray-900">{partner.transactionsPerHour}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500">Per Minute</div>
+                              <div className="font-semibold text-gray-900">{partner.transactionsPerMinute}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500">Total Transactions</div>
+                              <div className="font-semibold text-gray-900">{partner.totalTransactions}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500">Avg. Amount</div>
+                              <div className="font-semibold text-gray-900">KES {partner.averageTransactionAmount.toLocaleString()}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-64 text-gray-500">
+                      <div className="text-center">
+                        <Activity className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                        <p className="text-lg font-medium">No frequency data available</p>
+                        <p className="text-sm">Transaction frequency statistics will appear here</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Peak Hours Analysis */}
+              <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">
+                  Peak Transaction Hours Analysis
+                  {filters.partnerId !== 'all' && (
+                    <span className="ml-2 text-sm font-normal text-gray-500">
+                      - {allPartners.find(p => p.id === filters.partnerId)?.name || 'Selected Partner'}
+                    </span>
+                  )}
+                </h3>
+                {chartData.transactionAnalytics.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {chartData.transactionAnalytics.map((partner) => (
+                      <div key={partner.partnerId} className="p-4 bg-gray-50 rounded-lg">
+                        <div className="mb-4">
+                          <div className="font-semibold text-gray-900">{partner.partnerName}</div>
+                          <div className="text-sm text-gray-500">{partner.shortCode}</div>
+                        </div>
+                        <div className="space-y-3">
+                          {partner.peakHours.map((peak, index) => (
+                            <div key={index} className="flex items-center justify-between p-2 bg-white rounded">
+                              <div className="flex items-center space-x-2">
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-semibold ${
+                                  index === 0 ? 'bg-yellow-500' : 
+                                  index === 1 ? 'bg-gray-400' : 'bg-orange-500'
+                                }`}>
+                                  {index + 1}
+                                </div>
+                                <span className="text-sm font-medium text-gray-900">
+                                  {peak.hour}:00 - {peak.hour + 1}:00
+                                </span>
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                {peak.count} transactions
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-64 text-gray-500">
+                    <div className="text-center">
+                      <Clock className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                      <p className="text-lg font-medium">No peak hours data available</p>
+                      <p className="text-sm">Peak transaction hours will appear here</p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Balance Alerts */}
-              <div className="bg-white rounded-lg p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Balance Alerts</h3>
+              <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Balance Alerts & Notifications</h3>
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-center justify-between p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
                     <div className="flex items-center space-x-3">
                       <AlertCircle className="h-5 w-5 text-yellow-600" />
                       <div>
@@ -656,10 +1065,10 @@ export default function Dashboard() {
                         <div className="text-xs text-yellow-600">Finsafe Limited - Utility Account</div>
                       </div>
                     </div>
-                    <div className="text-sm text-yellow-800">KES 88,442</div>
+                    <div className="text-sm font-semibold text-yellow-800">KES 88,442</div>
                   </div>
                   
-                  <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-center justify-between p-4 bg-green-50 border border-green-200 rounded-lg">
                     <div className="flex items-center space-x-3">
                       <TrendingUp className="h-5 w-5 text-green-600" />
                       <div>
@@ -667,7 +1076,7 @@ export default function Dashboard() {
                         <div className="text-xs text-green-600">Kulman Group Limited - Working Account</div>
                       </div>
                     </div>
-                    <div className="text-sm text-green-800">KES 105,851</div>
+                    <div className="text-sm font-semibold text-green-800">KES 105,851</div>
                   </div>
                 </div>
               </div>

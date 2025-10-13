@@ -451,30 +451,30 @@ export default function TransactionMonitoringPage() {
 
       if (response.ok) {
         const result = await response.json()
-        
-        if (result.success) {
+      
+      if (result.success) {
           const triggerResult = result.trigger_result
           const successful = triggerResult?.summary?.successful || 0
           const failed = triggerResult?.summary?.failed || 0
           const total = triggerResult?.summary?.total || 0
-          
-          // Show success message
-          if (successful > 0) {
+        
+        // Show success message
+        if (successful > 0) {
             addNotification({
               type: 'success',
               title: 'Balance Check Completed',
               message: `Successfully checked ${successful}/${total} partner balances`,
               duration: 5000
             })
-          }
-          
-          // Wait for balance checks to complete, then fetch updated data
-          setTimeout(async () => {
-            await fetchTenants()
-            setLastRefresh(new Date())
-            setIsLoading(false)
-          }, 3000) // Wait 3 seconds for balance checks to complete
-        } else {
+        }
+        
+        // Wait for balance checks to complete, then fetch updated data
+        setTimeout(async () => {
+          await fetchTenants()
+          setLastRefresh(new Date())
+          setIsLoading(false)
+        }, 3000) // Wait 3 seconds for balance checks to complete
+      } else {
           throw new Error(result.error || 'Failed to trigger balance refresh')
         }
       } else {
@@ -567,41 +567,41 @@ export default function TransactionMonitoringPage() {
     <div className="space-y-6">
       {/* Status Bar */}
       <div className="bg-white p-4 rounded-lg shadow-sm border">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <Building2 className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Building2 className="w-6 h-6 text-blue-600" />
+              </div>
+              <div>
               <h2 className="text-lg font-semibold text-gray-900">Tenant Monitoring Center</h2>
-              <p className="text-sm text-gray-600">Real-time balance monitoring and alerts for all tenants</p>
-              <div className="flex items-center mt-1">
-                <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
-                <span className="text-xs text-green-600 font-medium">Live Monitoring Active</span>
+                <p className="text-sm text-gray-600">Real-time balance monitoring and alerts for all tenants</p>
+                <div className="flex items-center mt-1">
+                  <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
+                  <span className="text-xs text-green-600 font-medium">Live Monitoring Active</span>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="flex items-center space-x-3">
-            <div className="text-sm text-gray-500">
-              Last updated: {lastRefresh.toLocaleTimeString()}
-            </div>
-            <button
-              onClick={handleRefresh}
-              disabled={isLoading}
-              className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh Data
-            </button>
-            <button
-              onClick={handleRefreshWithCheck}
-              disabled={isLoading}
-              className="flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 shadow-sm"
-              title="Trigger real-time balance checks for all tenants using M-Pesa Edge Functions"
-            >
-              <Zap className={`w-4 h-4 mr-2 ${isLoading ? 'animate-pulse' : ''}`} />
-              {isLoading ? 'Checking Balances...' : 'Check All Balances'}
-            </button>
+            <div className="flex items-center space-x-3">
+              <div className="text-sm text-gray-500">
+                Last updated: {lastRefresh.toLocaleTimeString()}
+              </div>
+              <button
+                onClick={handleRefresh}
+                disabled={isLoading}
+                className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                Refresh Data
+              </button>
+              <button
+                onClick={handleRefreshWithCheck}
+                disabled={isLoading}
+                className="flex items-center px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 shadow-sm"
+                title="Trigger real-time balance checks for all tenants using M-Pesa Edge Functions"
+              >
+                <Zap className={`w-4 h-4 mr-2 ${isLoading ? 'animate-pulse' : ''}`} />
+                {isLoading ? 'Checking Balances...' : 'Check All Balances'}
+              </button>
             <button
               onClick={() => {
                 const syncUrl = new URL('/api/balance/sync', window.location.origin)
@@ -646,8 +646,8 @@ export default function TransactionMonitoringPage() {
           <div className="px-6 py-4 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Real-Time Balance Monitoring</h2>
-                <p className="text-sm text-gray-600">Live balance data from M-Pesa accounts • Click on any tenant to configure monitoring settings</p>
+            <h2 className="text-lg font-semibold text-gray-900">Real-Time Balance Monitoring</h2>
+            <p className="text-sm text-gray-600">Live balance data from M-Pesa accounts • Click on any tenant to configure monitoring settings</p>
               </div>
               {tenants.length > 0 && (
                 <div className="flex items-center space-x-4 text-sm">
@@ -760,7 +760,7 @@ export default function TransactionMonitoringPage() {
                                 {syncSettings[tenant.id].auto_sync_enabled && (
                                   <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${getStatusColorClass('pending')}`}>
                                     Auto
-                                  </span>
+                              </span>
                                 )}
                               </div>
                             )}
@@ -787,14 +787,14 @@ export default function TransactionMonitoringPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() => setExpandedTenant(expandedTenant === tenant.id ? null : tenant.id)}
-                            className="text-blue-600 hover:text-blue-900 flex items-center"
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            {expandedTenant === tenant.id ? 'Hide' : 'Configure'}
-                            {expandedTenant === tenant.id ? <ChevronDown className="w-4 h-4 ml-1" /> : <ChevronRight className="w-4 h-4 ml-1" />}
-                          </button>
+                        <button
+                          onClick={() => setExpandedTenant(expandedTenant === tenant.id ? null : tenant.id)}
+                          className="text-blue-600 hover:text-blue-900 flex items-center"
+                        >
+                          <Eye className="w-4 h-4 mr-1" />
+                          {expandedTenant === tenant.id ? 'Hide' : 'Configure'}
+                          {expandedTenant === tenant.id ? <ChevronDown className="w-4 h-4 ml-1" /> : <ChevronRight className="w-4 h-4 ml-1" />}
+                        </button>
                           <button
                             onClick={() => triggerPartnerSync(tenant.id)}
                             className="text-green-600 hover:text-green-900 flex items-center"
@@ -998,7 +998,7 @@ export default function TransactionMonitoringPage() {
                                     </div>
                                   )}
                                 </div>
-
+                                
                                 <div className="md:col-span-2 flex justify-end">
                                   <button
                                     onClick={() => saveTenantConfig(tenant.id, configs[tenant.id])}
