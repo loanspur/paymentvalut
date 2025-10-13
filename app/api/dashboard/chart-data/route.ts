@@ -425,13 +425,16 @@ export async function GET(request: NextRequest) {
             const hour = new Date(transaction.created_at).getHours()
             
             if (!dailyAverages.has(date)) {
-              dailyAverages.set(date, { date, totalAmount: 0, count: 0, average: 0 })
+              dailyAverages.set(date, { date, totalAmount: 0, successCount: 0, average: 0 })
             }
             
             const dailyData = dailyAverages.get(date)
-            dailyData.totalAmount += transaction.amount || 0
-            dailyData.count += 1
-            dailyData.average = dailyData.totalAmount / dailyData.count
+            // Only successful amounts count towards average loan amount
+            if (transaction.status === 'success') {
+              dailyData.totalAmount += transaction.amount || 0
+              dailyData.successCount += 1
+            }
+            dailyData.average = dailyData.successCount > 0 ? (dailyData.totalAmount / dailyData.successCount) : 0
             
             // Hourly distribution
             if (!hourlyDistribution.has(hour)) {
@@ -445,7 +448,7 @@ export async function GET(request: NextRequest) {
 
           // Use the actual transaction count from data for consistency
           const actualTransactionCount = transactions?.length || 0
-          const averageTransactionAmount = actualTransactionCount > 0 ? totalAmount / actualTransactionCount : 0
+          const averageTransactionAmount = successfulTransactions > 0 ? totalAmount / successfulTransactions : 0
           
           // Calculate transactions per hour and minute
           const timeSpanHours = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60)

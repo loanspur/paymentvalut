@@ -53,7 +53,6 @@ export default function Dashboard() {
     dailyTransactions: [],
     partnerPerformance: [],
     statusDistribution: [],
-    balanceTrends: [],
     transactionAnalytics: []
   })
   const [filters, setFilters] = useState({
@@ -213,19 +212,17 @@ export default function Dashboard() {
   const loadChartData = async () => {
     try {
       // Fetch all chart data in parallel
-      const [dailyRes, statusRes, partnerRes, balanceRes, analyticsRes] = await Promise.all([
+      const [dailyRes, statusRes, partnerRes, analyticsRes] = await Promise.all([
         fetch(`/api/dashboard/chart-data?chartType=daily&dateRange=${filters.dateRange}&partnerId=${filters.partnerId}`),
         fetch(`/api/dashboard/chart-data?chartType=status&dateRange=${filters.dateRange}&partnerId=${filters.partnerId}`),
         fetch(`/api/dashboard/chart-data?chartType=partner&dateRange=${filters.dateRange}&partnerId=${filters.partnerId}`),
-        fetch(`/api/dashboard/chart-data?chartType=balance&dateRange=${filters.dateRange}&partnerId=${filters.partnerId}`),
         fetch(`/api/dashboard/chart-data?chartType=transaction-analytics&dateRange=${filters.dateRange}&partnerId=${filters.partnerId}`)
       ])
 
-      const [dailyData, statusData, partnerData, balanceData, analyticsData] = await Promise.all([
+      const [dailyData, statusData, partnerData, analyticsData] = await Promise.all([
         dailyRes.json(),
         statusRes.json(),
         partnerRes.json(),
-        balanceRes.json(),
         analyticsRes.json()
       ])
 
@@ -233,7 +230,6 @@ export default function Dashboard() {
         dailyTransactions: dailyData.success ? dailyData.data : [],
         partnerPerformance: partnerData.success ? partnerData.data : [],
         statusDistribution: statusData.success ? statusData.data : [],
-        balanceTrends: balanceData.success ? balanceData.data : [],
         transactionAnalytics: analyticsData.success ? analyticsData.data : []
       })
 
@@ -987,45 +983,6 @@ export default function Dashboard() {
                   </h3>
                   {chartData.transactionAnalytics.length > 0 ? (
                     <>
-                      {/* Summary Section */}
-                      <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-semibold text-blue-900">Summary ({filters.dateRange} period)</h4>
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            <CheckCircle className="w-3 h-3 mr-1" />
-                            Consistent with Dashboard Cards
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                          <div>
-                            <div className="text-blue-700">Total Transactions</div>
-                            <div className="font-semibold text-blue-900">
-                              {chartData.transactionAnalytics.reduce((sum, partner) => sum + partner.totalTransactions, 0)}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-blue-700">Avg. Per Hour</div>
-                            <div className="font-semibold text-blue-900">
-                              {(chartData.transactionAnalytics.reduce((sum, partner) => sum + partner.transactionsPerHour, 0) / chartData.transactionAnalytics.length).toFixed(2)}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-blue-700">Total Amount</div>
-                            <div className="font-semibold text-blue-900">
-                              KES {chartData.transactionAnalytics.reduce((sum, partner) => sum + (partner.totalAmount || 0), 0).toLocaleString()}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-blue-700">Success Rate</div>
-                            <div className="font-semibold text-blue-900">
-                              {chartData.transactionAnalytics.length > 0 ? 
-                                (chartData.transactionAnalytics.reduce((sum, partner) => sum + partner.successfulTransactions, 0) / 
-                                 chartData.transactionAnalytics.reduce((sum, partner) => sum + partner.totalTransactions, 0) * 100).toFixed(1) + '%' : '0%'}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      
                       {/* Individual Partner Statistics */}
                       <div className="space-y-4">
                       {chartData.transactionAnalytics.slice(0, 4).map((partner, index) => (
