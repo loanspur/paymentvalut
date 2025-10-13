@@ -15,7 +15,8 @@ import {
   Filter,
   Calendar,
   Download,
-  Clock
+  Clock,
+  CheckCircle
 } from 'lucide-react'
 import { 
   LineChart as RechartsLineChart, 
@@ -64,13 +65,42 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState(new Date())
 
+  // Helpers to persist and restore filters (single source of truth on client)
+  const saveFilters = (next) => {
+    try {
+      localStorage.setItem('dashboard_filters', JSON.stringify(next))
+    } catch (_) {}
+  }
+
+  const restoreFilters = () => {
+    try {
+      const raw = localStorage.getItem('dashboard_filters')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (parsed && (parsed.partnerId || parsed.dateRange)) {
+          setFilters(prev => ({
+            ...prev,
+            partnerId: parsed.partnerId || prev.partnerId,
+            dateRange: parsed.dateRange || prev.dateRange,
+            status: parsed.status || prev.status
+          }))
+        }
+      }
+    } catch (_) {}
+  }
+
   useEffect(() => {
+    // 1) Restore any saved filters first so future loads honor selection
+    restoreFilters()
+    // 2) Load user info (may constrain to specific partner)
     loadUserInfo()
+    // 3) Load partners for the selector
     loadAllPartners()
     
     // Refresh data every 30 seconds
     const interval = setInterval(() => {
       loadDashboardData()
+      loadChartData()
     }, AUTO_REFRESH_INTERVALS.DASHBOARD)
 
     return () => clearInterval(interval)
@@ -81,6 +111,8 @@ export default function Dashboard() {
     if (filters.partnerId) {
       loadDashboardData()
       loadChartData()
+      // persist on every filter-driven data load to avoid switching back
+      saveFilters(filters)
     }
   }, [filters.partnerId, filters.dateRange])
 
@@ -100,10 +132,11 @@ export default function Dashboard() {
           setUserPartnerId(data.user.partner_id)
           // If user has a specific partner, set it as the default filter
           if (data.user.partner_id && data.user.role !== 'super_admin') {
-            setFilters(prev => ({
-              ...prev,
-              partnerId: data.user.partner_id
-            }))
+            setFilters(prev => {
+              const next = { ...prev, partnerId: data.user.partner_id }
+              saveFilters(next)
+              return next
+            })
           }
         }
       }
@@ -111,10 +144,11 @@ export default function Dashboard() {
       // Set default partner for Kulman Group Limited if auth fails
       const kulmanPartnerId = '550e8400-e29b-41d4-a716-446655440000'
       setUserPartnerId(kulmanPartnerId)
-      setFilters(prev => ({
-        ...prev,
-        partnerId: kulmanPartnerId
-      }))
+      setFilters(prev => {
+        const next = { ...prev, partnerId: kulmanPartnerId }
+        saveFilters(next)
+        return next
+      })
     }
   }
 
@@ -135,7 +169,7 @@ export default function Dashboard() {
   const loadDashboardData = async () => {
     try {
       // Fetch dashboard statistics
-      const statsUrl = `/api/dashboard/stats?partnerId=${filters.partnerId}`
+      const statsUrl = `/api/dashboard/stats?partnerId=${filters.partnerId}&dateRange=${filters.dateRange}`
       const statsResponse = await fetch(statsUrl)
       if (statsResponse.ok) {
         const statsData = await statsResponse.json()
@@ -209,18 +243,20 @@ export default function Dashboard() {
   }
 
   const handleFilterChange = (filterType, value) => {
-    setFilters(prev => ({
-      ...prev,
-      [filterType]: value
-    }))
+    setFilters(prev => {
+      const next = { ...prev, [filterType]: value }
+      saveFilters(next)
+      return next
+    })
     // Data will be reloaded automatically by useEffect when filters change
   }
 
   const handleDateRangeChange = (range) => {
-    setFilters(prev => ({
-      ...prev,
-      dateRange: range
-    }))
+    setFilters(prev => {
+      const next = { ...prev, dateRange: range }
+      saveFilters(next)
+      return next
+    })
     // Data will be reloaded automatically by useEffect when filters change
   }
 
@@ -674,8 +710,8 @@ export default function Dashboard() {
                         />
                         <Bar yAxisId="left" dataKey="totalTransactions" fill="#3B82F6" radius={[2, 2, 0, 0]} />
                         <Bar yAxisId="right" dataKey="successRate" fill="#10B981" radius={[2, 2, 0, 0]} />
-                      </RechartsBarChart>
-                    </ResponsiveContainer>
+                  </RechartsBarChart>
+                </ResponsiveContainer>
                   ) : (
                     <div className="flex items-center justify-center h-64 text-gray-500">
                       <div className="text-center">
@@ -685,7 +721,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                   )}
-                </div>
+              </div>
 
                 {/* Performance Metrics */}
                 <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
@@ -823,9 +859,9 @@ export default function Dashboard() {
                               }`}>
                                 {index + 1}
                               </div>
-                              <div>
+                            <div>
                                 <div className="text-sm font-semibold text-gray-900">{partner.name}</div>
-                                <div className="text-sm text-gray-500">{partner.shortCode}</div>
+                              <div className="text-sm text-gray-500">{partner.shortCode}</div>
                               </div>
                             </div>
                           </td>
@@ -926,8 +962,8 @@ export default function Dashboard() {
                           dot={{ fill: '#8B5CF6', strokeWidth: 2, r: 4 }}
                           activeDot={{ r: 6, stroke: '#8B5CF6', strokeWidth: 2 }}
                         />
-                      </RechartsLineChart>
-                    </ResponsiveContainer>
+                  </RechartsLineChart>
+                </ResponsiveContainer>
                   ) : (
                     <div className="flex items-center justify-center h-64 text-gray-500">
                       <div className="text-center">
@@ -950,7 +986,48 @@ export default function Dashboard() {
                     )}
                   </h3>
                   {chartData.transactionAnalytics.length > 0 ? (
-                    <div className="space-y-4">
+                    <>
+                      {/* Summary Section */}
+                      <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-semibold text-blue-900">Summary ({filters.dateRange} period)</h4>
+                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Consistent with Dashboard Cards
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <div className="text-blue-700">Total Transactions</div>
+                            <div className="font-semibold text-blue-900">
+                              {chartData.transactionAnalytics.reduce((sum, partner) => sum + partner.totalTransactions, 0)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-blue-700">Avg. Per Hour</div>
+                            <div className="font-semibold text-blue-900">
+                              {(chartData.transactionAnalytics.reduce((sum, partner) => sum + partner.transactionsPerHour, 0) / chartData.transactionAnalytics.length).toFixed(2)}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-blue-700">Total Amount</div>
+                            <div className="font-semibold text-blue-900">
+                              KES {chartData.transactionAnalytics.reduce((sum, partner) => sum + (partner.totalAmount || 0), 0).toLocaleString()}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-blue-700">Success Rate</div>
+                            <div className="font-semibold text-blue-900">
+                              {chartData.transactionAnalytics.length > 0 ? 
+                                (chartData.transactionAnalytics.reduce((sum, partner) => sum + partner.successfulTransactions, 0) / 
+                                 chartData.transactionAnalytics.reduce((sum, partner) => sum + partner.totalTransactions, 0) * 100).toFixed(1) + '%' : '0%'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Individual Partner Statistics */}
+                      <div className="space-y-4">
                       {chartData.transactionAnalytics.slice(0, 4).map((partner, index) => (
                         <div key={partner.partnerId} className="p-4 bg-gray-50 rounded-lg">
                           <div className="flex items-center justify-between mb-3">
@@ -971,11 +1048,11 @@ export default function Dashboard() {
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div>
                               <div className="text-gray-500">Per Hour</div>
-                              <div className="font-semibold text-gray-900">{partner.transactionsPerHour}</div>
+                              <div className="font-semibold text-gray-900">{partner.transactionsPerHour.toFixed(2)}</div>
                             </div>
                             <div>
                               <div className="text-gray-500">Per Minute</div>
-                              <div className="font-semibold text-gray-900">{partner.transactionsPerMinute}</div>
+                              <div className="font-semibold text-gray-900">{partner.transactionsPerMinute.toFixed(3)}</div>
                             </div>
                             <div>
                               <div className="text-gray-500">Total Transactions</div>
@@ -986,9 +1063,22 @@ export default function Dashboard() {
                               <div className="font-semibold text-gray-900">KES {partner.averageTransactionAmount.toLocaleString()}</div>
                             </div>
                           </div>
+                          <div className="mt-3 pt-3 border-t border-gray-200">
+                            <div className="grid grid-cols-2 gap-4 text-xs">
+                              <div>
+                                <div className="text-gray-500">Successful</div>
+                                <div className="font-medium text-green-600">{partner.successfulTransactions}</div>
+                              </div>
+                              <div>
+                                <div className="text-gray-500">Failed</div>
+                                <div className="font-medium text-red-600">{partner.failedTransactions}</div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       ))}
-                    </div>
+                      </div>
+                    </>
                   ) : (
                     <div className="flex items-center justify-center h-64 text-gray-500">
                       <div className="text-center">

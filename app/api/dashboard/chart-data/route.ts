@@ -172,7 +172,36 @@ export async function GET(request: NextRequest) {
 
       const partnerData = await Promise.all(
         partners.map(async (partner) => {
-          // Get overall performance data
+          // Get transaction count using same method as dashboard cards
+          let countQuery = supabase
+            .from('disbursement_requests')
+            .select('*', { count: 'exact', head: true })
+            .eq('partner_id', partner.id)
+            .gte('created_at', startDate.toISOString())
+            .lte('created_at', endDate.toISOString())
+
+          const { count: totalTransactions, error: countError } = await countQuery
+
+          if (countError) {
+            return null
+          }
+
+          if (!totalTransactions || totalTransactions === 0) {
+            return {
+              name: partner.name,
+              shortCode: partner.short_code || partner.mpesa_shortcode || 'N/A',
+              totalTransactions: 0,
+              totalAmount: 0,
+              successfulTransactions: 0,
+              failedTransactions: 0,
+              successRate: 0,
+              averageTransactionValue: 0,
+              dailyPerformance: [],
+              performanceScore: 0
+            }
+          }
+
+          // Get transaction data for detailed analysis
           let overallQuery = supabase
             .from('disbursement_requests')
             .select('amount, status, created_at')
@@ -183,16 +212,15 @@ export async function GET(request: NextRequest) {
           const { data: transactions, error } = await overallQuery
 
           if (error) {
-            // Error fetching transactions for partner
             return null
           }
 
-          const totalTransactions = transactions?.length || 0
           const totalAmount = transactions?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0
           const successfulTransactions = transactions?.filter(t => t.status === 'success').length || 0
           const failedTransactions = transactions?.filter(t => t.status === 'failed').length || 0
-          const successRate = totalTransactions > 0 ? (successfulTransactions / totalTransactions) * 100 : 0
-          const averageTransactionValue = totalTransactions > 0 ? totalAmount / totalTransactions : 0
+          const actualTransactionCount = transactions?.length || 0
+          const successRate = actualTransactionCount > 0 ? (successfulTransactions / actualTransactionCount) * 100 : 0
+          const averageTransactionValue = actualTransactionCount > 0 ? totalAmount / actualTransactionCount : 0
 
           // Get daily performance data for time series
           const dailyData = new Map()
@@ -222,7 +250,7 @@ export async function GET(request: NextRequest) {
             name: partner.name,
             shortCode: partner.short_code || partner.mpesa_shortcode || 'N/A',
             // Overall metrics
-            totalTransactions,
+            totalTransactions: actualTransactionCount, // Use actual count for consistency
             totalAmount,
             successfulTransactions,
             failedTransactions,
@@ -231,7 +259,7 @@ export async function GET(request: NextRequest) {
             // Time series data
             dailyPerformance,
             // Performance indicators
-            performanceScore: Math.round((successRate * 0.4 + (totalTransactions > 0 ? 100 : 0) * 0.3 + (totalAmount > 0 ? 100 : 0) * 0.3) * 100) / 100
+            performanceScore: Math.round((successRate * 0.4 + (actualTransactionCount > 0 ? 100 : 0) * 0.3 + (totalAmount > 0 ? 100 : 0) * 0.3) * 100) / 100
           }
         })
       )
@@ -290,12 +318,40 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // Helper: fetch all transactions for a partner within range (avoids 1k row cap)
+    const fetchAllTransactions = async (partnerId: string) => {
+      const pageSize = 1000
+      let from = 0
+      let all: any[] = []
+      while (true) {
+        let pageQuery = supabase
+          .from('disbursement_requests')
+          .select('amount, status, created_at')
+          .eq('partner_id', partnerId)
+          .gte('created_at', startDate.toISOString())
+          .lte('created_at', endDate.toISOString())
+          .order('created_at', { ascending: true })
+          .range(from, from + pageSize - 1)
+
+        const { data: page, error: pageError } = await pageQuery
+        if (pageError) {
+          break
+        }
+        all = all.concat(page || [])
+        if (!page || page.length < pageSize) {
+          break
+        }
+        from += pageSize
+      }
+      return all
+    }
+
     if (chartType === 'transaction-analytics') {
       // Get comprehensive transaction analytics
       let partnersQuery = supabase
         .from('partners')
         .select('id, name, short_code, mpesa_shortcode')
-        .eq('is_active', true)
+        // Do not exclude inactive partners to match card totals behavior
 
       // Filter partners based on user permissions and requested partner
       if (effectivePartnerId && effectivePartnerId !== 'all') {
@@ -310,28 +366,29 @@ export async function GET(request: NextRequest) {
 
       const analyticsData = await Promise.all(
         partners.map(async (partner) => {
-          // Get transaction data for the partner
-          let transactionQuery = supabase
+          // Get transaction count using same method as dashboard cards
+          let countQuery = supabase
             .from('disbursement_requests')
-            .select('amount, status, created_at')
+            .select('*', { count: 'exact', head: true })
             .eq('partner_id', partner.id)
             .gte('created_at', startDate.toISOString())
             .lte('created_at', endDate.toISOString())
-            .order('created_at', { ascending: true })
 
-          const { data: transactions, error } = await transactionQuery
+          const { count: totalTransactions, error: countError } = await countQuery
 
-          if (error) {
+          if (countError) {
             return null
           }
 
-          if (!transactions || transactions.length === 0) {
+          if (!totalTransactions || totalTransactions === 0) {
             return {
               partnerId: partner.id,
               partnerName: partner.name,
               shortCode: partner.short_code || partner.mpesa_shortcode || 'N/A',
               averageTransactionAmount: 0,
               totalTransactions: 0,
+              successfulTransactions: 0,
+              failedTransactions: 0,
               transactionsPerHour: 0,
               transactionsPerMinute: 0,
               dailyAverages: [],
@@ -340,14 +397,28 @@ export async function GET(request: NextRequest) {
             }
           }
 
+          // Get full transaction data for detailed analysis (paginated)
+          const transactions = await fetchAllTransactions(partner.id)
+
           // Calculate average transaction amount over time
           const dailyAverages = new Map()
           const hourlyDistribution = new Map()
           let totalAmount = 0
-          let totalTransactions = transactions.length
+          let successfulTransactions = 0
+          let failedTransactions = 0
 
           transactions.forEach(transaction => {
-            totalAmount += transaction.amount || 0
+            // Align amount totals with dashboard cards: only successful amounts contribute
+            if (transaction.status === 'success') {
+              totalAmount += transaction.amount || 0
+            }
+            
+            // Count successful and failed transactions
+            if (transaction.status === 'success') {
+              successfulTransactions++
+            } else if (transaction.status === 'failed') {
+              failedTransactions++
+            }
             
             // Daily averages
             const date = format(new Date(transaction.created_at), 'MMM dd')
@@ -372,7 +443,9 @@ export async function GET(request: NextRequest) {
             hourlyData.amount += transaction.amount || 0
           })
 
-          const averageTransactionAmount = totalAmount / totalTransactions
+          // Use the actual transaction count from data for consistency
+          const actualTransactionCount = transactions?.length || 0
+          const averageTransactionAmount = actualTransactionCount > 0 ? totalAmount / actualTransactionCount : 0
           
           // Calculate transactions per hour and minute
           const timeSpanHours = (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60)
@@ -392,7 +465,10 @@ export async function GET(request: NextRequest) {
             partnerName: partner.name,
             shortCode: partner.short_code || partner.mpesa_shortcode || 'N/A',
             averageTransactionAmount: Math.round(averageTransactionAmount * 100) / 100,
-            totalTransactions,
+            totalTransactions: actualTransactionCount, // Use actual count for consistency
+            totalAmount: totalAmount, // Add actual total amount
+            successfulTransactions,
+            failedTransactions,
             transactionsPerHour: Math.round(transactionsPerHour * 100) / 100,
             transactionsPerMinute: Math.round(transactionsPerMinute * 1000) / 1000,
             dailyAverages: Array.from(dailyAverages.values()).sort((a, b) => 

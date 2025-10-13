@@ -47,10 +47,22 @@ export async function GET(request: NextRequest) {
     // Get partner filter from query parameters or user role
     const { searchParams } = new URL(request.url)
     const requestedPartnerId = searchParams.get('partnerId')
+    const dateRange = searchParams.get('dateRange') || '7d'
+    
+    // Calculate date range
+    let days = 7
+    if (dateRange === '1d') days = 1
+    else if (dateRange === '7d') days = 7
+    else if (dateRange === '30d') days = 30
+    else if (dateRange === '90d') days = 90
+    
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - days)
     
     // Determine partner filter based on user role and request
     let partnerFilter = null
-    console.log('🔍 Stats API - User role:', currentUser.role, 'Requested partner:', requestedPartnerId, 'User partner:', currentUser.partner_id)
+    console.log('🔍 Stats API - User role:', currentUser.role, 'Requested partner:', requestedPartnerId, 'User partner:', currentUser.partner_id, 'Date range:', dateRange)
     
     if (currentUser.role === 'super_admin') {
       // Super admin can filter by any partner or see all data
@@ -83,7 +95,11 @@ export async function GET(request: NextRequest) {
     }
     
     // Build base query for disbursement requests
-    let disbursementQuery = supabase.from('disbursement_requests').select('*', { count: 'exact', head: true })
+    let disbursementQuery = supabase.from('disbursement_requests')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', startDate.toISOString())
+      .lte('created_at', endDate.toISOString())
+    
     if (partnerFilter) {
       disbursementQuery = disbursementQuery.eq('partner_id', partnerFilter)
     }
@@ -99,7 +115,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total amount disbursed
-    let amountQuery = supabase.from('disbursement_requests').select('amount, status').eq('status', 'success')
+    let amountQuery = supabase.from('disbursement_requests')
+      .select('amount, status')
+      .eq('status', 'success')
+      .gte('created_at', startDate.toISOString())
+      .lte('created_at', endDate.toISOString())
+    
     if (partnerFilter) {
       amountQuery = amountQuery.eq('partner_id', partnerFilter)
     }
@@ -125,7 +146,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Calculate success rate
-    let statusQuery = supabase.from('disbursement_requests').select('status')
+    let statusQuery = supabase.from('disbursement_requests')
+      .select('status')
+      .gte('created_at', startDate.toISOString())
+      .lte('created_at', endDate.toISOString())
+    
     if (partnerFilter) {
       statusQuery = statusQuery.eq('partner_id', partnerFilter)
     }
