@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { jwtVerify } from 'jose'
+import { verifyJWTToken } from '../../../lib/jwt-utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
 
 // GET - Get user shortcode access
 export async function GET(request: NextRequest) {
@@ -22,8 +20,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Verify the JWT token
-    const secret = new TextEncoder().encode(JWT_SECRET)
-    const { payload } = await jwtVerify(token, secret)
+    const payload = await verifyJWTToken(token)
     
     if (!payload || !payload.userId) {
       return NextResponse.json({
@@ -131,8 +128,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify the JWT token
-    const secret = new TextEncoder().encode(JWT_SECRET)
-    const { payload } = await jwtVerify(token, secret)
+    const payload = await verifyJWTToken(token)
     
     if (!payload || !payload.userId) {
       return NextResponse.json({
@@ -237,8 +233,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Verify the JWT token
-    const secret = new TextEncoder().encode(JWT_SECRET)
-    const { payload } = await jwtVerify(token, secret)
+    const payload = await verifyJWTToken(token)
     
     if (!payload || !payload.userId) {
       return NextResponse.json({

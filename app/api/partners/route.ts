@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { jwtVerify } from 'jose'
+import { verifyJWTToken } from '../../../lib/jwt-utils'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
 
 // Get partners based on user access
 export async function GET(request: NextRequest) {
@@ -17,8 +16,7 @@ export async function GET(request: NextRequest) {
     if (token) {
       try {
         // Verify the JWT token
-        const secret = new TextEncoder().encode(JWT_SECRET)
-        const { payload } = await jwtVerify(token, secret)
+        const payload = await verifyJWTToken(token)
         
         if (payload && payload.userId) {
           // Get current user from database

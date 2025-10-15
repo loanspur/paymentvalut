@@ -1,24 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { jwtVerify } from 'jose'
 import bcrypt from 'bcryptjs'
+import { verifyJWTToken } from '../../../../lib/jwt-utils'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
-
-async function verifyToken(token: string): Promise<any> {
-  try {
-    const secret = new TextEncoder().encode(JWT_SECRET)
-    const { payload } = await jwtVerify(token, secret)
-    return payload
-  } catch (error) {
-    return null
-  }
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Decode the JWT token to get user ID
-    const decoded = await verifyToken(token)
+    const decoded = await verifyJWTToken(token)
     if (!decoded || !decoded.userId) {
       return NextResponse.json({
         error: 'Invalid authentication',

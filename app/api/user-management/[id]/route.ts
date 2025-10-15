@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { UserService, UpdateUserData } from '../../../../lib/user-service'
-import { jwtVerify } from 'jose'
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
+import { verifyJWTToken } from '../../../../lib/jwt-utils'
 
 // GET - Get user by ID (admin only)
 export async function GET(
@@ -20,8 +18,7 @@ export async function GET(
     }
 
     // Verify the JWT token directly (same as auth check endpoint)
-    const secret = new TextEncoder().encode(JWT_SECRET)
-    const { payload } = await jwtVerify(token, secret)
+    const payload = await verifyJWTToken(token)
     
     if (!payload || !payload.userId) {
       return NextResponse.json({
@@ -101,8 +98,7 @@ export async function PUT(
     }
 
     // Verify the JWT token directly (same as auth check endpoint)
-    const secret = new TextEncoder().encode(JWT_SECRET)
-    const { payload } = await jwtVerify(token, secret)
+    const payload = await verifyJWTToken(token)
     
     if (!payload || !payload.userId) {
       return NextResponse.json({
@@ -197,8 +193,7 @@ export async function DELETE(
     }
 
     // Verify the JWT token directly (same as auth check endpoint)
-    const secret = new TextEncoder().encode(JWT_SECRET)
-    const { payload } = await jwtVerify(token, secret)
+    const payload = await verifyJWTToken(token)
     
     if (!payload || !payload.userId) {
       return NextResponse.json({

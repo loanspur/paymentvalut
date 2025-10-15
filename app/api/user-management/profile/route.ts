@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { UserService } from '../../../../lib/user-service'
-import { jwtVerify } from 'jose'
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
+import { verifyJWTToken } from '../../../../lib/jwt-utils'
 
 // GET - Get current user's profile
 export async function GET(request: NextRequest) {
@@ -17,8 +15,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Verify the JWT token directly (same as auth check endpoint)
-    const secret = new TextEncoder().encode(JWT_SECRET)
-    const { payload } = await jwtVerify(token, secret)
+    const payload = await verifyJWTToken(token)
     
     if (!payload || !payload.userId) {
       return NextResponse.json({
@@ -70,8 +67,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Verify the JWT token directly (same as auth check endpoint)
-    const secret = new TextEncoder().encode(JWT_SECRET)
-    const { payload } = await jwtVerify(token, secret)
+    const payload = await verifyJWTToken(token)
     
     if (!payload || !payload.userId) {
       return NextResponse.json({

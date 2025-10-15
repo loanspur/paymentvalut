@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { verifyJWTToken } from '../../../../lib/jwt-utils'
 import { createClient } from '@supabase/supabase-js'
-import { jwtVerify } from 'jose'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -20,8 +20,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Verify the JWT token
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key-change-in-production')
-    const { payload } = await jwtVerify(token, secret)
+    const payload = await verifyJWTToken(token)
     
     if (!payload || !payload.userId) {
       return NextResponse.json({
@@ -62,7 +61,7 @@ export async function GET(request: NextRequest) {
     
     // Determine partner filter based on user role and request
     let partnerFilter = null
-    console.log('🔍 Stats API - User role:', currentUser.role, 'Requested partner:', requestedPartnerId, 'User partner:', currentUser.partner_id, 'Date range:', dateRange)
+    console.log('🔍 Stats API - Processing request for role:', currentUser.role, 'Date range:', dateRange)
     
     if (currentUser.role === 'super_admin') {
       // Super admin can filter by any partner or see all data
@@ -74,7 +73,7 @@ export async function GET(request: NextRequest) {
       partnerFilter = currentUser.partner_id
     }
     
-    console.log('🔍 Stats API - Final partner filter:', partnerFilter)
+    console.log('🔍 Stats API - Partner filter applied:', partnerFilter ? 'Yes' : 'No')
     
     // Validate partner exists if filtering by specific partner
     if (partnerFilter && partnerFilter !== 'all') {
@@ -85,13 +84,13 @@ export async function GET(request: NextRequest) {
         .single()
       
       if (partnerError || !partnerExists) {
-        console.error('❌ Partner not found:', partnerFilter, partnerError)
+        console.error('❌ Partner not found in database')
         return NextResponse.json(
-          { error: 'Partner not found', details: `Partner with ID ${partnerFilter} does not exist` },
+          { error: 'Partner not found', details: 'Requested partner does not exist' },
           { status: 404 }
         )
       }
-      console.log('✅ Partner found:', partnerExists)
+      console.log('✅ Partner validation successful')
     }
     
     // Build base query for disbursement requests
@@ -105,13 +104,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total transactions count
-    console.log('🔍 Executing disbursement query for partner:', partnerFilter)
+    console.log('🔍 Executing disbursement query')
     const { count: totalTransactions, error: transactionsError } = await disbursementQuery
 
     if (transactionsError) {
-      console.error('❌ Error fetching total transactions:', transactionsError)
+      console.error('❌ Error fetching total transactions:', transactionsError.message)
     } else {
-      console.log('✅ Total transactions count:', totalTransactions)
+      console.log('✅ Total transactions count retrieved successfully')
     }
 
     // Get total amount disbursed
@@ -201,7 +200,7 @@ export async function GET(request: NextRequest) {
       todayAmount: todayAmount || 0
     }
     
-    console.log('✅ Final stats calculated:', stats)
+    console.log('✅ Dashboard stats calculated successfully')
 
     return NextResponse.json({
       success: true,

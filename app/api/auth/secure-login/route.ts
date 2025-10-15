@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { SignJWT } from 'jose'
 import bcrypt from 'bcryptjs'
 import { createClient } from '@supabase/supabase-js'
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
+import { createJWTToken } from '../../../../lib/jwt-utils'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
@@ -27,7 +25,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (userError || !user) {
-      console.log('❌ User not found:', email, userError?.message)
+      console.log('❌ Authentication failed: Invalid credentials')
       return NextResponse.json({
         error: 'Invalid credentials'
       }, { status: 401 })
@@ -36,7 +34,7 @@ export async function POST(request: NextRequest) {
     // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password_hash)
     if (!isValidPassword) {
-      console.log('❌ Invalid password for:', email)
+      console.log('❌ Authentication failed: Invalid credentials')
       return NextResponse.json({
         error: 'Invalid credentials'
       }, { status: 401 })
@@ -44,26 +42,21 @@ export async function POST(request: NextRequest) {
 
     // Check if user is active
     if (!user.is_active) {
-      console.log('❌ Account deactivated for:', email)
+      console.log('❌ Authentication failed: Account deactivated')
       return NextResponse.json({
         error: 'Account is deactivated'
       }, { status: 403 })
     }
 
-    // Generate JWT token with expiration using jose
-    const secret = new TextEncoder().encode(JWT_SECRET)
-    const token = await new SignJWT({ 
+    // Generate JWT token with expiration using secure utility
+    const token = await createJWTToken({ 
       userId: user.id,
       email: user.email,
       role: user.role,
       isActive: user.is_active
     })
-      .setProtectedHeader({ alg: 'HS256' })
-      .setExpirationTime('8h')
-      .setIssuedAt()
-      .sign(secret)
 
-    console.log('✅ Login successful for:', email, 'Role:', user.role)
+    console.log('✅ Login successful for user role:', user.role)
 
     // Update last login time
     await supabase

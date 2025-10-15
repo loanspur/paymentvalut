@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { jwtVerify } from 'jose'
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
+import { verifyJWTToken } from '../../../../lib/jwt-utils'
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,8 +13,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Verify the JWT token
-    const secret = new TextEncoder().encode(JWT_SECRET)
-    const { payload } = await jwtVerify(token, secret)
+    const payload = await verifyJWTToken(token)
+
+    if (!payload) {
+      return NextResponse.json({
+        authenticated: false,
+        user: null
+      })
+    }
 
     return NextResponse.json({
       authenticated: true,

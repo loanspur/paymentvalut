@@ -12,6 +12,7 @@ export default function SecureLoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const router = useRouter()
 
@@ -27,6 +28,7 @@ export default function SecureLoginPage() {
     setIsSubmitting(true)
     setIsLoading(true)
     setError('')
+    setSuccess('')
 
     try {
       const response = await fetch('/api/auth/secure-login', {
@@ -40,14 +42,19 @@ export default function SecureLoginPage() {
       const data = await response.json()
 
       if (response.ok) {
+        // Show success message
+        setSuccess('Login successful! Redirecting...')
+        setIsLoading(false)
+        setIsSubmitting(false)
+        
         // Use a more reliable redirect method
         setTimeout(() => {
-          if (data.user.role === 'admin') {
+          if (['admin', 'super_admin'].includes(data.user.role)) {
             window.location.replace('/admin-dashboard')
           } else {
             window.location.replace('/')
           }
-        }, 100)
+        }, 1000) // Increased delay to show success message
       } else {
         setError(data.error || 'Login failed')
         setIsLoading(false)
@@ -138,6 +145,12 @@ export default function SecureLoginPage() {
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-md p-3">
                 <p className="text-sm text-red-600">{error}</p>
+              </div>
+            )}
+
+            {success && (
+              <div className="bg-green-50 border border-green-200 rounded-md p-3">
+                <p className="text-sm text-green-600">{success}</p>
               </div>
             )}
 

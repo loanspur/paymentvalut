@@ -41,6 +41,11 @@ export function validateEnv() {
   if (missing.length > 0) {
     throw new Error(`Missing required environment variables: ${missing.join(', ')}`)
   }
+  
+  // Security check: Ensure JWT secret is set and not default
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'your-secret-key-change-in-production') {
+    console.warn('⚠️ JWT_SECRET not properly configured. Using development fallback.')
+  }
 }
 
 // Helper function to get M-Pesa callback URLs
