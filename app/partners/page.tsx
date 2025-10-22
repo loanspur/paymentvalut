@@ -170,7 +170,19 @@ export default function PartnersPage() {
           mpesa_environment: formData.mpesa_environment,
           is_active: formData.is_active,
           is_mpesa_configured: formData.is_mpesa_configured,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          // Mifos X configuration
+          mifos_host_url: formData.mifos_host_url,
+          mifos_username: formData.mifos_username,
+          mifos_password: formData.mifos_password,
+          mifos_tenant_id: formData.mifos_tenant_id,
+          mifos_api_endpoint: formData.mifos_api_endpoint,
+          mifos_webhook_url: formData.mifos_webhook_url,
+          mifos_webhook_secret_token: formData.mifos_webhook_secret_token,
+          is_mifos_configured: formData.is_mifos_configured,
+          mifos_auto_disbursement_enabled: formData.mifos_auto_disbursement_enabled,
+          mifos_max_disbursement_amount: formData.mifos_max_disbursement_amount,
+          mifos_min_disbursement_amount: formData.mifos_min_disbursement_amount
         }
 
         // Only include columns that exist in the database
@@ -316,7 +328,19 @@ export default function PartnersPage() {
           // Also store in the fallback columns for redundancy
           consumer_key: formData.mpesa_consumer_key,
           consumer_secret: formData.mpesa_consumer_secret,
-          initiator_password: formData.mpesa_initiator_password
+          initiator_password: formData.mpesa_initiator_password,
+          // Mifos X configuration
+          mifos_host_url: formData.mifos_host_url,
+          mifos_username: formData.mifos_username,
+          mifos_password: formData.mifos_password,
+          mifos_tenant_id: formData.mifos_tenant_id,
+          mifos_api_endpoint: formData.mifos_api_endpoint,
+          mifos_webhook_url: formData.mifos_webhook_url,
+          mifos_webhook_secret_token: formData.mifos_webhook_secret_token,
+          is_mifos_configured: formData.is_mifos_configured,
+          mifos_auto_disbursement_enabled: formData.mifos_auto_disbursement_enabled,
+          mifos_max_disbursement_amount: formData.mifos_max_disbursement_amount,
+          mifos_min_disbursement_amount: formData.mifos_min_disbursement_amount
         }
 
         // Only include columns that exist in the database

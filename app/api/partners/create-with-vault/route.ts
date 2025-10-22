@@ -175,7 +175,17 @@ export async function POST(request: NextRequest) {
         description: newPartner.description,
         is_mpesa_configured: newPartner.is_mpesa_configured,
         is_active: newPartner.is_active,
-        created_at: newPartner.created_at
+        created_at: newPartner.created_at,
+        // Mifos X configuration
+        mifos_host_url: newPartner.mifos_host_url,
+        mifos_username: newPartner.mifos_username,
+        mifos_tenant_id: newPartner.mifos_tenant_id,
+        mifos_api_endpoint: newPartner.mifos_api_endpoint,
+        mifos_webhook_url: newPartner.mifos_webhook_url,
+        is_mifos_configured: newPartner.is_mifos_configured,
+        mifos_auto_disbursement_enabled: newPartner.mifos_auto_disbursement_enabled,
+        mifos_max_disbursement_amount: newPartner.mifos_max_disbursement_amount,
+        mifos_min_disbursement_amount: newPartner.mifos_min_disbursement_amount
       }
     }, { status: 201 })
 
