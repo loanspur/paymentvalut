@@ -431,7 +431,19 @@ export default function PartnersPage() {
         is_mpesa_configured: false,
         api_key: '',
         allowed_ips: [],
-        ip_whitelist_enabled: false
+        ip_whitelist_enabled: false,
+        // Mifos X configuration
+        mifos_host_url: '',
+        mifos_username: '',
+        mifos_password: '',
+        mifos_tenant_id: '',
+        mifos_api_endpoint: '',
+        mifos_webhook_url: '',
+        mifos_webhook_secret_token: '',
+        is_mifos_configured: false,
+        mifos_auto_disbursement_enabled: false,
+        mifos_max_disbursement_amount: 0,
+        mifos_min_disbursement_amount: 0
       })
       setShowAddForm(false)
       setEditingPartner(null)
@@ -461,7 +473,19 @@ export default function PartnersPage() {
       is_mpesa_configured: partner.is_mpesa_configured ?? false,
       api_key: partner.api_key || '',
       allowed_ips: (partner as any).allowed_ips || [],
-      ip_whitelist_enabled: (partner as any).ip_whitelist_enabled || false
+      ip_whitelist_enabled: (partner as any).ip_whitelist_enabled || false,
+      // Mifos X configuration
+      mifos_host_url: partner.mifos_host_url || '',
+      mifos_username: partner.mifos_username || '',
+      mifos_password: partner.mifos_password || '',
+      mifos_tenant_id: partner.mifos_tenant_id || '',
+      mifos_api_endpoint: partner.mifos_api_endpoint || '',
+      mifos_webhook_url: partner.mifos_webhook_url || '',
+      mifos_webhook_secret_token: partner.mifos_webhook_secret_token || '',
+      is_mifos_configured: partner.is_mifos_configured ?? false,
+      mifos_auto_disbursement_enabled: partner.mifos_auto_disbursement_enabled ?? false,
+      mifos_max_disbursement_amount: partner.mifos_max_disbursement_amount || 0,
+      mifos_min_disbursement_amount: partner.mifos_min_disbursement_amount || 0
     }
     
     setFormData(formDataToSet)

@@ -651,7 +651,7 @@ function FloatPurchaseModal({ onClose, onSuccess }: { onClose: () => void, onSuc
                 <label className="block text-sm font-medium text-gray-700">Enter OTP Code</label>
                 <input
                   type="text"
-                  maxLength="6"
+                  maxLength={6}
                   required
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value)}
