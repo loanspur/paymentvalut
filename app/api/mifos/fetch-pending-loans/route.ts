@@ -95,7 +95,7 @@ async function fetchClientDetails(partner: any, clientId: number) {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('[Loan Fetcher] Starting pending loans fetch...')
+    console.log('[Loan Fetcher] Starting pending loans fetch...', new Date().toISOString())
 
     // Get all active partners with Mifos X configured
     const { data: partners, error: partnersError } = await supabase

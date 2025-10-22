@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 // Scheduled job to sync loans from Mifos X and process pending disbursements
 export async function POST(request: NextRequest) {
   try {
-    console.log('[Scheduled Job] Starting loan sync and processing...')
+    console.log('[Scheduled Job] Starting loan sync and processing...', new Date().toISOString())
     
     const results = {
       fetchResults: null,

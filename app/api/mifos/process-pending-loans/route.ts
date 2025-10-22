@@ -9,7 +9,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 // Process pending loans for disbursement
 async function processPendingLoans() {
   try {
-    console.log('[Loan Processor] Starting pending loans processing...')
+    console.log('[Loan Processor] Starting pending loans processing...', new Date().toISOString())
 
     // Get loans that are pending disbursement
     const { data: pendingLoans, error: loansError } = await supabase
