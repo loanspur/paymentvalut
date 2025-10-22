@@ -119,32 +119,157 @@ export async function POST(request: NextRequest) {
       }, { status: 200 })
     }
 
-    // TODO: We need to fetch loan details from Mifos X API to get:
-    // - Loan amount
-    // - Client phone number
-    // - Product ID
-    // - Client name
-    // For now, let's create a basic disbursement record and log that we need more data
+    // Fetch loan details from Mifos X API
+    console.log('[Mifos Webhook] Fetching loan details from Mifos X API...')
     
-    console.log('[Mifos Webhook] Need to fetch loan details from Mifos X API')
-    console.log('[Mifos Webhook] Required data: loan amount, client phone, product ID')
-    
-    // For now, return success but indicate manual processing is needed
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Webhook received successfully. Manual processing required to fetch loan details from Mifos X API.',
-      loanId,
-      clientId,
-      officeId,
-      approvedDate: changes.approvedOnDate,
-      requiresManualProcessing: true,
-      nextSteps: [
-        'Fetch loan details from Mifos X API using loanId',
-        'Get client phone number from clientId',
-        'Get loan amount and product information',
-        'Process disbursement with complete data'
-      ]
-    }, { status: 200 })
+    try {
+      // Get loan details
+      const loanDetails = await fetchLoanDetailsFromMifos(partner, loanId)
+      if (!loanDetails) {
+        throw new Error('Failed to fetch loan details from Mifos X')
+      }
+      
+      // Get client details
+      const clientDetails = await fetchClientDetailsFromMifos(partner, clientId)
+      if (!clientDetails) {
+        throw new Error('Failed to fetch client details from Mifos X')
+      }
+      
+      console.log('[Mifos Webhook] Loan details:', {
+        amount: loanDetails.principal,
+        productId: loanDetails.loanProductId,
+        productName: loanDetails.loanProductName
+      })
+      
+      console.log('[Mifos Webhook] Client details:', {
+        name: clientDetails.displayName,
+        phone: clientDetails.mobileNo
+      })
+      
+      // Validate we have all required data
+      if (!loanDetails.principal || !clientDetails.mobileNo) {
+        throw new Error('Missing required loan or client data')
+      }
+      
+      // Check auto-disbursal configuration for this loan product
+      const { data: autoDisbursalConfig, error: configError } = await supabase
+        .from('loan_product_auto_disbursal_configs')
+        .select('*')
+        .eq('partner_id', partner.id)
+        .eq('product_id', loanDetails.loanProductId)
+        .eq('enabled', true)
+        .single()
+
+      if (configError || !autoDisbursalConfig) {
+        console.log('[Mifos Webhook] No auto-disbursal configuration found for product:', loanDetails.loanProductId)
+        return NextResponse.json({ 
+          success: true, 
+          message: 'No auto-disbursal configuration for this loan product',
+          requiresManualProcessing: true,
+          loanDetails,
+          clientDetails
+        }, { status: 200 })
+      }
+
+      // Validate loan amount against auto-disbursal limits
+      if (loanDetails.principal < autoDisbursalConfig.min_amount || loanDetails.principal > autoDisbursalConfig.max_amount) {
+        console.log('[Mifos Webhook] Loan amount outside auto-disbursal limits')
+        return NextResponse.json({ 
+          success: true, 
+          message: 'Loan amount outside auto-disbursal limits',
+          requiresManualProcessing: true,
+          details: {
+            loanAmount: loanDetails.principal,
+            minAmount: autoDisbursalConfig.min_amount,
+            maxAmount: autoDisbursalConfig.max_amount
+          }
+        }, { status: 200 })
+      }
+
+      // Create disbursement record
+      const disbursementData = {
+        partner_id: partner.id,
+        msisdn: clientDetails.mobileNo,
+        amount: loanDetails.principal,
+        customer_id: clientId.toString(),
+        client_request_id: `mifos_${loanId}_${Date.now()}`,
+        external_reference: loanId.toString(),
+        origin: 'mifos_webhook',
+        description: `Automated loan disbursement for ${clientDetails.displayName} - Product: ${loanDetails.loanProductName}`,
+        currency: 'KES',
+        metadata: {
+          mifos_loan_id: loanId,
+          mifos_client_id: clientId,
+          mifos_product_id: loanDetails.loanProductId,
+          mifos_product_name: loanDetails.loanProductName,
+          client_name: clientDetails.displayName,
+          approved_at: changes.approvedOnDate,
+          webhook_received_at: new Date().toISOString(),
+          auto_disbursal_config_id: autoDisbursalConfig.id
+        }
+      }
+
+      const { data: disbursement, error: disbursementError } = await supabase
+        .from('disbursement_requests')
+        .insert(disbursementData)
+        .select()
+        .single()
+
+      if (disbursementError) {
+        console.error('[Mifos Webhook] Failed to create disbursement record:', disbursementError)
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Failed to create disbursement record',
+          details: disbursementError.message 
+        }, { status: 500 })
+      }
+
+      console.log('[Mifos Webhook] Created disbursement record:', disbursement.id)
+
+      // Trigger disbursement via existing disbursement system
+      const disbursementResult = await triggerDisbursement(disbursement.id, partner)
+
+      if (disbursementResult.success) {
+        console.log('[Mifos Webhook] Disbursement successful:', disbursementResult.transactionId)
+        
+        return NextResponse.json({
+          success: true,
+          message: 'Loan disbursement processed successfully',
+          disbursementId: disbursement.id,
+          transactionId: disbursementResult.transactionId,
+          mpesaReceiptNumber: disbursementResult.mpesaReceiptNumber,
+          loanDetails,
+          clientDetails
+        }, { status: 200 })
+      } else {
+        console.error('[Mifos Webhook] Disbursement failed:', disbursementResult.error)
+        
+        // Update disbursement record with failure status
+        await supabase
+          .from('disbursement_requests')
+          .update({ 
+            status: 'failed',
+            error_message: disbursementResult.error,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', disbursement.id)
+
+        return NextResponse.json({
+          success: false,
+          error: 'Disbursement failed',
+          details: disbursementResult.error,
+          disbursementId: disbursement.id
+        }, { status: 500 })
+      }
+      
+    } catch (error) {
+      console.error('[Mifos Webhook] Error fetching loan details:', error)
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Failed to fetch loan details from Mifos X',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }, { status: 500 })
+    }
 
 
   } catch (error) {
@@ -154,6 +279,112 @@ export async function POST(request: NextRequest) {
       error: 'Webhook processing failed',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
+  }
+}
+
+// Fetch loan details from Mifos X API
+async function fetchLoanDetailsFromMifos(partner: any, loanId: number) {
+  try {
+    const mifosUrl = `${partner.mifos_host_url}/fineract-provider/api/v1/loans/${loanId}?tenantIdentifier=${partner.mifos_tenant_id}`
+    
+    const response = await fetch(mifosUrl, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${Buffer.from(`${partner.mifos_username}:${partner.mifos_password}`).toString('base64')}`,
+        'Fineract-Platform-TenantId': partner.mifos_tenant_id
+      }
+    })
+
+    if (!response.ok) {
+      throw new Error(`Mifos X API error: ${response.status} ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    
+    return {
+      principal: data.principal,
+      loanProductId: data.loanProductId,
+      loanProductName: data.loanProductName,
+      currency: data.currency?.code || 'KES',
+      termInMonths: data.numberOfRepayments,
+      interestRate: data.nominalInterestRatePerPeriod
+    }
+  } catch (error) {
+    console.error('[Mifos Webhook] Error fetching loan details:', error)
+    throw error
+  }
+}
+
+// Fetch client details from Mifos X API
+async function fetchClientDetailsFromMifos(partner: any, clientId: number) {
+  try {
+    const mifosUrl = `${partner.mifos_host_url}/fineract-provider/api/v1/clients/${clientId}?tenantIdentifier=${partner.mifos_tenant_id}`
+    
+    const response = await fetch(mifosUrl, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${Buffer.from(`${partner.mifos_username}:${partner.mifos_password}`).toString('base64')}`,
+        'Fineract-Platform-TenantId': partner.mifos_tenant_id
+      }
+    })
+
+    if (!response.ok) {
+      throw new Error(`Mifos X API error: ${response.status} ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    
+    return {
+      displayName: data.displayName,
+      mobileNo: data.mobileNo,
+      email: data.emailAddress,
+      accountNo: data.accountNo
+    }
+  } catch (error) {
+    console.error('[Mifos Webhook] Error fetching client details:', error)
+    throw error
+  }
+}
+
+// Trigger disbursement via existing disbursement system
+async function triggerDisbursement(disbursementId: string, partner: any): Promise<{ success: boolean; transactionId?: string; mpesaReceiptNumber?: string; error?: string }> {
+  try {
+    // Call the existing disbursement Edge Function
+    const disbursementUrl = `${supabaseUrl}/functions/v1/disburse`
+    
+    const response = await fetch(disbursementUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+        'x-api-key': partner.api_key
+      },
+      body: JSON.stringify({
+        disbursement_id: disbursementId
+      })
+    })
+
+    const data = await response.json()
+
+    if (response.ok && data.status === 'success') {
+      return {
+        success: true,
+        transactionId: data.transaction_id,
+        mpesaReceiptNumber: data.mpesa_receipt_number
+      }
+    } else {
+      return {
+        success: false,
+        error: data.error_message || data.error || 'Disbursement failed'
+      }
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }
   }
 }
 

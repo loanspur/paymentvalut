@@ -46,7 +46,19 @@ export async function POST(request: NextRequest) {
       mpesa_security_credential,
       contact_email,
       contact_phone,
-      description
+      description,
+      // Mifos X configuration
+      mifos_host_url,
+      mifos_username,
+      mifos_password,
+      mifos_tenant_id,
+      mifos_api_endpoint,
+      mifos_webhook_url,
+      mifos_webhook_secret_token,
+      is_mifos_configured,
+      mifos_auto_disbursement_enabled,
+      mifos_max_disbursement_amount,
+      mifos_min_disbursement_amount
     } = await request.json()
 
     // Validate required fields
@@ -84,7 +96,19 @@ export async function POST(request: NextRequest) {
         contact_phone,
         description,
         is_mpesa_configured: true,
-        is_active: true
+        is_active: true,
+        // Mifos X configuration
+        mifos_host_url,
+        mifos_username,
+        mifos_password,
+        mifos_tenant_id,
+        mifos_api_endpoint,
+        mifos_webhook_url,
+        mifos_webhook_secret_token,
+        is_mifos_configured: is_mifos_configured || false,
+        mifos_auto_disbursement_enabled: mifos_auto_disbursement_enabled || false,
+        mifos_max_disbursement_amount: mifos_max_disbursement_amount || 0,
+        mifos_min_disbursement_amount: mifos_min_disbursement_amount || 0
       })
       .select()
       .single()

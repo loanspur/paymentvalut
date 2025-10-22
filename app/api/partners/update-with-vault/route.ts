@@ -53,6 +53,18 @@ export async function PUT(request: NextRequest) {
       mpesa_passkey,
       mpesa_initiator_password,
       mpesa_security_credential,
+      // Mifos X configuration
+      mifos_host_url,
+      mifos_username,
+      mifos_password,
+      mifos_tenant_id,
+      mifos_api_endpoint,
+      mifos_webhook_url,
+      mifos_webhook_secret_token,
+      is_mifos_configured,
+      mifos_auto_disbursement_enabled,
+      mifos_max_disbursement_amount,
+      mifos_min_disbursement_amount,
       // Vault settings
       vault_passphrase,
       update_credentials = false
@@ -96,6 +108,19 @@ export async function PUT(request: NextRequest) {
     // Update security settings
     if (allowed_ips !== undefined) updateData.allowed_ips = allowed_ips
     if (ip_whitelist_enabled !== undefined) updateData.ip_whitelist_enabled = ip_whitelist_enabled
+
+    // Update Mifos X configuration
+    if (mifos_host_url !== undefined) updateData.mifos_host_url = mifos_host_url
+    if (mifos_username !== undefined) updateData.mifos_username = mifos_username
+    if (mifos_password !== undefined) updateData.mifos_password = mifos_password
+    if (mifos_tenant_id !== undefined) updateData.mifos_tenant_id = mifos_tenant_id
+    if (mifos_api_endpoint !== undefined) updateData.mifos_api_endpoint = mifos_api_endpoint
+    if (mifos_webhook_url !== undefined) updateData.mifos_webhook_url = mifos_webhook_url
+    if (mifos_webhook_secret_token !== undefined) updateData.mifos_webhook_secret_token = mifos_webhook_secret_token
+    if (is_mifos_configured !== undefined) updateData.is_mifos_configured = is_mifos_configured
+    if (mifos_auto_disbursement_enabled !== undefined) updateData.mifos_auto_disbursement_enabled = mifos_auto_disbursement_enabled
+    if (mifos_max_disbursement_amount !== undefined) updateData.mifos_max_disbursement_amount = mifos_max_disbursement_amount
+    if (mifos_min_disbursement_amount !== undefined) updateData.mifos_min_disbursement_amount = mifos_min_disbursement_amount
 
     // Update M-Pesa configuration status
     if (update_credentials && mpesa_consumer_key && mpesa_consumer_secret && mpesa_initiator_password) {
@@ -168,6 +193,16 @@ export async function PUT(request: NextRequest) {
         ip_whitelist_enabled: updatedPartner.ip_whitelist_enabled,
         is_mpesa_configured: updatedPartner.is_mpesa_configured,
         is_active: updatedPartner.is_active,
+        // Mifos X configuration
+        mifos_host_url: updatedPartner.mifos_host_url,
+        mifos_username: updatedPartner.mifos_username,
+        mifos_tenant_id: updatedPartner.mifos_tenant_id,
+        mifos_api_endpoint: updatedPartner.mifos_api_endpoint,
+        mifos_webhook_url: updatedPartner.mifos_webhook_url,
+        is_mifos_configured: updatedPartner.is_mifos_configured,
+        mifos_auto_disbursement_enabled: updatedPartner.mifos_auto_disbursement_enabled,
+        mifos_max_disbursement_amount: updatedPartner.mifos_max_disbursement_amount,
+        mifos_min_disbursement_amount: updatedPartner.mifos_min_disbursement_amount,
         has_vault_credentials: false, // Simplified - vault status can be checked separately
         updated_at: updatedPartner.updated_at
       }
