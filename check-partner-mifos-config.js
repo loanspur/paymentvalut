@@ -1,65 +1,88 @@
-// Check partner Mifos X configuration
+// Script to check partner Mifos X configuration
 const { createClient } = require('@supabase/supabase-js')
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+// You'll need to replace these with your actual Supabase credentials
+const supabaseUrl = 'https://your-project.supabase.co' // Replace with your URL
+const supabaseKey = 'your-service-role-key' // Replace with your service role key
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('❌ Missing Supabase environment variables')
-  console.log('Please ensure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set')
+console.log('🔍 Checking partner Mifos X configuration...')
+console.log('📝 Note: Please update the Supabase credentials in this script first')
+console.log('')
+
+if (supabaseUrl.includes('your-project') || supabaseKey.includes('your-service-role')) {
+  console.log('❌ Please update the Supabase credentials in this script first')
+  console.log('   You can find these in your Supabase project settings')
   process.exit(1)
 }
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+const supabase = createClient(supabaseUrl, supabaseKey)
 
 async function checkPartnerConfig() {
-  console.log('🔍 Checking partner Mifos X configuration...')
-  
   try {
-    // Get all partners
-    const { data: partners, error } = await supabase
+    console.log('📊 Checking partners with Mifos X configuration...')
+    
+    const { data: partners, error: partnersError } = await supabase
       .from('partners')
       .select('*')
-      .order('created_at', { ascending: false })
+      .eq('is_mifos_configured', true)
+      .eq('is_active', true)
 
-    if (error) {
-      console.error('❌ Error fetching partners:', error)
+    if (partnersError) {
+      console.error('❌ Error fetching partners:', partnersError.message)
       return
     }
 
-    console.log(`📊 Found ${partners.length} partner(s):`)
+    console.log(`📊 Found ${partners?.length || 0} active partners with Mifos X configured:`)
     
-    partners.forEach((partner, index) => {
-      console.log(`\n${index + 1}. Partner: ${partner.name}`)
-      console.log(`   ID: ${partner.id}`)
-      console.log(`   Active: ${partner.is_active}`)
-      console.log(`   Mifos Configured: ${partner.is_mifos_configured}`)
-      console.log(`   Mifos Host: ${partner.mifos_host_url || 'Not set'}`)
-      console.log(`   Mifos Username: ${partner.mifos_username || 'Not set'}`)
-      console.log(`   Mifos Tenant: ${partner.mifos_tenant_id || 'Not set'}`)
-      console.log(`   Auto Disbursement: ${partner.mifos_auto_disbursement_enabled}`)
-    })
-
-    // Check for active partners with Mifos configured
-    const activeMifosPartners = partners.filter(p => 
-      p.is_active && p.is_mifos_configured
-    )
-
-    console.log(`\n✅ Active partners with Mifos X configured: ${activeMifosPartners.length}`)
-    
-    if (activeMifosPartners.length === 0) {
-      console.log('\n⚠️  No active partners with Mifos X configured found!')
-      console.log('Please:')
-      console.log('1. Go to Partners page in your application')
-      console.log('2. Edit a partner')
-      console.log('3. Configure Mifos X settings')
-      console.log('4. Enable "Mifos X Integration" checkbox')
-      console.log('5. Save the partner')
-    } else {
-      console.log('\n🎉 Found active Mifos X partners:')
-      activeMifosPartners.forEach(partner => {
-        console.log(`   - ${partner.name} (${partner.id})`)
+    if (partners && partners.length > 0) {
+      partners.forEach((partner, index) => {
+        console.log(`\n${index + 1}. Partner: ${partner.name}`)
+        console.log(`   ID: ${partner.id}`)
+        console.log(`   Mifos Host URL: ${partner.mifos_host_url}`)
+        console.log(`   Mifos Username: ${partner.mifos_username}`)
+        console.log(`   Mifos Tenant ID: ${partner.mifos_tenant_id}`)
+        console.log(`   Mifos API Endpoint: ${partner.mifos_api_endpoint}`)
+        console.log(`   Webhook URL: ${partner.mifos_webhook_url}`)
+        console.log(`   Auto Disbursement Enabled: ${partner.mifos_auto_disbursement_enabled}`)
+        console.log(`   Max Disbursement Amount: ${partner.mifos_max_disbursement_amount}`)
+        console.log(`   Min Disbursement Amount: ${partner.mifos_min_disbursement_amount}`)
+        console.log(`   Is Active: ${partner.is_active}`)
+        console.log(`   Is Mifos Configured: ${partner.is_mifos_configured}`)
       })
+    } else {
+      console.log('No active partners with Mifos X configured found.')
+    }
+
+    console.log('\n' + '=' .repeat(80))
+    console.log('📊 Checking auto-disbursal configurations...')
+    
+    const { data: autoDisbursalConfigs, error: configError } = await supabase
+      .from('loan_product_auto_disbursal_configs')
+      .select(`
+        *,
+        partners(name)
+      `)
+      .eq('enabled', true)
+
+    if (configError) {
+      console.error('❌ Error fetching auto-disbursal configs:', configError.message)
+    } else {
+      console.log(`📊 Found ${autoDisbursalConfigs?.length || 0} enabled auto-disbursal configurations:`)
+      
+      if (autoDisbursalConfigs && autoDisbursalConfigs.length > 0) {
+        autoDisbursalConfigs.forEach((config, index) => {
+          console.log(`\n${index + 1}. Product ID: ${config.product_id}`)
+          console.log(`   Product Name: ${config.product_name}`)
+          console.log(`   Partner: ${config.partners?.name || 'Unknown'}`)
+          console.log(`   Enabled: ${config.enabled}`)
+          console.log(`   Auto Approve: ${config.auto_approve}`)
+          console.log(`   Min Amount: ${config.min_amount}`)
+          console.log(`   Max Amount: ${config.max_amount}`)
+          console.log(`   Requires Approval: ${config.requires_approval}`)
+        })
+      } else {
+        console.log('No enabled auto-disbursal configurations found.')
+      }
     }
 
   } catch (error) {
