@@ -98,7 +98,7 @@ export class DuplicatePreventionService {
   }
 
   /**
-   * Check time-based restrictions (same customer+amount, same IP within time window)
+   * Check time-based restrictions (same customer+amount, similar amounts, same IP within time window)
    */
   private async checkTimeBasedRestrictions(
     partnerId: string,
@@ -111,20 +111,20 @@ export class DuplicatePreventionService {
     // Get time-based restrictions for this partner
     const { data: restrictions } = await this.supabaseClient
       .from('disbursement_restrictions')
-      .select('restriction_type, time_window_minutes')
+      .select('restriction_type, time_window_minutes, amount_tolerance_percentage, action_type, log_similar_amounts')
       .eq('partner_id', partnerId)
       .eq('is_enabled', true)
-      .in('restriction_type', ['same_customer_amount_time', 'same_ip_time'])
+      .in('restriction_type', ['same_customer_amount_time', 'same_customer_similar_amount', 'same_ip_time'])
 
     for (const restriction of restrictions || []) {
       const timeWindow = restriction.time_window_minutes * 60 * 1000 // Convert to milliseconds
       const cutoffTime = new Date(Date.now() - timeWindow)
 
       if (restriction.restriction_type === 'same_customer_amount_time') {
-        // Check for same customer + same amount within time window
+        // Check for same customer + exact same amount within time window
         const { data: recentRequest } = await this.supabaseClient
           .from('disbursement_requests')
-          .select('id, created_at, status')
+          .select('id, created_at, status, amount')
           .eq('partner_id', partnerId)
           .eq('customer_id', customerId)
           .eq('amount', amount)
@@ -138,11 +138,89 @@ export class DuplicatePreventionService {
           const timeDiff = Date.now() - new Date(recentRequest.created_at).getTime()
           const minutesAgo = Math.floor(timeDiff / 60000)
           
+          // Log the exact duplicate detection
+          await this.logDuplicateDetection({
+            partnerId,
+            customerId,
+            msisdn,
+            amount,
+            clientIp,
+            detectionType: 'exact_duplicate',
+            restrictionType: restriction.restriction_type,
+            timeWindowMinutes: restriction.time_window_minutes,
+            actionTaken: 'blocked',
+            similarAmountsFound: [recentRequest],
+            amountDifference: 0,
+            percentageDifference: 0
+          })
+          
           return {
             isDuplicate: true,
-            blockReason: `Duplicate disbursement: Same customer (${customerId}) and amount (KES ${amount}) within ${restriction.time_window_minutes} minutes. Last request was ${minutesAgo} minutes ago.`,
+            blockReason: `Exact duplicate disbursement: Same customer (${customerId}) and exact amount (KES ${amount}) within ${restriction.time_window_minutes} minutes. Last request was ${minutesAgo} minutes ago.`,
             blockType: 'duplicate_customer_amount',
             existingRequest: recentRequest
+          }
+        }
+      }
+
+      if (restriction.restriction_type === 'same_customer_similar_amount') {
+        // Check for same customer + similar amount within time window
+        const tolerance = restriction.amount_tolerance_percentage / 100
+        const minAmount = amount * (1 - tolerance)
+        const maxAmount = amount * (1 + tolerance)
+
+        const { data: similarRequests } = await this.supabaseClient
+          .from('disbursement_requests')
+          .select('id, created_at, status, amount')
+          .eq('partner_id', partnerId)
+          .eq('customer_id', customerId)
+          .gte('amount', minAmount)
+          .lte('amount', maxAmount)
+          .gte('created_at', cutoffTime.toISOString())
+          .in('status', ['queued', 'accepted', 'success'])
+          .order('created_at', { ascending: false })
+          .limit(5)
+
+        if (similarRequests && similarRequests.length > 0) {
+          const timeDiff = Date.now() - new Date(similarRequests[0].created_at).getTime()
+          const minutesAgo = Math.floor(timeDiff / 60000)
+          
+          // Calculate amount differences
+          const similarAmounts = similarRequests.map(req => ({
+            id: req.id,
+            amount: req.amount,
+            created_at: req.created_at,
+            amount_difference: Math.abs(req.amount - amount),
+            percentage_difference: Math.abs((req.amount - amount) / amount * 100)
+          }))
+
+          // Log the similar amount detection
+          await this.logDuplicateDetection({
+            partnerId,
+            customerId,
+            msisdn,
+            amount,
+            clientIp,
+            detectionType: 'similar_amount',
+            restrictionType: restriction.restriction_type,
+            timeWindowMinutes: restriction.time_window_minutes,
+            amountTolerancePercentage: restriction.amount_tolerance_percentage,
+            actionTaken: restriction.action_type === 'block' ? 'blocked' : 'allowed_with_warning',
+            similarAmountsFound: similarAmounts,
+            amountDifference: similarAmounts[0].amount_difference,
+            percentageDifference: similarAmounts[0].percentage_difference
+          })
+
+          if (restriction.action_type === 'block') {
+            return {
+              isDuplicate: true,
+              blockReason: `Similar amount disbursement: Same customer (${customerId}) with similar amount (KES ${amount}) within ${restriction.time_window_minutes} minutes. Found ${similarRequests.length} similar requests. Last request was ${minutesAgo} minutes ago.`,
+              blockType: 'duplicate_customer_similar_amount',
+              existingRequest: similarRequests[0]
+            }
+          } else {
+            // Allow but log for monitoring
+            console.log(`⚠️ [Similar Amount Warning] Customer ${customerId} requested KES ${amount} with ${similarRequests.length} similar requests in last ${restriction.time_window_minutes} minutes`)
           }
         }
       }
@@ -153,6 +231,7 @@ export class DuplicatePreventionService {
           .from('disbursement_requests')
           .select('id, created_at, status, customer_id, amount')
           .eq('partner_id', partnerId)
+          .eq('client_ip', clientIp)
           .gte('created_at', cutoffTime.toISOString())
           .in('status', ['queued', 'accepted', 'success'])
           .order('created_at', { ascending: false })
@@ -162,6 +241,22 @@ export class DuplicatePreventionService {
         if (recentRequest) {
           const timeDiff = Date.now() - new Date(recentRequest.created_at).getTime()
           const minutesAgo = Math.floor(timeDiff / 60000)
+          
+          // Log the IP rate limit detection
+          await this.logDuplicateDetection({
+            partnerId,
+            customerId,
+            msisdn,
+            amount,
+            clientIp,
+            detectionType: 'rate_limit',
+            restrictionType: restriction.restriction_type,
+            timeWindowMinutes: restriction.time_window_minutes,
+            actionTaken: 'rate_limited',
+            similarAmountsFound: [recentRequest],
+            amountDifference: 0,
+            percentageDifference: 0
+          })
           
           return {
             isDuplicate: true,
@@ -442,6 +537,48 @@ export class DuplicatePreventionService {
         block_expires_at: blockExpiresAt?.toISOString(),
         original_request_id: originalRequestId
       })
+  }
+
+  /**
+   * Log duplicate detection for monitoring and analysis
+   */
+  private async logDuplicateDetection(logData: {
+    partnerId: string
+    customerId?: string
+    msisdn: string
+    amount: number
+    clientIp: string
+    detectionType: string
+    restrictionType: string
+    timeWindowMinutes: number
+    amountTolerancePercentage?: number
+    actionTaken: string
+    similarAmountsFound: any[]
+    amountDifference: number
+    percentageDifference: number
+  }): Promise<void> {
+    try {
+      await this.supabaseClient
+        .from('duplicate_prevention_logs')
+        .insert({
+          partner_id: logData.partnerId,
+          customer_id: logData.customerId,
+          msisdn: logData.msisdn,
+          amount: logData.amount,
+          client_ip: logData.clientIp,
+          detection_type: logData.detectionType,
+          restriction_type: logData.restrictionType,
+          time_window_minutes: logData.timeWindowMinutes,
+          amount_tolerance_percentage: logData.amountTolerancePercentage,
+          action_taken: logData.actionTaken,
+          similar_amounts_found: logData.similarAmountsFound,
+          amount_difference: logData.amountDifference,
+          percentage_difference: logData.percentageDifference
+        })
+    } catch (error) {
+      console.error('Failed to log duplicate detection:', error)
+      // Don't throw error to avoid breaking the main flow
+    }
   }
 
   /**

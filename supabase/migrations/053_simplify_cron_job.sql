@@ -2,9 +2,26 @@
 -- This migration creates a simpler cron job that directly calls the Edge Function
 -- without needing to duplicate the service role key
 
--- 1. Remove the old cron jobs
-SELECT cron.unschedule('balance-monitor-simple');
-SELECT cron.unschedule('balance-monitor-http');
+-- 1. Remove the old cron jobs (only if they exist)
+DO $$
+BEGIN
+  -- Try to unschedule jobs, ignore errors if they don't exist
+  BEGIN
+    PERFORM cron.unschedule('balance-monitor-simple');
+  EXCEPTION
+    WHEN OTHERS THEN
+      -- Job doesn't exist, continue
+      NULL;
+  END;
+  
+  BEGIN
+    PERFORM cron.unschedule('balance-monitor-http');
+  EXCEPTION
+    WHEN OTHERS THEN
+      -- Job doesn't exist, continue
+      NULL;
+  END;
+END $$;
 
 -- 2. Create a simple function that just logs the cron execution
 -- The actual balance monitoring will be triggered by external means

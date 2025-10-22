@@ -1,9 +1,14 @@
 -- Enhanced User Permissions System
 -- This migration adds comprehensive role-based permissions and shortcode access control
 
--- First, let's enhance the user_role enum to include more granular roles
+-- First, create the user_role enum if it doesn't exist
 DO $$ 
 BEGIN
+    -- Create user_role enum if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+        CREATE TYPE user_role AS ENUM ('admin', 'partner', 'user');
+    END IF;
+    
     -- Add new user roles if they don't exist
     IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'super_admin' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'user_role')) THEN
         ALTER TYPE user_role ADD VALUE 'super_admin';
@@ -352,17 +357,27 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER update_user_permissions_updated_at 
-    BEFORE UPDATE ON user_permissions 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_user_shortcode_access_updated_at 
-    BEFORE UPDATE ON user_shortcode_access 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_role_permissions_updated_at 
-    BEFORE UPDATE ON role_permissions 
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- Create triggers only if they don't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_user_permissions_updated_at') THEN
+        CREATE TRIGGER update_user_permissions_updated_at 
+            BEFORE UPDATE ON user_permissions 
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_user_shortcode_access_updated_at') THEN
+        CREATE TRIGGER update_user_shortcode_access_updated_at 
+            BEFORE UPDATE ON user_shortcode_access 
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_role_permissions_updated_at') THEN
+        CREATE TRIGGER update_role_permissions_updated_at 
+            BEFORE UPDATE ON role_permissions 
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END $$;
 
 -- Update existing users table trigger if it doesn't exist
 DO $$

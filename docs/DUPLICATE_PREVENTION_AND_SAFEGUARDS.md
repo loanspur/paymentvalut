@@ -10,6 +10,22 @@ The system implements multiple layers of protection against:
 - **Intelligent insufficient funds handling** with queuing
 - **IP-based restrictions** for security
 
+## 🆕 **Enhanced Relaxed Rules (December 2024)**
+
+### **Key Improvements:**
+- **Reduced time windows**: 24-hour restriction reduced to 5 minutes for exact amounts
+- **Amount tolerance**: Allow similar amounts (±10%) within 15 minutes for legitimate loan scenarios
+- **Configurable actions**: Choose to block, warn, or allow similar amount transactions
+- **Enhanced logging**: Comprehensive monitoring of similar amount patterns
+- **Partner-specific settings**: Customize rules per partner based on their business model
+
+### **Benefits for Legitimate Use Cases:**
+- ✅ **Emergency loans**: Multiple small amounts for urgent needs
+- ✅ **Installment disbursements**: Similar amounts for loan installments
+- ✅ **Family loans**: Similar amounts to family members
+- ✅ **Business operations**: Regular similar disbursements for business needs
+- ✅ **Loan refinancing**: Similar amounts for loan restructuring
+
 ## 🔒 Duplicate Prevention Layers
 
 ### 1. **Basic Idempotency** (Always Active)
@@ -20,31 +36,46 @@ The system implements multiple layers of protection against:
 
 ### 2. **Time-Based Restrictions** (Configurable)
 
-#### **Same Customer + Amount Window**
-- **Default**: 5 minutes
-- **Logic**: Same customer + same amount within time window
-- **Block Duration**: 30 minutes
+#### **Same Customer + Exact Amount Window** (Enhanced)
+- **Default**: 5 minutes (reduced from 24 hours)
+- **Logic**: Same customer + exact same amount within time window
+- **Block Duration**: Configurable (default 30 minutes)
 - **Response**: `409 Conflict` with detailed reason
 
 ```json
 {
   "status": "rejected",
-  "error_code": "DUPLICATE_1001",
-  "error_message": "Duplicate disbursement: Same customer (CUST123) and amount (KES 1000) within 5 minutes. Last request was 2 minutes ago.",
+  "error_code": "DUPLICATE_1002",
+  "error_message": "Exact duplicate disbursement: Same customer (CUST123) and exact amount (KES 1000) within 5 minutes. Last request was 2 minutes ago.",
   "block_type": "duplicate_customer_amount"
 }
 ```
 
-#### **Same IP Window**
-- **Default**: 2 minutes
+#### **Same Customer + Similar Amount Window** (New)
+- **Default**: 15 minutes
+- **Logic**: Same customer + similar amount (±10% tolerance) within time window
+- **Action**: Configurable - can block or allow with warning
+- **Response**: `409 Conflict` (if blocked) or `200 OK` with warning (if allowed)
+
+```json
+{
+  "status": "rejected",
+  "error_code": "DUPLICATE_1002", 
+  "error_message": "Similar amount disbursement: Same customer (CUST123) with similar amount (KES 1000) within 15 minutes. Found 2 similar requests. Last request was 5 minutes ago.",
+  "block_type": "duplicate_customer_similar_amount"
+}
+```
+
+#### **Same IP Window** (Enhanced)
+- **Default**: 2 minutes (reduced from previous settings)
 - **Logic**: Same IP address within time window
-- **Block Duration**: 30 minutes
+- **Block Duration**: Configurable (default 30 minutes)
 - **Response**: `409 Conflict` with rate limit message
 
 ```json
 {
   "status": "rejected",
-  "error_code": "DUPLICATE_1001",
+  "error_code": "DUPLICATE_1002",
   "error_message": "Rate limit exceeded: Same IP (192.168.1.100) within 2 minutes. Last request was 1 minute ago.",
   "block_type": "duplicate_ip"
 }
@@ -124,26 +155,45 @@ The system includes an automated queue processor that:
 
 ## ⚙️ Configuration
 
-### **Restriction Types**
+### **Restriction Types** (Enhanced)
 
 | Restriction Type | Description | Default Value | Configurable |
 |------------------|-------------|---------------|--------------|
-| `same_customer_amount_time` | Same customer + amount within time window | 5 minutes | ✅ |
-| `same_ip_time` | Same IP within time window | 2 minutes | ✅ |
+| `same_customer_amount_time` | Same customer + exact amount within time window | 5 minutes (reduced from 24 hours) | ✅ |
+| `same_customer_similar_amount` | Same customer + similar amount (±10%) within time window | 15 minutes | ✅ |
+| `same_ip_time` | Same IP within time window | 2 minutes (reduced from 1 hour) | ✅ |
 | `same_customer_daily_limit` | Daily limits per customer | KES 50,000 / 10 requests | ✅ |
 | `same_ip_daily_limit` | Daily limits per IP | KES 100,000 / 20 requests | ✅ |
 | `insufficient_funds_queue` | Enable/disable queueing | Enabled | ✅ |
 
+### **New Configuration Options**
+
+| Configuration | Description | Default Value | Purpose |
+|---------------|-------------|---------------|---------|
+| `amount_tolerance_percentage` | Percentage tolerance for similar amounts | 10.00% | Allow similar amounts within tolerance |
+| `log_similar_amounts` | Log similar amount transactions | true | Monitor for patterns |
+| `action_type` | Action for similar amounts | 'warn_and_allow' | block, warn_and_allow, or rate_limit |
+
 ### **Database Tables**
 
-#### **`disbursement_restrictions`**
-Stores configuration for each partner's restrictions.
+#### **`disbursement_restrictions`** (Enhanced)
+Stores configuration for each partner's restrictions with new fields:
+- `amount_tolerance_percentage`: Percentage tolerance for similar amounts
+- `log_similar_amounts`: Whether to log similar amount transactions
+- `action_type`: Action to take (block, warn_and_allow, rate_limit)
 
 #### **`disbursement_blocks`**
 Tracks active blocks with expiration times.
 
 #### **`insufficient_funds_queue`**
 Manages queued requests with retry logic.
+
+#### **`duplicate_prevention_logs`** (New)
+Enhanced logging for duplicate detection with:
+- Detection type (exact_duplicate, similar_amount, rate_limit)
+- Amount tolerance and percentage differences
+- Similar amounts found
+- Action taken (blocked, allowed_with_warning, rate_limited)
 
 ## 🚀 API Endpoints
 

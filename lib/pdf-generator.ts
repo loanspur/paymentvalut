@@ -246,6 +246,120 @@ curl -H "x-api-key: [YOUR_API_KEY]" \\
       `
     },
     {
+      id: 'ussd-status',
+      title: 'USSD Transaction Status API',
+      content: `
+# USSD Transaction Status API
+
+## Enhanced Endpoint for USSD Team
+\`GET/POST https://your-domain.com/api/ussd/transaction-status\`
+
+## Features
+- **Bulk Transaction Lookup** - Check multiple transactions at once
+- **Advanced Filtering** - Filter by status, phone, conversation ID, etc.
+- **Comprehensive Statistics** - Get detailed transaction analytics
+- **Pagination Support** - Handle large result sets efficiently
+- **Enhanced Error Handling** - Detailed error codes and messages
+
+## GET Request Examples
+
+### Check by Conversation ID
+\`\`\`bash
+curl -H "x-api-key: [YOUR_API_KEY]" \\
+  "https://your-domain.com/api/ussd/transaction-status?conversation_id=AG_20250110_1234567890"
+\`\`\`
+
+### Check by Client Request ID
+\`\`\`bash
+curl -H "x-api-key: [YOUR_API_KEY]" \\
+  "https://your-domain.com/api/ussd/transaction-status?client_request_id=KULMNA-2025-01-10-000123"
+\`\`\`
+
+### Filter by Status with Pagination
+\`\`\`bash
+curl -H "x-api-key: [YOUR_API_KEY]" \\
+  "https://your-domain.com/api/ussd/transaction-status?status=failed&limit=20&offset=0"
+\`\`\`
+
+## POST Request for Bulk Lookup
+\`\`\`bash
+curl -X POST \\
+  -H "x-api-key: [YOUR_API_KEY]" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "conversation_ids": ["AG_20250110_1234567890", "AG_20250110_0987654321"],
+    "client_request_ids": ["KULMNA-2025-01-10-000123"]
+  }' \\
+  "https://your-domain.com/api/ussd/transaction-status"
+\`\`\`
+
+## Enhanced Response Format
+\`\`\`json
+{
+  "success": true,
+  "message": "Transaction status retrieved successfully",
+  "partner": {
+    "id": "partner-uuid",
+    "name": "Partner Name"
+  },
+  "pagination": {
+    "total": 150,
+    "limit": 50,
+    "offset": 0,
+    "has_more": true
+  },
+  "transactions": [...],
+  "statistics": {
+    "total_transactions": 150,
+    "successful_transactions": 142,
+    "pending_transactions": 3,
+    "failed_transactions": 5,
+    "success_rate": "94.67",
+    "total_amount": 180000.00,
+    "successful_amount": 170400.00,
+    "recent_activity_24h": 25
+  },
+  "status_definitions": {
+    "queued": "Transaction is queued for processing",
+    "accepted": "Transaction accepted by M-Pesa, processing",
+    "success": "Transaction completed successfully",
+    "failed": "Transaction failed"
+  }
+}
+\`\`\`
+
+## Query Parameters (GET)
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| \`conversation_id\` | string | No | M-Pesa conversation ID |
+| \`client_request_id\` | string | No | Your internal request ID |
+| \`msisdn\` | string | No | Customer phone number |
+| \`transaction_id\` | string | No | Internal transaction UUID |
+| \`status\` | string | No | Filter by status |
+| \`limit\` | integer | No | Results per page (max 100) |
+| \`offset\` | integer | No | Pagination offset |
+
+## Request Body (POST)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| \`transaction_ids\` | array | No | Array of transaction UUIDs |
+| \`conversation_ids\` | array | No | Array of conversation IDs |
+| \`client_request_ids\` | array | No | Array of client request IDs |
+
+## Error Codes
+
+| Code | Description |
+|------|-------------|
+| \`AUTH_1001\` | API key is required |
+| \`AUTH_1002\` | Invalid API key |
+| \`VALIDATION_1001\` | Missing required fields |
+| \`DB_1001\` | Database error |
+| \`SERVER_1001\` | Internal server error |
+      `
+    },
+    {
       id: 'webhooks',
       title: 'Webhook Callbacks',
       content: `

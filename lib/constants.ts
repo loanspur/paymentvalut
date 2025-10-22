@@ -40,6 +40,9 @@ export const API_ENDPOINTS = {
     ME: '/api/auth/me',
     LOGIN: '/api/auth/login',
     LOGOUT: '/api/auth/logout'
+  },
+  USSD: {
+    TRANSACTION_STATUS: '/api/ussd/transaction-status'
   }
 } as const
 

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, Phone, CreditCard, RefreshCw, Building2, Shield } from 'lucide-react'
+import { Send, Phone, CreditCard, RefreshCw, Building2, Shield, CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react'
 import NotificationSystem, { useNotifications } from '../../components/NotificationSystem'
 import { useAuth } from '../../components/AuthProvider'
 import { useRouter } from 'next/navigation'
@@ -14,6 +14,14 @@ interface Partner {
   is_mpesa_configured: boolean
   is_active: boolean
   api_key?: string
+}
+
+interface ModalNotification {
+  id: string
+  type: 'success' | 'error' | 'warning' | 'info'
+  title: string
+  message: string
+  duration?: number
 }
 
 export default function DisbursePage() {
@@ -29,10 +37,34 @@ export default function DisbursePage() {
     customer_id: '',
     client_request_id: ''
   })
+  const [modalNotification, setModalNotification] = useState<ModalNotification | null>(null)
 
   const { notifications, addNotification, removeNotification } = useNotifications()
   const { user, isAuthenticated, isLoading } = useAuth()
   const router = useRouter()
+
+  // Modal notification functions
+  const addModalNotification = (notification: Omit<ModalNotification, 'id'>) => {
+    const id = `modal-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const newNotification: ModalNotification = {
+      ...notification,
+      id,
+      duration: notification.duration || 5000
+    }
+    
+    setModalNotification(newNotification)
+    
+    // Auto-remove after duration
+    if (newNotification.duration > 0) {
+      setTimeout(() => {
+        setModalNotification(null)
+      }, newNotification.duration)
+    }
+  }
+
+  const removeModalNotification = () => {
+    setModalNotification(null)
+  }
 
   const loadPartners = useCallback(async () => {
     try {
@@ -44,15 +76,16 @@ export default function DisbursePage() {
         partnersLoadedRef.current = true // Mark as loaded to prevent future calls
       }
     } catch (error) {
-      addNotification({
+      addModalNotification({
         type: 'error',
         title: 'Error',
-        message: 'Failed to load partners'
+        message: 'Failed to load partners',
+        duration: 5000
       })
     } finally {
       setLoading(false)
     }
-  }, [addNotification])
+  }, [addModalNotification])
 
   // Authentication check effect
   useEffect(() => {
@@ -107,19 +140,21 @@ export default function DisbursePage() {
       // Get the API key for the selected partner
       const selectedPartner = partners.find(p => p.id === disbursementForm.partner_id)
       if (!selectedPartner) {
-        addNotification({
+        addModalNotification({
           type: 'error',
           title: 'Disbursement Failed',
-          message: 'Please select a partner'
+          message: 'Please select a partner',
+          duration: 5000
         })
         return
       }
 
       if (!selectedPartner.api_key) {
-        addNotification({
+        addModalNotification({
           type: 'error',
           title: 'Invalid Partner',
-          message: 'Selected partner does not have a valid API key'
+          message: 'Selected partner does not have a valid API key',
+          duration: 5000
         })
         return
       }
@@ -141,10 +176,11 @@ export default function DisbursePage() {
       // Response received
 
       if (response.ok && (data.status === 'accepted' || data.status === 'queued')) {
-        addNotification({
+        addModalNotification({
           type: 'success',
           title: 'Disbursement Initiated',
-          message: `KES ${disbursementForm.amount} sent to ${disbursementForm.msisdn}`
+          message: `KES ${disbursementForm.amount} sent to ${disbursementForm.msisdn}`,
+          duration: 8000
         })
         
         // Reset form
@@ -157,17 +193,19 @@ export default function DisbursePage() {
           client_request_id: ''
         })
       } else {
-        addNotification({
+        addModalNotification({
           type: 'error',
           title: 'Disbursement Failed',
-          message: data.error_message || data.error_code || `HTTP ${response.status}: ${response.statusText}`
+          message: data.error_message || data.error_code || `HTTP ${response.status}: ${response.statusText}`,
+          duration: 10000
         })
       }
     } catch (error) {
-      addNotification({
+      addModalNotification({
         type: 'error',
         title: 'Disbursement Failed',
-        message: 'Network error occurred'
+        message: 'Network error occurred',
+        duration: 8000
       })
     } finally {
       setSubmitting(false)
@@ -286,6 +324,63 @@ export default function DisbursePage() {
             <h2 className="text-lg font-medium text-gray-900">Disbursement Form</h2>
             <p className="text-sm text-gray-500">Fill in the details to send money via M-Pesa</p>
           </div>
+          
+          {/* Modal Notification Display */}
+          {modalNotification && (
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className={`rounded-lg p-4 border-l-4 ${
+                modalNotification.type === 'success' ? 'bg-green-50 border-green-400' :
+                modalNotification.type === 'error' ? 'bg-red-50 border-red-400' :
+                modalNotification.type === 'warning' ? 'bg-yellow-50 border-yellow-400' :
+                'bg-blue-50 border-blue-400'
+              }`}>
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    {modalNotification.type === 'success' && <CheckCircle className="w-5 h-5 text-green-600" />}
+                    {modalNotification.type === 'error' && <XCircle className="w-5 h-5 text-red-600" />}
+                    {modalNotification.type === 'warning' && <AlertTriangle className="w-5 h-5 text-yellow-600" />}
+                    {modalNotification.type === 'info' && <Info className="w-5 h-5 text-blue-600" />}
+                  </div>
+                  <div className="ml-3 flex-1">
+                    <h3 className={`text-sm font-medium ${
+                      modalNotification.type === 'success' ? 'text-green-800' :
+                      modalNotification.type === 'error' ? 'text-red-800' :
+                      modalNotification.type === 'warning' ? 'text-yellow-800' :
+                      'text-blue-800'
+                    }`}>
+                      {modalNotification.title}
+                    </h3>
+                    <p className={`mt-1 text-sm ${
+                      modalNotification.type === 'success' ? 'text-green-700' :
+                      modalNotification.type === 'error' ? 'text-red-700' :
+                      modalNotification.type === 'warning' ? 'text-yellow-700' :
+                      'text-blue-700'
+                    }`}>
+                      {modalNotification.message}
+                    </p>
+                  </div>
+                  <div className="ml-4 flex-shrink-0">
+                    <button
+                      onClick={removeModalNotification}
+                      className={`inline-flex rounded-md p-1.5 ${
+                        modalNotification.type === 'success' ? 'text-green-500 hover:text-green-600 hover:bg-green-100' :
+                        modalNotification.type === 'error' ? 'text-red-500 hover:text-red-600 hover:bg-red-100' :
+                        modalNotification.type === 'warning' ? 'text-yellow-500 hover:text-yellow-600 hover:bg-yellow-100' :
+                        'text-blue-500 hover:text-blue-600 hover:bg-blue-100'
+                      } focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                        modalNotification.type === 'success' ? 'focus:ring-green-500' :
+                        modalNotification.type === 'error' ? 'focus:ring-red-500' :
+                        modalNotification.type === 'warning' ? 'focus:ring-yellow-500' :
+                        'focus:ring-blue-500'
+                      }`}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           
           <div className="p-6">
             <form onSubmit={handleDisbursementSubmit} className="space-y-6">

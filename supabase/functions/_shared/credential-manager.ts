@@ -8,7 +8,9 @@ interface EncryptedCredentials {
   consumer_secret: string
   initiator_password: string
   security_credential: string
+  initiator_name: string
   shortcode: string
+  environment: string
 }
 
 interface DecryptedCredentials {
@@ -16,7 +18,9 @@ interface DecryptedCredentials {
   consumer_secret: string
   initiator_password: string
   security_credential: string
+  initiator_name: string
   shortcode: string
+  environment: string
 }
 
 // Simple encryption/decryption using Web Crypto API
@@ -166,6 +170,7 @@ class CredentialManager {
         consumer_secret: partner.consumer_secret,
         initiator_password: partner.initiator_password,
         security_credential: partner.security_credential || partner.initiator_password,
+        initiator_name: partner.mpesa_initiator_name || 'default_initiator',
         shortcode: partner.mpesa_shortcode || '',
         environment: partner.mpesa_environment || 'sandbox'
       }
