@@ -20,22 +20,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
     }
 
-    // Get user's partner information
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('partner_id')
-      .eq('id', payload.userId)
-      .single()
+    // Get partner_id from query parameters (same as partner forms)
+    const { searchParams } = new URL(request.url)
+    const partnerId = searchParams.get('partner_id')
 
-    if (userError || !userData?.partner_id) {
-      return NextResponse.json({ error: 'Partner not found' }, { status: 404 })
+    if (!partnerId) {
+      return NextResponse.json({ error: 'Partner ID is required' }, { status: 400 })
     }
 
     // Get auto-disbursal configurations for this partner
     const { data: configs, error: configsError } = await supabase
       .from('loan_product_auto_disbursal_configs')
       .select('*')
-      .eq('partner_id', userData.partner_id)
+      .eq('partner_id', partnerId)
 
     if (configsError) {
       console.error('Error fetching auto-disbursal configs:', configsError)
@@ -69,23 +66,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
     }
 
-    // Get user's partner information
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('partner_id')
-      .eq('id', payload.userId)
-      .single()
-
-    if (userError || !userData?.partner_id) {
-      return NextResponse.json({ error: 'Partner not found' }, { status: 404 })
-    }
-
     const configData = await request.json()
 
     // Validate required fields
-    if (!configData.productId || !configData.productName) {
+    if (!configData.partner_id || !configData.productId || !configData.productName) {
       return NextResponse.json({
-        error: 'Missing required fields: productId, productName'
+        error: 'Missing required fields: partner_id, productId, productName'
       }, { status: 400 })
     }
 
@@ -93,7 +79,7 @@ export async function POST(request: NextRequest) {
     const { data: existingConfig, error: checkError } = await supabase
       .from('loan_product_auto_disbursal_configs')
       .select('id')
-      .eq('partner_id', userData.partner_id)
+      .eq('partner_id', configData.partner_id)
       .eq('product_id', configData.productId)
       .single()
 
@@ -103,13 +89,13 @@ export async function POST(request: NextRequest) {
     }
 
     const configRecord = {
-      partner_id: userData.partner_id,
+      partner_id: configData.partner_id,
       product_id: configData.productId,
       product_name: configData.productName,
       enabled: configData.enabled || false,
-      max_amount: configData.maxAmount || 0,
-      min_amount: configData.minAmount || 0,
-      requires_approval: configData.requiresApproval || false,
+      max_amount: configData.max_amount || 0,
+      min_amount: configData.min_amount || 0,
+      requires_approval: !configData.auto_approve || false, // auto_approve is opposite of requires_approval
       updated_at: new Date().toISOString()
     }
 

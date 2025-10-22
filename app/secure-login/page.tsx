@@ -40,13 +40,20 @@ export default function SecureLoginPage() {
               router.replace('/')
             }
           }
+        } else if (response.status === 401) {
+          // User is not authenticated, which is expected on login page
+          console.log('ℹ️ User not authenticated, staying on login page')
         }
       } catch (error) {
-        console.log('Auth check failed, user needs to login')
+        // Network error or other issue - user needs to login
+        console.log('ℹ️ Auth check failed, user needs to login')
       }
     }
 
-    checkAuth()
+    // Add a small delay to prevent race conditions with logout
+    const timeoutId = setTimeout(checkAuth, 100)
+    
+    return () => clearTimeout(timeoutId)
   }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {

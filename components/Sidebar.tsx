@@ -103,6 +103,12 @@ export default function Sidebar({ className = '' }: SidebarProps) {
             href: '/history',
             icon: History,
             description: 'View all transactions'
+          },
+          {
+            name: 'Loan Tracking',
+            href: '/loan-tracking',
+            icon: FileText,
+            description: 'Monitor approved loans & disbursements'
           }
         ]
       },

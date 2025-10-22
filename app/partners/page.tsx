@@ -67,6 +67,7 @@ export default function PartnersPage() {
     onConfirm: () => {}
   })
   const [formData, setFormData] = useState({
+    id: '', // Add id field for partner identification
     name: '',
     short_code: '',
     mpesa_shortcode: '',
@@ -441,6 +442,7 @@ export default function PartnersPage() {
       
       // Reset form
       setFormData({
+        id: '', // Reset id field
         name: '',
         short_code: '',
         mpesa_shortcode: '',
@@ -483,6 +485,7 @@ export default function PartnersPage() {
 
   const handleEdit = (partner: Partner) => {
     const formDataToSet = {
+      id: partner.id, // Add the partner ID to formData
       name: partner.name || '',
       short_code: partner.short_code || '',
       mpesa_shortcode: partner.mpesa_shortcode || '',
@@ -1066,6 +1069,7 @@ export default function PartnersPage() {
                         setShowAddForm(false)
                         setEditingPartner(null)
                         setFormData({
+                          id: '', // Reset id field
                           name: '',
                           short_code: '',
                           mpesa_shortcode: '',

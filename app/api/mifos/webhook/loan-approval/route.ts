@@ -226,11 +226,48 @@ export async function POST(request: NextRequest) {
 
       console.log('[Mifos Webhook] Created disbursement record:', disbursement.id)
 
+      // Create loan tracking record
+      const { data: trackingData, error: trackingError } = await supabase
+        .from('loan_tracking')
+        .insert({
+          partner_id: partner.id,
+          loan_id: loanId,
+          client_id: clientId,
+          client_name: clientDetails.displayName || 'Unknown Client',
+          phone_number: clientDetails.mobileNo || 'Unknown',
+          loan_amount: loanDetails.principal,
+          disbursement_id: disbursement.id,
+          status: 'approved',
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single()
+
+      if (trackingError) {
+        console.error('[Mifos Webhook] Error creating loan tracking record:', trackingError)
+        // Continue with disbursement even if tracking fails
+      } else {
+        console.log('[Mifos Webhook] Created loan tracking record:', trackingData.id)
+      }
+
       // Trigger disbursement via existing disbursement system
       const disbursementResult = await triggerDisbursement(disbursement.id, partner)
 
       if (disbursementResult.success) {
         console.log('[Mifos Webhook] Disbursement successful:', disbursementResult.transactionId)
+        
+        // Update loan tracking record with success
+        if (trackingData) {
+          await supabase
+            .from('loan_tracking')
+            .update({ 
+              status: 'disbursed',
+              disbursement_status: 'completed',
+              mpesa_receipt_number: disbursementResult.mpesaReceiptNumber,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', trackingData.id)
+        }
         
         return NextResponse.json({
           success: true,
@@ -243,6 +280,19 @@ export async function POST(request: NextRequest) {
         }, { status: 200 })
       } else {
         console.error('[Mifos Webhook] Disbursement failed:', disbursementResult.error)
+        
+        // Update loan tracking record with failure
+        if (trackingData) {
+          await supabase
+            .from('loan_tracking')
+            .update({ 
+              status: 'failed',
+              disbursement_status: 'failed',
+              error_message: disbursementResult.error,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', trackingData.id)
+        }
         
         // Update disbursement record with failure status
         await supabase

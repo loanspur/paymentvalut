@@ -12,7 +12,7 @@ interface AppLayoutProps {
 }
 
 export default function AppLayout({ children }: AppLayoutProps) {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const pathname = usePathname()
 
   // Prevent auto-scroll conflicts with fixed elements
@@ -67,18 +67,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
                   
                   {/* Logout button */}
                   <button
-                    onClick={async () => {
-                      try {
-                        await fetch('/api/auth/logout', { method: 'POST' })
-                        if (typeof window !== 'undefined') {
-                          localStorage.removeItem('auth_token')
-                          localStorage.removeItem('user')
-                        }
-                        window.location.href = '/login'
-                      } catch (error) {
-                        console.error('Logout error:', error)
-                      }
-                    }}
+                    onClick={logout}
                     className="flex items-center px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                     title="Logout"
                   >
@@ -94,7 +83,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         {/* Main content */}
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
           <div className="w-full">
-            {pathname !== '/' && pathname !== '/transactions' && pathname !== '/partners' && pathname !== '/history' && pathname !== '/admin-dashboard' && pathname !== '/profile' && pathname !== '/disburse' && <Breadcrumb />}
+            {pathname !== '/' && pathname !== '/transactions' && pathname !== '/partners' && pathname !== '/history' && pathname !== '/loan-tracking' && pathname !== '/admin-dashboard' && pathname !== '/profile' && pathname !== '/disburse' && <Breadcrumb />}
             {children}
           </div>
         </main>
@@ -110,6 +99,7 @@ function getPageTitle(pathname: string): string {
     '/partners': 'Partners',
     '/transactions': 'Transaction Monitoring',
     '/history': 'Transaction History',
+    '/loan-tracking': 'Loan Tracking',
     '/settings': 'Settings',
     '/api-docs': 'API Documentation',
     '/admin-dashboard': 'User Management'
@@ -125,6 +115,7 @@ function getPageDescription(pathname: string): string {
     '/partners': 'Manage partner organizations and their configurations',
     '/transactions': 'Real-time monitoring of M-Pesa B2C transactions and balances',
     '/history': 'View and track all disbursement transactions',
+    '/loan-tracking': 'Monitor approved loans and their disbursement progress',
     '/settings': 'Configure system settings and preferences',
     '/api-docs': 'Integration guides and API documentation',
     '/admin-dashboard': 'Manage users, roles, and system activity'
