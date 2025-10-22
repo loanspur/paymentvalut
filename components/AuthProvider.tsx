@@ -60,24 +60,30 @@ export default function AuthProvider({ children }: AuthProviderProps) {
           const data = await response.json()
           if (data.success && data.user && data.user.id && data.user.email) {
             setUser(data.user)
+            console.log('✅ User authenticated:', data.user.email, 'Role:', data.user.role)
           } else {
             setUser(null)
+            console.log('❌ Invalid user data received')
           }
         } else if (response.status === 401) {
           // Clear any stale authentication data
           setUser(null)
+          console.log('❌ Authentication failed - 401')
         } else {
           // Retry once for server errors
           if (response.status >= 500 && retryCount < 1) {
+            console.log('🔄 Retrying auth check due to server error...')
             setTimeout(() => checkAuthStatus(retryCount + 1), 1000)
             return
           }
           setUser(null)
+          console.log('❌ Auth check failed with status:', response.status)
         }
       } catch (error) {
-        console.error('Auth check error:', error)
+        console.error('❌ Auth check error:', error)
         // Retry once for network errors
         if (retryCount < 1) {
+          console.log('🔄 Retrying auth check due to network error...')
           setTimeout(() => checkAuthStatus(retryCount + 1), 1000)
           return
         }
@@ -89,13 +95,9 @@ export default function AuthProvider({ children }: AuthProviderProps) {
       }
     }
 
-    // Only check auth if not on a public route
-    if (!isPublicRoute) {
-      checkAuthStatus()
-    } else {
-      setIsLoading(false)
-    }
-  }, [isPublicRoute])
+    // Always check auth status, but handle public routes differently
+    checkAuthStatus()
+  }, [pathname]) // Re-check when pathname changes
 
   const logout = async () => {
     try {

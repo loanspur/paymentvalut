@@ -53,3 +53,4 @@ async function testCredentialRetrieval() {
 // Run the test
 testCredentialRetrieval().catch(console.error);
 
+

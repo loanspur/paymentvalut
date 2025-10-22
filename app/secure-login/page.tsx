@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, User, Lock, Shield } from 'lucide-react'
 
@@ -16,7 +16,38 @@ export default function SecureLoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const router = useRouter()
 
-  // No authentication check - let the user login normally
+  // Check if user is already authenticated and redirect
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('/api/auth/me', {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.user) {
+            // User is already authenticated, redirect them
+            console.log('✅ User already authenticated, redirecting...')
+            if (['admin', 'super_admin'].includes(data.user.role)) {
+              router.replace('/admin-dashboard')
+            } else {
+              router.replace('/')
+            }
+          }
+        }
+      } catch (error) {
+        console.log('Auth check failed, user needs to login')
+      }
+    }
+
+    checkAuth()
+  }, [router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -47,14 +78,13 @@ export default function SecureLoginPage() {
         setIsLoading(false)
         setIsSubmitting(false)
         
-        // Use a more reliable redirect method
+        // Force a page reload to ensure auth state is properly set
         setTimeout(() => {
-          if (['admin', 'super_admin'].includes(data.user.role)) {
-            window.location.replace('/admin-dashboard')
-          } else {
-            window.location.replace('/')
-          }
-        }, 1000) // Increased delay to show success message
+          // Force reload to ensure cookies are set and auth state is updated
+          window.location.href = ['admin', 'super_admin'].includes(data.user.role) 
+            ? '/admin-dashboard' 
+            : '/'
+        }, 1500) // Increased delay to ensure cookie is set
       } else {
         setError(data.error || 'Login failed')
         setIsLoading(false)

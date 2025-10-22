@@ -67,3 +67,4 @@ WHERE created_at >= NOW() - INTERVAL '1 hour'
 ORDER BY created_at DESC
 LIMIT 10;
 
+

@@ -7,6 +7,13 @@ export async function middleware(request: NextRequest) {
   const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup', '/request-password-reset', '/reset-password']
   const isPublicRoute = publicRoutes.includes(request.nextUrl.pathname)
 
+  // Skip middleware for API routes and static files
+  if (request.nextUrl.pathname.startsWith('/api/') || 
+      request.nextUrl.pathname.startsWith('/_next/') ||
+      request.nextUrl.pathname.startsWith('/favicon.ico')) {
+    return NextResponse.next()
+  }
+
   // Check if user is authenticated
   const token = request.cookies.get('auth_token')?.value
   const decoded = token ? await verifyJWTToken(token) : null
@@ -18,18 +25,22 @@ export async function middleware(request: NextRequest) {
 
   // Protect all other routes
   if (!token) {
+    console.log('🔒 No auth token found, redirecting to login')
     return NextResponse.redirect(new URL('/secure-login', request.url))
   }
 
   if (!decoded) {
+    console.log('🔒 Invalid auth token, redirecting to login')
     return NextResponse.redirect(new URL('/secure-login', request.url))
   }
 
   // Additional role-based protection for admin routes
   if (request.nextUrl.pathname.startsWith('/admin-dashboard') && decoded && !['admin', 'super_admin'].includes(decoded.role as string)) {
+    console.log('🔒 Insufficient permissions for admin route, redirecting to login')
     return NextResponse.redirect(new URL('/secure-login', request.url))
   }
 
+  console.log('✅ User authenticated, allowing access to:', request.nextUrl.pathname)
   return NextResponse.next()
 }
 

@@ -22,11 +22,24 @@ export interface Partner {
   api_key: string
   allowed_ips: string[]
   ip_whitelist_enabled: boolean
+  // Mifos X configuration
+  mifos_host_url?: string
+  mifos_username?: string
+  mifos_password?: string
+  mifos_tenant_id?: string
+  mifos_api_endpoint?: string
+  mifos_webhook_url?: string
+  mifos_webhook_secret_token?: string
+  is_mifos_configured: boolean
+  mifos_auto_disbursement_enabled: boolean
+  mifos_max_disbursement_amount?: number
+  mifos_min_disbursement_amount?: number
   created_at: string
   updated_at: string
 }
 import ConfirmationModal from '../../components/ConfirmationModal'
 import NotificationSystem, { useNotifications } from '../../components/NotificationSystem'
+import MifosConfiguration from '../../components/MifosConfiguration'
 
 export default function PartnersPage() {
   const [partners, setPartners] = useState<Partner[]>([])
@@ -68,7 +81,19 @@ export default function PartnersPage() {
     is_mpesa_configured: false,
     api_key: '',
     allowed_ips: [] as string[],
-    ip_whitelist_enabled: false
+    ip_whitelist_enabled: false,
+    // Mifos X configuration
+    mifos_host_url: '',
+    mifos_username: '',
+    mifos_password: '',
+    mifos_tenant_id: '',
+    mifos_api_endpoint: '/fineract-provider/api/v1',
+    mifos_webhook_url: '',
+    mifos_webhook_secret_token: '',
+    is_mifos_configured: false,
+    mifos_auto_disbursement_enabled: false,
+    mifos_max_disbursement_amount: 100000,
+    mifos_min_disbursement_amount: 100
   })
 
   // Environment configuration loaded
@@ -957,6 +982,13 @@ export default function PartnersPage() {
                     </div>
                   </div>
                   
+                  {/* Mifos X Configuration */}
+                  <MifosConfiguration 
+                    formData={formData}
+                    setFormData={setFormData}
+                    isEditing={!!editingPartner}
+                  />
+                  
                   <div className="flex items-center space-x-4">
                     <label className="flex items-center">
                       <input
@@ -1000,7 +1032,19 @@ export default function PartnersPage() {
                           is_mpesa_configured: false,
                           api_key: '',
                           allowed_ips: [],
-                          ip_whitelist_enabled: false
+                          ip_whitelist_enabled: false,
+                          // Mifos X configuration
+                          mifos_host_url: '',
+                          mifos_username: '',
+                          mifos_password: '',
+                          mifos_tenant_id: '',
+                          mifos_api_endpoint: '/fineract-provider/api/v1',
+                          mifos_webhook_url: '',
+                          mifos_webhook_secret_token: '',
+                          is_mifos_configured: false,
+                          mifos_auto_disbursement_enabled: false,
+                          mifos_max_disbursement_amount: 100000,
+                          mifos_min_disbursement_amount: 100
                         })
                       }}
                       className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
