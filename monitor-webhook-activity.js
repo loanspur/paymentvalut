@@ -1,84 +1,142 @@
-// Monitor webhook activity and loan tracking
+// Monitor webhook activity in real-time
 const { createClient } = require('@supabase/supabase-js')
+require('dotenv').config({ path: '.env' })
 
+console.log('🔍 Monitoring webhook activity...')
+console.log('')
+
+// Get credentials from .env file
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('❌ Missing Supabase environment variables')
-  console.log('Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY')
+if (!supabaseUrl || !supabaseKey) {
+  console.log('❌ Missing Supabase credentials in .env file!')
+  console.log('   Please check your .env file has:')
+  console.log('   NEXT_PUBLIC_SUPABASE_URL=...')
+  console.log('   SUPABASE_SERVICE_ROLE_KEY=...')
   process.exit(1)
 }
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+const supabase = createClient(supabaseUrl, supabaseKey)
 
 async function monitorWebhookActivity() {
-  console.log('🔍 Monitoring webhook activity...')
-  console.log('📡 Waiting for loan approval webhooks...')
-  console.log('💡 Approve a loan in Mifos X to trigger the webhook')
-  console.log('⏹️  Press Ctrl+C to stop monitoring\n')
+  console.log('🔄 Starting webhook activity monitoring...')
+  console.log('⏰ Monitoring every 30 seconds...')
+  console.log('🛑 Press Ctrl+C to stop monitoring')
+  console.log('=' .repeat(80))
 
-  let lastCount = 0
-  
-  const checkActivity = async () => {
+  let lastCheckTime = new Date()
+  let lastDisbursementCount = 0
+  let lastLoanTrackingCount = 0
+
+  // Get initial counts
+  try {
+    const [disbursementsResult, loanTrackingResult] = await Promise.all([
+      supabase
+        .from('disbursement_requests')
+        .select('id', { count: 'exact' })
+        .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()), // Last 24 hours
+      
+      supabase
+        .from('loan_tracking')
+        .select('id', { count: 'exact' })
+        .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()) // Last 24 hours
+    ])
+
+    lastDisbursementCount = disbursementsResult.count || 0
+    lastLoanTrackingCount = loanTrackingResult.count || 0
+
+    console.log(`📊 Initial counts (last 24 hours):`)
+    console.log(`   Disbursements: ${lastDisbursementCount}`)
+    console.log(`   Loan Tracking: ${lastLoanTrackingCount}`)
+    console.log('')
+
+  } catch (error) {
+    console.error('❌ Error getting initial counts:', error.message)
+  }
+
+  // Monitor every 30 seconds
+  const interval = setInterval(async () => {
     try {
-      // Check loan tracking records
+      const currentTime = new Date()
+      console.log(`⏰ ${currentTime.toLocaleTimeString()} - Checking for new activity...`)
+
+      // Check for new disbursements
+      const { data: disbursements, error: disbursementError } = await supabase
+        .from('disbursement_requests')
+        .select('*')
+        .gte('created_at', lastCheckTime.toISOString())
+        .order('created_at', { ascending: false })
+
+      if (disbursementError) {
+        console.error('❌ Error fetching disbursements:', disbursementError.message)
+      } else if (disbursements && disbursements.length > 0) {
+        console.log(`🆕 Found ${disbursements.length} new disbursement(s):`)
+        disbursements.forEach((disbursement, index) => {
+          console.log(`   ${index + 1}. ID: ${disbursement.id}`)
+          console.log(`      Phone: ${disbursement.phone_number}`)
+          console.log(`      Amount: ${disbursement.amount}`)
+          console.log(`      Status: ${disbursement.status}`)
+          console.log(`      Origin: ${disbursement.origin}`)
+          console.log(`      Created: ${disbursement.created_at}`)
+          
+          // Check if it has Mifos metadata
+          if (disbursement.metadata) {
+            const metadata = typeof disbursement.metadata === 'string' 
+              ? JSON.parse(disbursement.metadata) 
+              : disbursement.metadata
+            if (metadata.mifos_loan_id) {
+              console.log(`      🎯 Mifos Loan ID: ${metadata.mifos_loan_id}`)
+              console.log(`      🎯 Client Name: ${metadata.client_name}`)
+            }
+          }
+          console.log('')
+        })
+      }
+
+      // Check for new loan tracking records
       const { data: loanTracking, error: trackingError } = await supabase
         .from('loan_tracking')
-        .select('*')
+        .select(`
+          *,
+          partners(name)
+        `)
+        .gte('created_at', lastCheckTime.toISOString())
         .order('created_at', { ascending: false })
 
       if (trackingError) {
-        console.error('❌ Error checking loan tracking:', trackingError)
-        return
+        console.error('❌ Error fetching loan tracking:', trackingError.message)
+      } else if (loanTracking && loanTracking.length > 0) {
+        console.log(`🆕 Found ${loanTracking.length} new loan tracking record(s):`)
+        loanTracking.forEach((record, index) => {
+          console.log(`   ${index + 1}. Loan ID: ${record.loan_id}`)
+          console.log(`      Client: ${record.client_name}`)
+          console.log(`      Amount: ${record.loan_amount}`)
+          console.log(`      Status: ${record.status}`)
+          console.log(`      Partner: ${record.partners?.name || 'Unknown'}`)
+          console.log(`      Created: ${record.created_at}`)
+          console.log('')
+        })
       }
 
-      const currentCount = loanTracking?.length || 0
-      
-      if (currentCount > lastCount) {
-        console.log(`\n🎉 NEW LOAN APPROVAL DETECTED!`)
-        console.log(`📊 Total loan tracking records: ${currentCount}`)
-        
-        const newRecord = loanTracking[0]
-        console.log(`\n📋 Latest Record:`)
-        console.log(`   Loan ID: ${newRecord.loan_id}`)
-        console.log(`   Client ID: ${newRecord.client_id}`)
-        console.log(`   Amount: KSh ${newRecord.loan_amount}`)
-        console.log(`   Status: ${newRecord.status}`)
-        console.log(`   Created: ${new Date(newRecord.created_at).toLocaleString()}`)
-        
-        if (newRecord.disbursement_status) {
-          console.log(`   Disbursement Status: ${newRecord.disbursement_status}`)
-        }
-        
-        if (newRecord.mpesa_receipt_number) {
-          console.log(`   M-Pesa Receipt: ${newRecord.mpesa_receipt_number}`)
-        }
-        
-        if (newRecord.error_message) {
-          console.log(`   Error: ${newRecord.error_message}`)
-        }
-        
-        console.log(`\n🔍 Check the Loan Tracking dashboard at: http://localhost:3000/loan-tracking`)
-        console.log(`📡 Continue monitoring...\n`)
+      // Update last check time
+      lastCheckTime = currentTime
+
+      // If no new activity, show a simple status
+      if ((!disbursements || disbursements.length === 0) && (!loanTracking || loanTracking.length === 0)) {
+        console.log('   ℹ️  No new activity detected')
       }
-      
-      lastCount = currentCount
-      
+
+      console.log('─' .repeat(80))
+
     } catch (error) {
-      console.error('❌ Error monitoring:', error.message)
+      console.error('❌ Error during monitoring:', error.message)
     }
-  }
+  }, 30000) // Check every 30 seconds
 
-  // Check every 2 seconds
-  const interval = setInterval(checkActivity, 2000)
-  
-  // Initial check
-  await checkActivity()
-  
   // Handle graceful shutdown
   process.on('SIGINT', () => {
-    console.log('\n\n🛑 Stopping webhook monitoring...')
+    console.log('\n🛑 Stopping webhook monitoring...')
     clearInterval(interval)
     process.exit(0)
   })
