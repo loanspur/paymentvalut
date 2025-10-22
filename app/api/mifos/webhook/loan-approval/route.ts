@@ -195,7 +195,7 @@ export async function POST(request: NextRequest) {
         customer_id: clientId.toString(),
         client_request_id: `mifos_${loanId}_${Date.now()}`,
         external_reference: loanId.toString(),
-        origin: 'mifos_webhook',
+        origin: 'ui',
         description: `Automated loan disbursement for ${clientDetails.displayName} - Product: ${loanDetails.loanProductName}`,
         currency: 'KES',
         metadata: {
