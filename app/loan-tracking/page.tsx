@@ -112,7 +112,7 @@ export default function LoanTrackingPage() {
 
   // Get unique partners for filter dropdown
   const uniquePartners = useMemo(() => {
-    const partners = [...new Set(loans.map(loan => loan.partner_name))]
+    const partners = Array.from(new Set(loans.map(loan => loan.partner_name)))
     return partners.sort()
   }, [loans])
 
