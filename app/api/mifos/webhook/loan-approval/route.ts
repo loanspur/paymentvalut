@@ -189,6 +189,7 @@ export async function POST(request: NextRequest) {
       // Create disbursement record
       const disbursementData = {
         partner_id: partner.id,
+        tenant_id: partner.tenant_id || 'default',
         msisdn: clientDetails.mobileNo,
         amount: loanDetails.principal,
         customer_id: clientId.toString(),
