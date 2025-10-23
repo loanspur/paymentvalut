@@ -44,16 +44,40 @@ async function processPendingLoans() {
         
         console.log(`[Loan Processor] Processing loan ${loanRecord.loan_id} for partner ${partner.name}`)
 
-        // Check auto-disbursal configuration
+        // Get loan product details from Mifos X to find the product ID
+        const basicAuth = Buffer.from(`${partner.mifos_username}:${partner.mifos_password}`).toString('base64')
+        const mifosBaseUrl = `${partner.mifos_host_url}${partner.mifos_api_endpoint || '/fineract-provider/api/v1'}`
+        
+        const loanUrl = `${mifosBaseUrl}/loans/${loanRecord.loan_id}`
+        const loanResponse = await fetch(loanUrl, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Fineract-Platform-TenantId': partner.mifos_tenant_id,
+            'Authorization': `Basic ${basicAuth}`
+          }
+        })
+
+        if (!loanResponse.ok) {
+          console.error(`[Loan Processor] Error fetching loan ${loanRecord.loan_id} from Mifos X:`, loanResponse.status)
+          continue
+        }
+
+        const loanData = await loanResponse.json()
+        const loanProductId = loanData.loanProductId
+
+        // Check auto-disbursal configuration for this partner and loan product
         const { data: autoDisbursalConfig } = await supabase
           .from('loan_product_auto_disbursal_configs')
           .select('*')
           .eq('partner_id', partner.id)
+          .eq('product_id', loanProductId)
           .eq('enabled', true)
           .single()
 
         if (!autoDisbursalConfig) {
-          console.log(`[Loan Processor] No auto-disbursal config for partner ${partner.name}, skipping`)
+          console.log(`[Loan Processor] No auto-disbursal config for partner ${partner.name} and product ${loanProductId}, skipping`)
           continue
         }
 
@@ -78,7 +102,7 @@ async function processPendingLoans() {
         // Create disbursement record
         const disbursementData = {
           partner_id: partner.id,
-          phone_number: loanRecord.phone_number,
+          msisdn: loanRecord.phone_number,
           amount: loanRecord.loan_amount,
           currency: 'KES',
           description: `Auto-disbursement for loan ${loanRecord.loan_id}`,
@@ -90,7 +114,9 @@ async function processPendingLoans() {
             processed_at: new Date().toISOString()
           },
           tenant_id: partner.tenant_id || 'default',
-          origin: 'ui'
+          origin: 'ui',
+          customer_id: loanRecord.client_id.toString(),
+          client_request_id: `loan_${loanRecord.loan_id}_${Date.now()}`
         }
 
         const { data: disbursement, error: disbursementError } = await supabase

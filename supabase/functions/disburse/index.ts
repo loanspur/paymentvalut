@@ -124,6 +124,84 @@ serve(async (req) => {
       )
     }
 
+    // 💰 NEW: Optional wallet integration for disbursement charges
+    console.log('💰 [Wallet] Checking for optional wallet integration...')
+    
+    // Get partner wallet (optional - don't fail if not found)
+    const { data: wallet, error: walletError } = await supabaseClient
+      .from('partner_wallets')
+      .select('id, current_balance, currency')
+      .eq('partner_id', partner.id)
+      .single()
+
+    let walletIntegrationEnabled = false
+    let chargeAmount = 0
+    let disbursementCharge = null
+
+    if (wallet && !walletError) {
+      console.log('✅ [Wallet] Partner wallet found, checking for disbursement charges...')
+      walletIntegrationEnabled = true
+
+      // Get disbursement charge configuration
+      const { data: chargeConfig, error: chargeError } = await supabaseClient
+        .from('partner_charges_config')
+        .select('*')
+        .eq('partner_id', partner.id)
+        .eq('charge_type', 'disbursement')
+        .eq('is_active', true)
+        .eq('is_automatic', true)
+        .single()
+
+      if (chargeConfig && !chargeError) {
+        disbursementCharge = chargeConfig
+        chargeAmount = chargeConfig.charge_amount || 0
+        console.log('💰 [Wallet] Disbursement charge configured:', {
+          charge_name: chargeConfig.charge_name,
+          charge_amount: chargeAmount,
+          automatic: chargeConfig.is_automatic
+        })
+
+        // Check if wallet has sufficient balance for charges
+        if (wallet.current_balance < chargeAmount) {
+          console.error('❌ [Wallet] Insufficient balance for disbursement charges:', {
+            current_balance: wallet.current_balance,
+            required_charges: chargeAmount,
+            shortfall: chargeAmount - wallet.current_balance
+          })
+          
+          return new Response(
+            JSON.stringify({
+              status: 'rejected',
+              error_code: 'WALLET_1002',
+              error_message: 'Insufficient wallet balance for disbursement charges',
+              details: {
+                current_balance: wallet.current_balance,
+                required_charges: chargeAmount,
+                shortfall: chargeAmount - wallet.current_balance,
+                action_required: 'Please top up your wallet to continue with disbursements'
+              }
+            }),
+            { 
+              status: 400, 
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+            }
+          )
+        }
+
+        console.log('✅ [Wallet] Wallet balance sufficient for charges:', {
+          current_balance: wallet.current_balance,
+          disbursement_amount: body.amount,
+          charges: chargeAmount,
+          remaining_balance: wallet.current_balance - chargeAmount
+        })
+      } else {
+        console.log('💰 [Wallet] No disbursement charge configured for partner')
+      }
+    } else {
+      console.log('💰 [Wallet] No partner wallet found - proceeding without wallet integration')
+      console.log('💰 [Wallet] This is normal for USSD partners or partners without wallet setup')
+    }
+
     // 🛡️ CRITICAL: Check for duplicate disbursements BEFORE processing
     console.log('🔍 [Duplicate Check] Checking for existing disbursements...')
     
@@ -553,6 +631,99 @@ serve(async (req) => {
       client_request_id: body.client_request_id
     })
 
+    // 💰 NEW: Deduct charges from wallet after successful disbursement (only if wallet integration is enabled)
+    if (walletIntegrationEnabled && chargeAmount > 0 && disbursementCharge && wallet) {
+      console.log('💰 [Wallet] Deducting disbursement charges from wallet...')
+      
+      try {
+        // Update wallet balance
+        const { error: walletUpdateError } = await supabaseClient
+          .from('partner_wallets')
+          .update({ 
+            current_balance: wallet.current_balance - chargeAmount,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', wallet.id)
+
+        if (walletUpdateError) {
+          console.error('❌ [Wallet] Error updating wallet balance:', walletUpdateError.message)
+          // Note: We don't fail the disbursement here since M-Pesa transaction was successful
+          // The charge deduction can be handled manually if needed
+        } else {
+          console.log('✅ [Wallet] Wallet balance updated successfully:', {
+            old_balance: wallet.current_balance,
+            charge_deducted: chargeAmount,
+            new_balance: wallet.current_balance - chargeAmount
+          })
+
+          // Create wallet transaction record for the charge
+          const { error: walletTransactionError } = await supabaseClient
+            .from('wallet_transactions')
+            .insert({
+              wallet_id: wallet.id,
+              transaction_type: 'charge',
+              amount: -chargeAmount, // Negative amount (debit)
+              currency: wallet.currency || 'KES',
+              status: 'completed',
+              description: `Disbursement charge for ${body.amount} KES to ${body.msisdn}`,
+              reference: `DISBURSEMENT_CHARGE_${disbursementRequest?.id}`,
+              metadata: {
+                disbursement_id: disbursementRequest?.id,
+                disbursement_amount: body.amount,
+                charge_config_id: disbursementCharge.id,
+                charge_name: disbursementCharge.charge_name,
+                conversation_id: b2cData.ConversationID,
+                client_request_id: body.client_request_id
+              }
+            })
+
+          if (walletTransactionError) {
+            console.error('❌ [Wallet] Error creating wallet transaction record:', walletTransactionError.message)
+          } else {
+            console.log('✅ [Wallet] Wallet transaction record created for charge')
+          }
+
+          // Create partner charge transaction record
+          const { error: chargeTransactionError } = await supabaseClient
+            .from('partner_charge_transactions')
+            .insert({
+              partner_id: partner.id,
+              wallet_id: wallet.id,
+              charge_config_id: disbursementCharge.id,
+              related_transaction_id: disbursementRequest?.id,
+              related_transaction_type: 'disbursement',
+              charge_amount: chargeAmount,
+              currency: wallet.currency || 'KES',
+              transaction_type: 'debit',
+              status: 'completed',
+              description: `Automatic disbursement charge for ${body.amount} KES disbursement`,
+              metadata: {
+                disbursement_id: disbursementRequest?.id,
+                disbursement_amount: body.amount,
+                conversation_id: b2cData.ConversationID,
+                client_request_id: body.client_request_id,
+                msisdn: body.msisdn
+              }
+            })
+
+          if (chargeTransactionError) {
+            console.error('❌ [Wallet] Error creating partner charge transaction record:', chargeTransactionError.message)
+          } else {
+            console.log('✅ [Wallet] Partner charge transaction record created')
+          }
+        }
+      } catch (walletError) {
+        console.error('❌ [Wallet] Error processing wallet charge deduction:', walletError.message)
+        // Note: We don't fail the disbursement here since M-Pesa transaction was successful
+      }
+    } else {
+      if (walletIntegrationEnabled) {
+        console.log('💰 [Wallet] No charges to deduct from wallet')
+      } else {
+        console.log('💰 [Wallet] Wallet integration not enabled - proceeding with normal disbursement')
+      }
+    }
+
     // Return success response
     return new Response(
       JSON.stringify({
@@ -565,7 +736,10 @@ serve(async (req) => {
           msisdn: body.msisdn,
           client_request_id: body.client_request_id,
           mpesa_response_code: b2cData.ResponseCode,
-          mpesa_response_description: b2cData.ResponseDescription
+          mpesa_response_description: b2cData.ResponseDescription,
+          wallet_integration_enabled: walletIntegrationEnabled,
+          charges_applied: chargeAmount,
+          wallet_balance_after: walletIntegrationEnabled && chargeAmount > 0 ? wallet.current_balance - chargeAmount : wallet?.current_balance
         }
       }),
       { 

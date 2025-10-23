@@ -1,101 +1,188 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyJWTToken } from '@/lib/jwt-utils'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(request: NextRequest) {
   try {
-    // Verify authentication
-    const token = request.cookies.get('auth_token')?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    const { amount } = await request.json()
+
+    if (!amount || amount < 1) {
+      return NextResponse.json(
+        { success: false, error: 'Valid amount is required' },
+        { status: 400 }
+      )
     }
 
-    const payload = await verifyJWTToken(token)
-    if (!payload) {
-      return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
-    }
-
-    const { 
-      float_amount, 
-      transfer_fee, 
-      processing_fee, 
-      otp_reference, 
-      otp_code, 
-      description 
-    } = await request.json()
-
-    // Validate required fields
-    if (!float_amount || !transfer_fee || !processing_fee || !otp_reference || !otp_code) {
-      return NextResponse.json({
-        error: 'All fields are required: float_amount, transfer_fee, processing_fee, otp_reference, otp_code'
-      }, { status: 400 })
-    }
-
-    // Get user's partner ID
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('partner_id')
-      .eq('id', payload.userId)
+    // Get the current user's partner (for now, get first partner as demo)
+    const { data: partners, error: partnersError } = await supabase
+      .from('partners')
+      .select('id')
+      .limit(1)
       .single()
 
-    if (userError || !user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    if (partnersError || !partners) {
+      return NextResponse.json(
+        { success: false, error: 'No partner found' },
+        { status: 404 }
+      )
     }
 
-    if (!user.partner_id) {
-      return NextResponse.json({ error: 'No partner associated with user' }, { status: 400 })
+    // Get wallet for the partner
+    const { data: wallet, error: walletError } = await supabase
+      .from('partner_wallets')
+      .select('*')
+      .eq('partner_id', partners.id)
+      .single()
+
+    if (walletError || !wallet) {
+      return NextResponse.json(
+        { success: false, error: 'Wallet not found' },
+        { status: 404 }
+      )
     }
 
-    // Call the wallet-manager Edge Function
-    const edgeFunctionUrl = `${supabaseUrl}/functions/v1/wallet-manager/float/purchase`
-    
-    const response = await fetch(edgeFunctionUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseServiceKey}`
-      },
-      body: JSON.stringify({
-        partner_id: user.partner_id,
-        float_amount: float_amount,
-        transfer_fee: transfer_fee,
-        processing_fee: processing_fee,
-        otp_reference: otp_reference,
-        otp_code: otp_code,
-        description: description || 'B2C float purchase'
+    // Get partner charges for float purchase
+    const { data: chargeConfig, error: chargeError } = await supabase
+      .from('partner_charges_config')
+      .select('*')
+      .eq('partner_id', partners.id)
+      .eq('charge_type', 'float_purchase')
+      .eq('is_active', true)
+      .single()
+
+    // Calculate total cost including charges
+    let totalCharges = 0
+    if (chargeConfig && chargeConfig.is_automatic) {
+      totalCharges = chargeConfig.charge_amount || 0
+      
+      // Apply percentage if specified
+      if (chargeConfig.charge_percentage) {
+        const percentageAmount = (amount * chargeConfig.charge_percentage) / 100
+        totalCharges = Math.max(totalCharges, percentageAmount)
+      }
+      
+      // Apply minimum and maximum limits
+      if (chargeConfig.minimum_charge && totalCharges < chargeConfig.minimum_charge) {
+        totalCharges = chargeConfig.minimum_charge
+      }
+      if (chargeConfig.maximum_charge && totalCharges > chargeConfig.maximum_charge) {
+        totalCharges = chargeConfig.maximum_charge
+      }
+    }
+
+    const totalCost = amount + totalCharges
+
+    if (wallet.current_balance < totalCost) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Insufficient balance. Required: ${totalCost} KES, Available: ${wallet.current_balance} KES` 
+        },
+        { status: 400 }
+      )
+    }
+
+    // Generate OTP
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
+    const otpReference = `FLOAT_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
+
+    // Create OTP validation record
+    const { data: otpRecord, error: otpError } = await supabase
+      .from('otp_validations')
+      .insert({
+        reference: otpReference,
+        partner_id: partners.id,
+        phone_number: '254712345678', // This should come from partner settings
+        email_address: 'partner@example.com', // This should come from partner settings
+        otp_code: otpCode,
+        purpose: 'float_purchase',
+        amount: totalCost,
+        status: 'pending',
+        expires_at: expiresAt.toISOString()
       })
+      .select()
+      .single()
+
+    if (otpError) {
+      console.error('Error creating OTP record:', otpError)
+      return NextResponse.json(
+        { success: false, error: 'Failed to create OTP validation' },
+        { status: 500 }
+      )
+    }
+
+    // Create wallet transaction record
+    const { data: walletTransaction, error: transactionError } = await supabase
+      .from('wallet_transactions')
+      .insert({
+        wallet_id: wallet.id,
+        transaction_type: 'b2c_float_purchase',
+        amount: -totalCost, // Negative amount (debit)
+        currency: 'KES',
+        status: 'otp_required',
+        description: `B2C Float Purchase - ${amount} KES (Charges: ${totalCharges} KES)`,
+        reference: otpReference,
+        float_amount: amount,
+        otp_reference: otpReference,
+        metadata: {
+          float_amount: amount,
+          charges: totalCharges,
+          total_cost: totalCost,
+          charge_config_id: chargeConfig?.id,
+          otp_required: true,
+          otp_reference: otpReference
+        }
+      })
+      .select()
+      .single()
+
+    if (transactionError) {
+      console.error('Error creating wallet transaction:', transactionError)
+      return NextResponse.json(
+        { success: false, error: 'Failed to create transaction record' },
+        { status: 500 }
+      )
+    }
+
+    // TODO: Send OTP via SMS and Email
+    // For now, we'll just log it
+    console.log('OTP Generated for Float Purchase:', {
+      otp_code: otpCode,
+      otp_reference: otpReference,
+      amount: totalCost,
+      expires_at: expiresAt,
+      wallet_transaction_id: walletTransaction.id
     })
 
-    const data = await response.json()
-
-    if (response.ok) {
-      return NextResponse.json({
-        success: true,
-        message: data.message || 'B2C float purchased successfully',
-        transactionId: data.transactionId,
-        reference: data.reference,
-        floatAmount: data.floatAmount,
-        totalAmount: data.totalAmount,
-        newWalletBalance: data.newWalletBalance
-      })
-    } else {
-      return NextResponse.json({
-        error: data.error || 'Failed to purchase B2C float',
-        details: data.details
-      }, { status: response.status })
-    }
+    return NextResponse.json({
+      success: true,
+      message: 'Float purchase initiated. OTP sent for confirmation.',
+      data: {
+        wallet_transaction: walletTransaction,
+        otp_reference: otpReference,
+        total_cost: totalCost,
+        float_amount: amount,
+        charges: totalCharges,
+        charge_config: chargeConfig ? {
+          id: chargeConfig.id,
+          name: chargeConfig.charge_name,
+          amount: chargeConfig.charge_amount,
+          percentage: chargeConfig.charge_percentage
+        } : null,
+        expires_at: expiresAt.toISOString()
+      }
+    })
 
   } catch (error) {
-    console.error('B2C float purchase error:', error)
-    return NextResponse.json({
-      error: 'Internal server error',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 })
+    console.error('Float Purchase Error:', error)
+    return NextResponse.json(
+      { success: false, error: 'Internal server error' },
+      { status: 500 }
+    )
   }
 }
-

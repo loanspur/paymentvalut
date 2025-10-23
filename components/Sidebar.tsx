@@ -20,10 +20,12 @@ import {
   Activity,
   Users,
   CreditCard,
+  Wallet,
   ChevronDown,
   ChevronRight,
   Bell,
-  HelpCircle
+  HelpCircle,
+  RefreshCw
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -109,7 +111,20 @@ export default function Sidebar({ className = '' }: SidebarProps) {
             href: '/loan-tracking',
             icon: FileText,
             description: 'Monitor approved loans & disbursements'
-          }
+          },
+          {
+            name: 'Wallet Management',
+            href: '/wallet',
+            icon: CreditCard,
+            description: 'Manage wallet balance & transactions'
+          },
+          // Only show NCBA Transactions for super_admin and admin
+          ...(isSuperAdmin || isAdmin ? [{
+            name: 'NCBA Transactions',
+            href: '/management/ncba-transactions',
+            icon: CreditCard,
+            description: 'Manage NCBA Paybill transactions'
+          }] : [])
         ]
       },
       {
@@ -121,6 +136,27 @@ export default function Sidebar({ className = '' }: SidebarProps) {
             href: '/admin-dashboard',
             icon: Users,
             description: 'Manage users & roles'
+          }] : []),
+          // Only show Admin Wallets for super_admin and admin
+          ...(isSuperAdmin || isAdmin ? [{
+            name: 'Admin Wallets',
+            href: '/admin/wallets',
+            icon: Wallet,
+            description: 'Manage all partners wallets'
+          }] : []),
+          // Only show Partner Charges for super_admin and admin
+          ...(isSuperAdmin || isAdmin ? [{
+            name: 'Partner Charges',
+            href: '/admin/partner-charges',
+            icon: DollarSign,
+            description: 'Manage partner charges & fees'
+          }] : []),
+          // Only show Disbursement Retries for super_admin and admin
+          ...(isSuperAdmin || isAdmin ? [{
+            name: 'Disbursement Retries',
+            href: '/admin/disbursement-retries',
+            icon: RefreshCw,
+            description: 'Monitor & retry failed disbursements'
           }] : []),
           {
             name: 'My Profile',

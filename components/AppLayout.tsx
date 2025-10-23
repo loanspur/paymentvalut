@@ -83,7 +83,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         {/* Main content */}
         <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
           <div className="w-full">
-            {pathname !== '/' && pathname !== '/transactions' && pathname !== '/partners' && pathname !== '/history' && pathname !== '/loan-tracking' && pathname !== '/admin-dashboard' && pathname !== '/profile' && pathname !== '/disburse' && <Breadcrumb />}
+            {pathname !== '/' && pathname !== '/transactions' && pathname !== '/partners' && pathname !== '/history' && pathname !== '/loan-tracking' && pathname !== '/wallet' && pathname !== '/admin-dashboard' && pathname !== '/admin/wallets' && pathname !== '/admin/partner-charges' && pathname !== '/admin/disbursement-retries' && pathname !== '/profile' && pathname !== '/disburse' && pathname !== '/management/ncba-transactions' && <Breadcrumb />}
             {children}
           </div>
         </main>
@@ -100,6 +100,11 @@ function getPageTitle(pathname: string): string {
     '/transactions': 'Transaction Monitoring',
     '/history': 'Transaction History',
     '/loan-tracking': 'Loan Tracking',
+    '/wallet': 'Wallet Management',
+    '/admin/wallets': 'Admin Wallet Management',
+    '/admin/partner-charges': 'Partner Charges Management',
+    '/admin/disbursement-retries': 'Disbursement Retry Management',
+    '/management/ncba-transactions': 'NCBA Transactions',
     '/settings': 'Settings',
     '/api-docs': 'API Documentation',
     '/admin-dashboard': 'User Management'
@@ -116,6 +121,11 @@ function getPageDescription(pathname: string): string {
     '/transactions': 'Real-time monitoring of M-Pesa B2C transactions and balances',
     '/history': 'View and track all disbursement transactions',
     '/loan-tracking': 'Monitor approved loans and their disbursement progress',
+    '/wallet': 'Manage wallet balance, transactions, and top-ups',
+    '/admin/wallets': 'Super admin dashboard for managing all partners wallets and transactions',
+    '/admin/partner-charges': 'Manage partner-specific charges and fees for disbursements and float purchases',
+    '/admin/disbursement-retries': 'Monitor and manage failed disbursement retries with automatic retry mechanisms',
+    '/management/ncba-transactions': 'Manage NCBA Paybill transactions and partner allocations',
     '/settings': 'Configure system settings and preferences',
     '/api-docs': 'Integration guides and API documentation',
     '/admin-dashboard': 'Manage users, roles, and system activity'
