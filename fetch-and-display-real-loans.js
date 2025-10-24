@@ -367,3 +367,4 @@ runRealLoanFetch().catch(error => {
   console.log('\n💥 Real loan fetch failed:', error.message);
 });
 
+

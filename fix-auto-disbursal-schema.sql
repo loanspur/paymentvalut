@@ -33,3 +33,4 @@ FROM information_schema.columns
 WHERE table_name = 'loan_product_auto_disbursal_configs'
 ORDER BY ordinal_position;
 
+

@@ -184,3 +184,4 @@ x-api-key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 Follow the step-by-step guide to set up your cron job at cron-job.org. The system will then automatically poll for loans every 10 minutes! 🎉
 
+

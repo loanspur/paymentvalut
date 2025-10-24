@@ -138,3 +138,4 @@ testLoanFetcherAPI().then(() => {
   console.log('\n💥 Test failed:', error.message);
 });
 
+

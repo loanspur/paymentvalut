@@ -287,70 +287,74 @@ export default function Dashboard() {
   ]
 
   return (
-    <div className="space-y-6">
-      {/* Header with Filters */}
-      <div className="bg-white shadow rounded-lg p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-4 sm:space-y-6">
+      {/* Header with Filters - Mobile First */}
+      <div className="bg-white shadow rounded-lg p-4 sm:p-6">
+        <div className="flex flex-col space-y-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-            <p className="text-sm text-gray-500 mt-1">
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard</h1>
+            <p className="text-xs sm:text-sm text-gray-500 mt-1">
               Last updated: {lastUpdated.toLocaleTimeString()}
               {filters.partnerId !== 'all' && (
-                <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                   <Building2 className="w-3 h-3 mr-1" />
-                  {allPartners.find(p => p.id === filters.partnerId)?.name || 'Selected Partner'}
+                  <span className="hidden sm:inline">{allPartners.find(p => p.id === filters.partnerId)?.name || 'Selected Partner'}</span>
+                  <span className="sm:hidden">Partner</span>
                 </span>
               )}
             </p>
           </div>
           
-          <div className="mt-4 sm:mt-0 flex flex-wrap gap-4">
-            {/* Date Range Filter */}
-            <div className="flex items-center space-x-2">
-              <Calendar className="h-4 w-4 text-gray-400" />
-              <select
-                value={filters.dateRange}
-                onChange={(e) => handleDateRangeChange(e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {dateRangeOptions.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+          {/* Filters - Mobile Stacked */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0 sm:space-x-4">
+            <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
+              {/* Date Range Filter */}
+              <div className="flex items-center space-x-2">
+                <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                <select
+                  value={filters.dateRange}
+                  onChange={(e) => handleDateRangeChange(e.target.value)}
+                  className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {dateRangeOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            {/* Partner Filter */}
-            <div className="flex items-center space-x-2">
-              <Building2 className="h-4 w-4 text-gray-400" />
-              <select
-                value={filters.partnerId}
-                onChange={(e) => handleFilterChange('partnerId', e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={userPartnerId && userPartnerId !== 'all'}
-              >
-                {userPartnerId && userPartnerId !== 'all' ? (
-                  <option value={userPartnerId}>
-                    {allPartners.find(p => p.id === userPartnerId)?.name || 'Your Partner'}
-                  </option>
-                ) : (
-                  <>
-                    <option value="all">All Partners</option>
-                    {allPartners.map(partner => (
-                      <option key={partner.id} value={partner.id}>
-                        {partner.name}
-                      </option>
-                    ))}
-                  </>
-                )}
-              </select>
+              {/* Partner Filter */}
+              <div className="flex items-center space-x-2">
+                <Building2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                <select
+                  value={filters.partnerId}
+                  onChange={(e) => handleFilterChange('partnerId', e.target.value)}
+                  className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={userPartnerId && userPartnerId !== 'all'}
+                >
+                  {userPartnerId && userPartnerId !== 'all' ? (
+                    <option value={userPartnerId}>
+                      {allPartners.find(p => p.id === userPartnerId)?.name || 'Your Partner'}
+                    </option>
+                  ) : (
+                    <>
+                      <option value="all">All Partners</option>
+                      {allPartners.map(partner => (
+                        <option key={partner.id} value={partner.id}>
+                          {partner.name}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+              </div>
             </div>
 
             {/* Export Button */}
             <button
               onClick={exportData}
-              className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+              className="flex items-center justify-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors w-full sm:w-auto"
             >
               <Download className="h-4 w-4" />
               <span className="text-sm">Export</span>
@@ -359,18 +363,18 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Stats Cards - Mobile First Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
+          <div className="p-4 sm:p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <Send className="h-6 w-6 text-blue-600" />
+                <Send className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
               </div>
-              <div className="ml-5 w-0 flex-1">
+              <div className="ml-3 sm:ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">Total Transactions</dt>
-                  <dd className="text-lg font-medium text-gray-900">{stats.totalTransactions.toLocaleString()}</dd>
+                  <dt className="text-xs sm:text-sm font-medium text-gray-500 truncate">Total Transactions</dt>
+                  <dd className="text-base sm:text-lg font-medium text-gray-900">{stats.totalTransactions.toLocaleString()}</dd>
                   <dd className="text-xs text-gray-500">Today: {stats.todayTransactions}</dd>
                 </dl>
               </div>
@@ -379,15 +383,15 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
+          <div className="p-4 sm:p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <TrendingUp className="h-6 w-6 text-green-600" />
+                <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-green-600" />
               </div>
-              <div className="ml-5 w-0 flex-1">
+              <div className="ml-3 sm:ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">Total Amount</dt>
-                  <dd className="text-lg font-medium text-gray-900">KES {stats.totalAmount.toLocaleString()}</dd>
+                  <dt className="text-xs sm:text-sm font-medium text-gray-500 truncate">Total Amount</dt>
+                  <dd className="text-base sm:text-lg font-medium text-gray-900">KES {stats.totalAmount.toLocaleString()}</dd>
                   <dd className="text-xs text-gray-500">Today: KES {stats.todayAmount.toLocaleString()}</dd>
                 </dl>
               </div>
@@ -396,15 +400,15 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
+          <div className="p-4 sm:p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <Building2 className="h-6 w-6 text-purple-600" />
+                <Building2 className="h-5 w-5 sm:h-6 sm:w-6 text-purple-600" />
               </div>
-              <div className="ml-5 w-0 flex-1">
+              <div className="ml-3 sm:ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">Active Partners</dt>
-                  <dd className="text-lg font-medium text-gray-900">{stats.activePartners}</dd>
+                  <dt className="text-xs sm:text-sm font-medium text-gray-500 truncate">Active Partners</dt>
+                  <dd className="text-base sm:text-lg font-medium text-gray-900">{stats.activePartners}</dd>
                   <dd className="text-xs text-gray-500">M-Pesa configured</dd>
                 </dl>
               </div>
@@ -413,15 +417,15 @@ export default function Dashboard() {
         </div>
 
         <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="p-5">
+          <div className="p-4 sm:p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <Activity className="h-6 w-6 text-orange-600" />
+                <Activity className="h-5 w-5 sm:h-6 sm:w-6 text-orange-600" />
               </div>
-              <div className="ml-5 w-0 flex-1">
+              <div className="ml-3 sm:ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">Success Rate</dt>
-                  <dd className="text-lg font-medium text-gray-900">{stats.successRate}%</dd>
+                  <dt className="text-xs sm:text-sm font-medium text-gray-500 truncate">Success Rate</dt>
+                  <dd className="text-base sm:text-lg font-medium text-gray-900">{stats.successRate}%</dd>
                   <dd className="text-xs text-gray-500">Completed transactions</dd>
                 </dl>
               </div>
@@ -430,10 +434,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Tab Navigation */}
+      {/* Tab Navigation - Mobile First */}
       <div className="bg-white shadow rounded-lg">
         <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8 px-6" aria-label="Tabs">
+          <nav className="-mb-px flex space-x-2 sm:space-x-8 px-3 sm:px-6 overflow-x-auto" aria-label="Tabs">
             {tabs.map((tab) => {
               const Icon = tab.icon
               return (
@@ -444,32 +448,33 @@ export default function Dashboard() {
                     activeTab === tab.id
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2`}
+                  } whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm flex items-center space-x-1 sm:space-x-2 flex-shrink-0`}
                 >
-                  <Icon className="h-4 w-4" />
-                  <span>{tab.name}</span>
+                  <Icon className="h-3 w-3 sm:h-4 sm:w-4" />
+                  <span className="hidden xs:inline">{tab.name}</span>
+                  <span className="xs:hidden">{tab.name.split(' ')[0]}</span>
                 </button>
               )
             })}
           </nav>
         </div>
 
-        {/* Tab Content */}
-        <div className="p-6">
+        {/* Tab Content - Mobile First */}
+        <div className="p-4 sm:p-6">
           {activeTab === 'overview' && (
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-6">
               {/* Daily Transactions Chart */}
-              <div className="bg-gray-50 rounded-lg p-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">
+              <div className="bg-gray-50 rounded-lg p-4 sm:p-6">
+                <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-3 sm:mb-4">
                   Daily Transaction Volume
                   {filters.partnerId !== 'all' && (
-                    <span className="ml-2 text-sm font-normal text-gray-500">
+                    <span className="ml-2 text-xs sm:text-sm font-normal text-gray-500">
                       - {allPartners.find(p => p.id === filters.partnerId)?.name || 'Selected Partner'}
                     </span>
                   )}
                 </h3>
                 {chartData.dailyTransactions.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
+                  <ResponsiveContainer width="100%" height={250}>
                     <RechartsLineChart data={chartData.dailyTransactions}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="date" />
@@ -496,18 +501,18 @@ export default function Dashboard() {
               </div>
 
               {/* Status Distribution */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-gray-50 rounded-lg p-6">
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                <div className="bg-gray-50 rounded-lg p-4 sm:p-6">
+                  <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-3 sm:mb-4">
                     Transaction Status Distribution
                     {filters.partnerId !== 'all' && (
-                      <span className="ml-2 text-sm font-normal text-gray-500">
+                      <span className="ml-2 text-xs sm:text-sm font-normal text-gray-500">
                         - {allPartners.find(p => p.id === filters.partnerId)?.name || 'Selected Partner'}
                       </span>
                     )}
                   </h3>
                   {chartData.statusDistribution.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={250}>
+                    <ResponsiveContainer width="100%" height={200}>
                       <RechartsPieChart>
                         <Pie
                           data={chartData.statusDistribution}
@@ -538,19 +543,19 @@ export default function Dashboard() {
                 </div>
 
                 {/* Recent Transactions Table */}
-                <div className="bg-gray-50 rounded-lg p-6">
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">Recent Transactions</h3>
+                <div className="bg-gray-50 rounded-lg p-4 sm:p-6">
+                  <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-3 sm:mb-4">Recent Transactions</h3>
                   {recentTransactions.length > 0 ? (
                     <div className="space-y-3">
                       {recentTransactions.slice(0, 5).map((transaction) => (
-                        <div key={transaction.id} className="flex items-center justify-between p-3 bg-white rounded-lg">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">{transaction.partner}</div>
-                            <div className="text-xs text-gray-500">{transaction.msisdn}</div>
+                        <div key={transaction.id} className="flex items-center justify-between p-2 sm:p-3 bg-white rounded-lg">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs sm:text-sm font-medium text-gray-900 truncate">{transaction.partner}</div>
+                            <div className="text-xs text-gray-500 truncate">{transaction.msisdn}</div>
                           </div>
-                          <div className="text-right">
-                            <div className="text-sm font-medium text-gray-900">KES {transaction.amount.toLocaleString()}</div>
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          <div className="text-right ml-2">
+                            <div className="text-xs sm:text-sm font-medium text-gray-900">KES {transaction.amount.toLocaleString()}</div>
+                            <span className={`inline-flex px-1.5 py-0.5 sm:px-2 sm:py-1 text-xs font-semibold rounded-full ${
                               transaction.status === 'success' ? 'bg-green-100 text-green-800' :
                               transaction.status === 'failed' ? 'bg-red-100 text-red-800' :
                               'bg-yellow-100 text-yellow-800'

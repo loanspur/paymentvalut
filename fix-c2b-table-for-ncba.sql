@@ -7,3 +7,4 @@ ALTER COLUMN mifos_account_id DROP NOT NULL;
 -- Add comment to explain the change
 COMMENT ON COLUMN c2b_transactions.mifos_account_id IS 'Mifos X account ID (required for Mifos C2B, optional for NCBA Paybill)';
 
+

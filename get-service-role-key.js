@@ -11,3 +11,4 @@ console.log('Format: Bearer ' + process.env.SUPABASE_SERVICE_ROLE_KEY)
 console.log('')
 console.log('⚠️  Keep this key secure and never share it publicly!')
 
+

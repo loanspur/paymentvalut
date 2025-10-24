@@ -186,3 +186,4 @@ Your loan polling system is successfully deployed when:
 
 Your loan polling system is ready for deployment. Follow the steps above to deploy the Edge Function and start automatic loan polling from your Mifos X partners!
 
+

@@ -33,45 +33,45 @@ export default function AppLayout({ children }: AppLayoutProps) {
       
       {/* Main content area */}
       <div className="flex-1 flex flex-col lg:ml-0">
-        {/* Header - using sticky instead of fixed */}
-        <header className="sticky top-0 bg-white border-b border-gray-200 px-4 py-4 lg:px-6 shadow-sm z-20">
+        {/* Header - mobile-first responsive */}
+        <header className="sticky top-0 bg-white border-b border-gray-200 px-3 py-3 sm:px-4 sm:py-4 lg:px-6 shadow-sm z-20">
           <div className="flex items-center justify-between">
-            {/* Page title */}
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900">
+            {/* Page title - mobile responsive */}
+            <div className="flex-1 min-w-0">
+              <h1 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">
                 {getPageTitle(pathname)}
               </h1>
-              <p className="text-sm text-gray-500">
+              <p className="text-xs sm:text-sm text-gray-500 truncate">
                 {getPageDescription(pathname)}
               </p>
             </div>
 
-            {/* Header actions */}
-            <div className="flex items-center space-x-4">
+            {/* Header actions - mobile responsive */}
+            <div className="flex items-center space-x-2 sm:space-x-4 ml-4">
               {/* Notifications */}
               <button className="relative p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
-                <Bell className="w-5 h-5" />
+                <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
 
-              {/* User info */}
+              {/* User info - mobile responsive */}
               {user && (
-                <div className="flex items-center space-x-3">
-                  <div className="flex items-center space-x-2 text-sm text-gray-700">
-                    <User className="w-4 h-4" />
-                    <span className="hidden sm:block">{user.email}</span>
-                    <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                <div className="flex items-center space-x-2 sm:space-x-3">
+                  <div className="flex items-center space-x-1 sm:space-x-2 text-xs sm:text-sm text-gray-700">
+                    <User className="w-3 h-3 sm:w-4 sm:h-4" />
+                    <span className="hidden md:block truncate max-w-32">{user.email}</span>
+                    <span className="px-1.5 py-0.5 sm:px-2 sm:py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
                       {user.role}
                     </span>
                   </div>
                   
-                  {/* Logout button */}
+                  {/* Logout button - mobile responsive */}
                   <button
                     onClick={logout}
-                    className="flex items-center px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="flex items-center px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
                     title="Logout"
                   >
-                    <LogOut className="w-4 h-4 mr-2" />
+                    <LogOut className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
                     <span className="hidden sm:block">Logout</span>
                   </button>
                 </div>
@@ -80,8 +80,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
           </div>
         </header>
 
-        {/* Main content */}
-        <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
+        {/* Main content - mobile-first padding */}
+        <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-y-auto">
           <div className="w-full">
             {pathname !== '/' && pathname !== '/transactions' && pathname !== '/partners' && pathname !== '/history' && pathname !== '/loan-tracking' && pathname !== '/wallet' && pathname !== '/admin-dashboard' && pathname !== '/admin/wallets' && pathname !== '/admin/partner-charges' && pathname !== '/admin/disbursement-retries' && pathname !== '/profile' && pathname !== '/disburse' && pathname !== '/management/ncba-transactions' && <Breadcrumb />}
             {children}

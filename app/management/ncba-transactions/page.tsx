@@ -236,29 +236,29 @@ export default function NCBATransactionsPage() {
   }
 
   return (
-    <div>
-      {/* Header */}
-      <div className="bg-white shadow mb-8">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
+    <div className="space-y-4 sm:space-y-6">
+      {/* Header - Mobile First */}
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-4 py-4 sm:px-6">
+          <div className="flex flex-col space-y-4 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
             <div className="flex items-center">
-              <CreditCard className="h-8 w-8 text-blue-600 mr-3" />
+              <CreditCard className="h-6 w-6 sm:h-8 sm:w-8 text-blue-600 mr-2 sm:mr-3 flex-shrink-0" />
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">NCBA Transactions</h1>
-                <p className="text-sm text-gray-500">Manage NCBA Paybill transactions and partner allocations</p>
+                <h1 className="text-lg sm:text-2xl font-bold text-gray-900">NCBA Transactions</h1>
+                <p className="text-xs sm:text-sm text-gray-500">Manage NCBA Paybill transactions and partner allocations</p>
               </div>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
               <button
                 onClick={downloadCSV}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center"
+                className="px-3 py-2 sm:px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center text-sm"
               >
                 <Download className="w-4 h-4 mr-2" />
                 Download CSV
               </button>
               <button
                 onClick={loadTransactions}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                className="px-3 py-2 sm:px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center text-sm"
               >
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Refresh
@@ -268,16 +268,16 @@ export default function NCBATransactionsPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white shadow rounded-lg mb-6">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900 flex items-center">
-            <Filter className="w-5 h-5 mr-2" />
+      {/* Filters - Mobile First */}
+      <div className="bg-white shadow rounded-lg">
+        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200">
+          <h2 className="text-base sm:text-lg font-medium text-gray-900 flex items-center">
+            <Filter className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
             Filters
           </h2>
         </div>
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="p-4 sm:p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
               <select
@@ -631,4 +631,5 @@ export default function NCBATransactionsPage() {
     </div>
   )
 }
+
 

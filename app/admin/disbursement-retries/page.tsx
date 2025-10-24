@@ -244,23 +244,23 @@ export default function DisbursementRetriesPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Disbursement Retry Management</h1>
-        <p className="text-gray-600">Monitor and manage failed disbursement retries</p>
+    <div className="space-y-4 sm:space-y-6">
+      <div className="bg-white shadow rounded-lg p-4 sm:p-6">
+        <h1 className="text-xl sm:text-3xl font-bold text-gray-900 mb-2">Disbursement Retry Management</h1>
+        <p className="text-sm sm:text-base text-gray-600">Monitor and manage failed disbursement retries</p>
       </div>
 
-      {/* Summary Cards */}
+      {/* Summary Cards - Mobile First */}
       {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-lg shadow">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+          <div className="bg-white p-4 sm:p-6 rounded-lg shadow">
             <div className="flex items-center">
               <div className="p-2 bg-blue-100 rounded-lg">
-                <RefreshCw className="w-6 h-6 text-blue-600" />
+                <RefreshCw className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Total Disbursements</p>
-                <p className="text-2xl font-bold text-gray-900">{summary.total_disbursements}</p>
+              <div className="ml-3 sm:ml-4">
+                <p className="text-xs sm:text-sm font-medium text-gray-600">Total Disbursements</p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">{summary.total_disbursements}</p>
               </div>
             </div>
           </div>
@@ -600,4 +600,5 @@ export default function DisbursementRetriesPage() {
     </div>
   )
 }
+
 

@@ -237,3 +237,4 @@ Your loan polling system is ready for cron-job.org setup! Follow the steps above
 
 **Your Payment Vault will then have fully automated loan polling!** 🚀
 
+

@@ -106,3 +106,4 @@ async function checkPartnersAndCreateTest() {
 // Run the check
 checkPartnersAndCreateTest()
 
+

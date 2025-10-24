@@ -259,3 +259,4 @@ Your automatic loan polling system is now deployed and will:
 
 Monitor the system using the provided scripts and dashboards, and adjust the configuration as needed for optimal performance.
 
+

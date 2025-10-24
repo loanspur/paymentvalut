@@ -34,3 +34,4 @@ COMMENT ON COLUMN wallet_transactions.reference IS 'Unique transaction reference
 COMMENT ON COLUMN wallet_transactions.description IS 'Human-readable transaction description';
 COMMENT ON COLUMN wallet_transactions.status IS 'Transaction status (pending, completed, failed, cancelled)';
 
+

@@ -273,3 +273,4 @@ Your custom domain setup is ready! Follow the steps above to configure `eazzypay
 
 Your Payment Vault will then be accessible at `https://eazzypay.online`! 🎉
 
+
