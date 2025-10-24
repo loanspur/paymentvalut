@@ -279,12 +279,12 @@ export default function Sidebar({ className = '' }: SidebarProps) {
       {/* Sidebar */}
       <div className={`
         fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out
-        lg:relative lg:translate-x-0 lg:z-auto
+        lg:sticky lg:top-0 lg:translate-x-0 lg:z-auto lg:h-screen
         ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
         ${className}
       `}>
         <div className={`
-          flex flex-col h-full bg-white border-r border-gray-200 shadow-lg sidebar-transition
+          flex flex-col h-full bg-white border-r border-gray-200 shadow-lg sidebar-transition sidebar-sticky
           ${isCollapsed ? 'w-16' : 'w-64'}
         `}>
           {/* Header */}

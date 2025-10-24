@@ -20,6 +20,8 @@ export default function SecureLoginPage() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        console.log('🔍 Checking authentication status...')
+        
         const response = await fetch('/api/auth/me', {
           method: 'GET',
           credentials: 'include',
@@ -29,29 +31,52 @@ export default function SecureLoginPage() {
           }
         })
         
+        console.log('📡 Auth check response status:', response.status)
+        
         if (response.ok) {
           const data = await response.json()
+          console.log('📋 Auth check response data:', data)
+          
           if (data.success && data.user) {
             // User is already authenticated, redirect them
-            console.log('✅ User already authenticated, redirecting...')
-            if (['admin', 'super_admin'].includes(data.user.role)) {
-              router.replace('/admin-dashboard')
-            } else {
-              router.replace('/')
-            }
+            console.log('✅ User already authenticated, redirecting...', data.user.role)
+            
+            // Add a small delay to ensure smooth transition
+            setTimeout(() => {
+              const redirectUrl = ['admin', 'super_admin'].includes(data.user.role) 
+                ? '/admin-dashboard' 
+                : '/'
+              
+              console.log('🔄 Redirecting authenticated user to:', redirectUrl)
+              window.location.replace(redirectUrl)
+            }, 1000) // Increased delay to prevent race conditions
           }
         } else if (response.status === 401) {
           // User is not authenticated, which is expected on login page
           console.log('ℹ️ User not authenticated, staying on login page')
+        } else {
+          console.log('⚠️ Unexpected response status:', response.status)
         }
       } catch (error) {
         // Network error or other issue - user needs to login
-        console.log('ℹ️ Auth check failed, user needs to login')
+        console.error('❌ Auth check failed with error:', error)
+        
+        // Check if it's a connection reset error
+        if (error.message && error.message.includes('ERR_CONNECTION_RESET')) {
+          console.log('🔄 Connection reset detected, server may be restarting...')
+          // Retry after a delay
+          setTimeout(() => {
+            console.log('🔄 Retrying auth check after connection reset...')
+            checkAuth()
+          }, 2000)
+        } else {
+          console.log('ℹ️ User needs to login')
+        }
       }
     }
 
-    // Add a small delay to prevent race conditions with logout
-    const timeoutId = setTimeout(checkAuth, 100)
+    // Add a longer delay to prevent race conditions with logout and other auth checks
+    const timeoutId = setTimeout(checkAuth, 1000) // Increased delay
     
     return () => clearTimeout(timeoutId)
   }, [router])
@@ -88,10 +113,15 @@ export default function SecureLoginPage() {
         // Force a page reload to ensure auth state is properly set
         setTimeout(() => {
           // Force reload to ensure cookies are set and auth state is updated
-          window.location.href = ['admin', 'super_admin'].includes(data.user.role) 
+          const redirectUrl = ['admin', 'super_admin'].includes(data.user.role) 
             ? '/admin-dashboard' 
             : '/'
-        }, 1500) // Increased delay to ensure cookie is set
+          
+          console.log('🔄 Redirecting to:', redirectUrl, 'for role:', data.user.role)
+          
+          // Use window.location.replace to prevent back button issues
+          window.location.replace(redirectUrl)
+        }, 2000) // Increased delay to ensure cookie is set
       } else {
         setError(data.error || 'Login failed')
         setIsLoading(false)

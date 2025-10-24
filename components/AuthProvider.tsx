@@ -41,7 +41,7 @@ export default function AuthProvider({ children }: AuthProviderProps) {
   const pathname = usePathname()
 
   // Public routes that don't require authentication
-  const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup']
+  const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup', '/request-password-reset', '/reset-password']
   const isPublicRoute = publicRoutes.includes(pathname)
 
   // Check authentication status on mount
@@ -52,9 +52,9 @@ export default function AuthProvider({ children }: AuthProviderProps) {
       return
     }
 
-    // Skip auth check for public routes
+    // Skip auth check for public routes (including login pages)
     if (isPublicRoute) {
-      console.log('🔄 Skipping auth check - public route')
+      console.log('🔄 Skipping auth check - public route:', pathname)
       setIsLoading(false)
       return
     }
@@ -83,6 +83,14 @@ export default function AuthProvider({ children }: AuthProviderProps) {
           // Clear any stale authentication data
           setUser(null)
           console.log('ℹ️ Authentication failed - 401 (expected for logged out users)')
+          
+          // If we're not on a public route and get 401, redirect to login
+          // But only if we're not already on a login page to prevent loops
+          if (!isPublicRoute && !pathname.includes('login')) {
+            console.log('🔄 Redirecting to login due to 401 on protected route')
+            window.location.href = '/secure-login'
+            return
+          }
         } else {
           // Retry once for server errors
           if (response.status >= 500 && retryCount < 1) {

@@ -34,6 +34,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/secure-login', request.url))
   }
 
+  // Check if token is expired
+  if (decoded.exp && Date.now() >= decoded.exp * 1000) {
+    console.log('🔒 Token expired, redirecting to login')
+    return NextResponse.redirect(new URL('/secure-login', request.url))
+  }
+
   // Additional role-based protection for admin routes
   if (request.nextUrl.pathname.startsWith('/admin-dashboard') && decoded && !['admin', 'super_admin'].includes(decoded.role as string)) {
     console.log('🔒 Insufficient permissions for admin route, redirecting to login')

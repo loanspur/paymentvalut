@@ -3,10 +3,6 @@
     {
       "path": "/api/cron/disburse-retry",
       "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/loan-polling",
-      "schedule": "*/10 * * * *"
     }
   ]
 }

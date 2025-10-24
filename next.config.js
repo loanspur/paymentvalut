@@ -10,11 +10,12 @@ const nextConfig = {
   // Redirects for custom domain
   async redirects() {
     return [
-      {
-        source: '/',
-        destination: '/login',
-        permanent: false,
-      },
+      // Removed problematic redirect that was causing login loop
+      // {
+      //   source: '/',
+      //   destination: '/login',
+      //   permanent: false,
+      // },
     ]
   },
   // Security headers

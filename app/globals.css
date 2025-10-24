@@ -291,3 +291,31 @@
     margin-bottom: 24px;
   }
 }
+
+/* Sticky sidebar improvements */
+@media (min-width: 1024px) {
+  .sidebar-sticky {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    z-index: 10;
+  }
+  
+  .sidebar-sticky::-webkit-scrollbar {
+    width: 4px;
+  }
+  
+  .sidebar-sticky::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .sidebar-sticky::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 2px;
+  }
+  
+  .sidebar-sticky::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+  }
+}

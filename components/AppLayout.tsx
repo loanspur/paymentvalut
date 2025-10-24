@@ -32,7 +32,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       <Sidebar />
       
       {/* Main content area */}
-      <div className="flex-1 flex flex-col lg:ml-0">
+      <div className="flex-1 flex flex-col lg:ml-0 min-w-0">
         {/* Header - mobile-first responsive */}
         <header className="sticky top-0 bg-white border-b border-gray-200 px-3 py-3 sm:px-4 sm:py-4 lg:px-6 shadow-sm z-20">
           <div className="flex items-center justify-between">
@@ -81,8 +81,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </header>
 
         {/* Main content - mobile-first padding */}
-        <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-y-auto">
-          <div className="w-full">
+        <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-y-auto lg:overflow-y-visible">
+          <div className="w-full max-w-full">
             {pathname !== '/' && pathname !== '/transactions' && pathname !== '/partners' && pathname !== '/history' && pathname !== '/loan-tracking' && pathname !== '/wallet' && pathname !== '/admin-dashboard' && pathname !== '/admin/wallets' && pathname !== '/admin/partner-charges' && pathname !== '/admin/disbursement-retries' && pathname !== '/profile' && pathname !== '/disburse' && pathname !== '/management/ncba-transactions' && <Breadcrumb />}
             {children}
           </div>
