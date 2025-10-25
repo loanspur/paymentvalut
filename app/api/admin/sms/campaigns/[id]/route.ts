@@ -105,7 +105,7 @@ export async function PUT(
     if (recipient_list && recipient_list.length > 0) {
       updateData.recipient_list = recipient_list
       updateData.total_recipients = recipient_list.length
-      updateData.total_cost = recipient_list.length * 0.50 // Assuming 0.50 KES per SMS
+      updateData.total_cost = recipient_list.length * 1 // Assuming 1 KES per SMS
     }
 
     const { data, error } = await supabase

@@ -35,3 +35,4 @@ COMMENT ON COLUMN wallet_transactions.description IS 'Human-readable transaction
 COMMENT ON COLUMN wallet_transactions.status IS 'Transaction status (pending, completed, failed, cancelled)';
 
 
+

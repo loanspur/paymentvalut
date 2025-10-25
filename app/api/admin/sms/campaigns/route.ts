@@ -96,6 +96,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
+
     const body = await request.json()
     const {
       partner_id,
@@ -104,7 +105,9 @@ export async function POST(request: NextRequest) {
       message_content,
       recipient_list,
       scheduled_at,
-      status = 'draft'
+      status = 'draft',
+      csv_data,
+      merge_fields
     } = body
 
     // Validate required fields
@@ -128,9 +131,12 @@ export async function POST(request: NextRequest) {
 
     // Calculate total recipients and estimated cost
     const totalRecipients = recipient_list.length
-    const costPerSMS = smsSettings?.sms_charge_per_message || 0.50 // Use partner's cost or default
+    const costPerSMS = smsSettings?.sms_charge_per_message || 1 // Use partner's cost or default
     const estimatedCost = totalRecipients * costPerSMS
 
+    // Get the user ID from the JWT payload
+    const userId = payload.userId || payload.sub || payload.id
+    
     // Create campaign
     const { data, error } = await supabase
       .from('sms_bulk_campaigns')
@@ -144,7 +150,9 @@ export async function POST(request: NextRequest) {
         total_cost: estimatedCost,
         status,
         scheduled_at: scheduled_at ? new Date(scheduled_at).toISOString() : null,
-        created_by: payload.userId
+        created_by: userId,
+        csv_data: csv_data || null,
+        merge_fields: merge_fields || null
       })
       .select(`
         *,

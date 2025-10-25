@@ -166,17 +166,50 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
     let totalCost = 0
 
     // Process each recipient
-    for (const phoneNumber of campaign.recipient_list) {
+    for (let i = 0; i < campaign.recipient_list.length; i++) {
+      let phoneNumber = campaign.recipient_list[i]
+      let processedMessage = campaign.message_content
+      
       try {
+        // Fix phone number format - handle scientific notation and ensure proper format
+        if (typeof phoneNumber === 'number' || (typeof phoneNumber === 'string' && phoneNumber.includes('E+'))) {
+          // Convert scientific notation to proper number
+          phoneNumber = parseFloat(phoneNumber.toString()).toString()
+        }
+        
+        // Ensure phone number is in proper format (remove any non-digits and ensure it starts with 254)
+        phoneNumber = phoneNumber.replace(/\D/g, '') // Remove non-digits
+        if (phoneNumber.startsWith('0')) {
+          phoneNumber = '254' + phoneNumber.substring(1)
+        } else if (!phoneNumber.startsWith('254')) {
+          phoneNumber = '254' + phoneNumber
+        }
+        
+        
         // Decrypt the API key before sending
-        const passphrase = process.env.JWT_SECRET || 'default-passphrase'
+        const passphrase = process.env.JWT_SECRET
+        if (!passphrase) {
+          throw new Error('JWT_SECRET environment variable is required')
+        }
         const decryptedApiKey = decryptData(smsSettings.damza_api_key, passphrase)
         const decryptedUsername = decryptData(smsSettings.damza_username, passphrase)
+        
+        // Process message with merge fields if CSV data is available
+        if (campaign.csv_data && campaign.csv_data[i]) {
+          const recipientData = campaign.csv_data[i]
+          
+          // Replace merge fields like {{first_name}}, {{amount}}, etc.
+          Object.keys(recipientData).forEach(field => {
+            const placeholder = `{{${field}}}`
+            const value = recipientData[field]
+            processedMessage = processedMessage.replace(new RegExp(placeholder, 'g'), value)
+          })
+        }
         
         // Send SMS via AirTouch API
         const smsResponse = await sendSMSViaAirTouch({
           phoneNumber,
-          message: campaign.message_content,
+          message: processedMessage,
           senderId: smsSettings.damza_sender_id,
           username: decryptedUsername,
           apiKey: decryptedApiKey // Use decrypted API key for MD5 hash
@@ -186,7 +219,7 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
 
         if (smsResponse.success) {
           deliveredCount++
-          totalCost += smsSettings.sms_charge_per_message || 0.50
+          totalCost += smsSettings.sms_charge_per_message || 1
 
           // Create SMS notification record
           await supabase
@@ -195,11 +228,13 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
               partner_id: campaign.partner_id,
               recipient_phone: phoneNumber,
               message_type: 'bulk_campaign',
-              message_content: campaign.message_content,
+              message_content: processedMessage, // Store the processed message with merge fields
               status: 'sent',
               damza_reference: smsResponse.reference,
               damza_sender_id: smsSettings.damza_sender_id,
-              sms_cost: smsSettings.sms_charge_per_message || 0.50
+              sms_cost: smsSettings.sms_charge_per_message || 1,
+              bulk_campaign_id: campaign.id, // Link to campaign
+              sent_at: new Date().toISOString() // Add sent_at timestamp
             })
         } else {
           failedCount++
@@ -211,13 +246,11 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
               partner_id: campaign.partner_id,
               recipient_phone: phoneNumber,
               message_type: 'bulk_campaign',
-              message_content: campaign.message_content,
+              message_content: processedMessage, // Store the processed message with merge fields
               status: 'failed'
             })
         }
 
-        // Update campaign progress (simplified - no extra columns)
-        // We'll update the final status at the end
 
         // Small delay between SMS sends to avoid rate limiting
         await new Promise(resolve => setTimeout(resolve, 100))
@@ -234,21 +267,27 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
             partner_id: campaign.partner_id,
             recipient_phone: phoneNumber,
             message_type: 'bulk_campaign',
-            message_content: campaign.message_content,
+            message_content: processedMessage || campaign.message_content,
             status: 'failed',
-            bulk_campaign_id: campaign.id
+            error_message: error instanceof Error ? error.message : 'Unknown error during processing',
+            bulk_campaign_id: campaign.id,
+            sent_at: new Date().toISOString()
           })
       }
     }
 
     // Update campaign final status
-    const finalStatus = failedCount === campaign.recipient_list.length ? 'failed' : 'completed'
+    const finalStatus = deliveredCount > 0 ? 'completed' : 'failed' // If at least one SMS delivered, mark as completed
     
     await supabase
       .from('sms_bulk_campaigns')
       .update({
         status: finalStatus,
-        sent_at: new Date().toISOString()
+        sent_at: new Date().toISOString(),
+        total_cost: totalCost, // Update actual total cost
+        delivered_count: deliveredCount,
+        failed_count: failedCount,
+        sent_count: sentCount
       })
       .eq('id', campaign.id)
 
@@ -286,7 +325,6 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
         })
     }
 
-    console.log(`SMS Campaign ${campaign.id} completed: ${deliveredCount} sent, ${failedCount} failed`)
 
   } catch (error) {
     console.error('Error processing SMS campaign:', error)
@@ -320,7 +358,6 @@ async function sendSMSViaAirTouch({
     const isTestMode = !username || !apiKey || username.includes('test') || apiKey.includes('test') || username === '***encrypted***' || apiKey === '***encrypted***'
     
     if (isTestMode) {
-      console.log(`🧪 Test Mode: Simulating SMS send to ${phoneNumber}`)
       
       // Simulate successful SMS sending in test mode
       return {
@@ -363,8 +400,6 @@ async function sendSMSViaAirTouch({
     
     const getUrl = `${apiUrl}?${params.toString()}`
     
-    console.log(`📱 Sending SMS to ${formattedPhone} via AirTouch API (GET)`)
-    console.log(`📱 GET URL: ${getUrl}`)
 
     try {
       const response = await fetch(getUrl, {
@@ -375,16 +410,13 @@ async function sendSMSViaAirTouch({
       })
 
       const data = await response.json()
-      console.log('📱 AirTouch API Response:', data)
 
       if (response.ok && data.status_code === '1000') {
-        console.log('✅ AirTouch API call successful!')
         return {
           success: true,
           reference: data.message_id || smsId
         }
       } else {
-        console.log(`⚠️ AirTouch API returned error: ${data.status_desc || 'Unknown error'}`)
         
         // Check if it's an authentication issue
         if (data.status_code === '1011' || data.status_desc === 'INVALID USER') {

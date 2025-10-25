@@ -133,3 +133,4 @@ COMMENT ON COLUMN partner_charge_transactions.wallet_balance_before IS 'Wallet b
 COMMENT ON COLUMN partner_charge_transactions.wallet_balance_after IS 'Wallet balance after charge deduction';
 
 
+

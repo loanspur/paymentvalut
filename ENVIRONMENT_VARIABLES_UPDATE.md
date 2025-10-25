@@ -214,3 +214,4 @@ Follow the steps above to update your environment variables for the custom domai
 Your Payment Vault will then be fully configured for the custom domain! 🎉
 
 
+

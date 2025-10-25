@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Send, Eye, Users, MessageSquare, Calendar, DollarSign, X, Bell, BarChart3 } from 'lucide-react'
+import { Plus, Edit, Trash2, Send, Eye, Users, MessageSquare, Calendar, DollarSign, X, Bell, BarChart3, Upload, Download, FileText } from 'lucide-react'
 import { useToast } from '../../../components/ToastSimple'
 import { LoadingButton, DangerButton, SuccessButton } from '../../../components/LoadingButton'
 import { ConfirmationDialog, useConfirmation } from '../../../components/ConfirmationDialog'
@@ -79,6 +79,11 @@ export default function SMSCampaignsPage() {
     scheduled_at: '',
     status: 'draft'
   })
+  const [uploadMethod, setUploadMethod] = useState<'manual' | 'csv'>('manual')
+  const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [csvData, setCsvData] = useState<any[]>([])
+  const [mergeFields, setMergeFields] = useState<string[]>([])
+  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -121,18 +126,23 @@ export default function SMSCampaignsPage() {
       const url = editingCampaign ? `/api/admin/sms/campaigns/${editingCampaign.id}` : '/api/admin/sms/campaigns'
       const method = editingCampaign ? 'PUT' : 'POST'
 
+      const requestData = {
+        ...formData,
+        recipient_list: formData.recipient_list
+          .split(/[,\n]/) // Split by both comma and newline
+          .map(phone => phone.trim()) // Trim whitespace
+          .filter(phone => phone.length > 0), // Remove empty entries
+        csv_data: uploadMethod === 'csv' ? csvData : null,
+        merge_fields: uploadMethod === 'csv' ? mergeFields : null
+      }
+
+
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          ...formData,
-          recipient_list: formData.recipient_list
-            .split(/[,\n]/) // Split by both comma and newline
-            .map(phone => phone.trim()) // Trim whitespace
-            .filter(phone => phone.length > 0) // Remove empty entries
-        })
+        body: JSON.stringify(requestData)
       })
 
       const result = await response.json()
@@ -150,12 +160,17 @@ export default function SMSCampaignsPage() {
           scheduled_at: '',
           status: 'draft'
         })
+        setUploadMethod('manual')
+        setCsvFile(null)
+        setCsvData([])
+        setMergeFields([])
         addToast({
           type: 'success',
           title: 'SMS Campaign Saved',
           message: result.message || 'SMS campaign has been saved successfully'
         })
       } else {
+        
         addToast({
           type: 'error',
           title: 'Failed to Save SMS Campaign',
@@ -197,6 +212,10 @@ export default function SMSCampaignsPage() {
         scheduled_at: '',
         status: 'draft'
       })
+      setUploadMethod('manual')
+      setCsvFile(null)
+      setCsvData([])
+      setMergeFields([])
     }
     setShowModal(true)
   }
@@ -324,6 +343,148 @@ export default function SMSCampaignsPage() {
 
   const getPartnerTemplates = (partnerId: string) => {
     return templates.filter(template => template.partner_id === partnerId)
+  }
+
+  // CSV Template Download
+  const downloadCSVTemplate = () => {
+    const headers = ['phone_number', 'first_name', 'last_name', 'amount', 'date', 'reference']
+    const sampleData = [
+      ['254700000000', 'John', 'Doe', '1000', '2024-01-15', 'REF001'],
+      ['254700000001', 'Jane', 'Smith', '2500', '2024-01-16', 'REF002'],
+      ['254700000002', 'Mike', 'Johnson', '500', '2024-01-17', 'REF003']
+    ]
+    
+    let csvContent = headers.join(',') + '\n'
+    sampleData.forEach(row => {
+      csvContent += row.join(',') + '\n'
+    })
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', 'sms_campaign_template.csv')
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  // CSV File Upload Handler
+  const handleCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    setCsvFile(file)
+
+    try {
+      const text = await file.text()
+      const lines = text.split('\n').filter(line => line.trim())
+      
+      if (lines.length < 2) {
+        addToast({
+          type: 'error',
+          title: 'Invalid CSV',
+          message: 'CSV file must have at least a header row and one data row'
+        })
+        return
+      }
+
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
+      const data = lines.slice(1).map(line => {
+        const values = line.split(',').map(v => v.trim())
+        const row: any = {}
+        headers.forEach((header, index) => {
+          row[header] = values[index] || ''
+        })
+        return row
+      })
+
+      // Validate phone numbers
+      const phoneColumn = headers.find(h => h.includes('phone') || h.includes('number'))
+      if (!phoneColumn) {
+        addToast({
+          type: 'error',
+          title: 'Invalid CSV',
+          message: 'CSV must contain a phone number column (phone_number, phone, or number)'
+        })
+        return
+      }
+
+      const validData = data.filter(row => {
+        const phone = row[phoneColumn]
+        if (!phone) return false
+        
+        // Fix phone number format - handle scientific notation
+        let phoneStr = phone.toString()
+        if (phoneStr.includes('E+')) {
+          phoneStr = parseFloat(phoneStr).toString()
+        }
+        
+        // Ensure it's a valid phone number format
+        const cleanPhone = phoneStr.replace(/\D/g, '')
+        return cleanPhone.length >= 10
+      }).map(row => {
+        // Fix phone numbers in the data
+        const phone = row[phoneColumn]
+        let phoneStr = phone.toString()
+        if (phoneStr.includes('E+')) {
+          phoneStr = parseFloat(phoneStr).toString()
+        }
+        
+        return {
+          ...row,
+          [phoneColumn]: phoneStr
+        }
+      })
+
+      if (validData.length === 0) {
+        addToast({
+          type: 'error',
+          title: 'Invalid CSV',
+          message: 'No valid phone numbers found in the CSV file'
+        })
+        return
+      }
+
+      setCsvData(validData)
+      setMergeFields(headers.filter(h => h !== phoneColumn))
+      
+      // Update recipient list with phone numbers
+      const phoneNumbers = validData.map(row => row[phoneColumn]).join('\n')
+      setFormData(prev => ({ ...prev, recipient_list: phoneNumbers }))
+
+
+      addToast({
+        type: 'success',
+        title: 'CSV Uploaded',
+        message: `Successfully loaded ${validData.length} recipients from CSV file`
+      })
+
+    } catch (error) {
+      console.error('CSV parsing error:', error)
+      addToast({
+        type: 'error',
+        title: 'CSV Upload Failed',
+        message: 'Failed to parse CSV file. Please check the format and try again.'
+      })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  // Process message with merge fields
+  const processMessageWithMergeFields = (message: string, recipientData: any) => {
+    let processedMessage = message
+    
+    // Replace merge fields like {{first_name}}, {{amount}}, etc.
+    Object.keys(recipientData).forEach(field => {
+      const placeholder = `{{${field}}}`
+      processedMessage = processedMessage.replace(new RegExp(placeholder, 'g'), recipientData[field])
+    })
+    
+    return processedMessage
   }
 
   if (loading) {
@@ -577,20 +738,117 @@ export default function SMSCampaignsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Recipient Phone Numbers (separated by comma or new line)
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Recipient Upload Method
                   </label>
-                  <textarea
-                    value={formData.recipient_list}
-                    onChange={(e) => setFormData({ ...formData, recipient_list: e.target.value })}
-                    rows={6}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="254700000000, 254700000001, 254700000002&#10;or&#10;254700000000&#10;254700000001&#10;254700000002"
-                    required
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    You can separate phone numbers with commas (,) or put each number on a new line
-                  </p>
+                  
+                  {/* Upload Method Selection */}
+                  <div className="flex gap-4 mb-4">
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="manual"
+                        checked={uploadMethod === 'manual'}
+                        onChange={(e) => setUploadMethod(e.target.value as 'manual' | 'csv')}
+                        className="mr-2"
+                      />
+                      Manual Entry
+                    </label>
+                    <label className="flex items-center">
+                      <input
+                        type="radio"
+                        value="csv"
+                        checked={uploadMethod === 'csv'}
+                        onChange={(e) => setUploadMethod(e.target.value as 'manual' | 'csv')}
+                        className="mr-2"
+                      />
+                      CSV/Excel Upload
+                    </label>
+                  </div>
+
+                  {uploadMethod === 'manual' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Recipient Phone Numbers (separated by comma or new line)
+                      </label>
+                      <textarea
+                        value={formData.recipient_list}
+                        onChange={(e) => setFormData({ ...formData, recipient_list: e.target.value })}
+                        rows={6}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="254700000000, 254700000001, 254700000002&#10;or&#10;254700000000&#10;254700000001&#10;254700000002"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        You can separate phone numbers with commas (,) or put each number on a new line
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="flex items-center gap-4 mb-4">
+                        <button
+                          type="button"
+                          onClick={downloadCSVTemplate}
+                          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        >
+                          <Download className="w-4 h-4" />
+                          Download Template
+                        </button>
+                        <div className="text-sm text-gray-600">
+                          Download CSV template with sample data and merge fields
+                        </div>
+                      </div>
+
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                        <input
+                          type="file"
+                          accept=".csv,.xlsx,.xls"
+                          onChange={handleCSVUpload}
+                          className="hidden"
+                          id="csv-upload"
+                          disabled={uploading}
+                        />
+                        <label
+                          htmlFor="csv-upload"
+                          className={`cursor-pointer flex flex-col items-center gap-2 ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                          <Upload className="w-8 h-8 text-gray-400" />
+                          <div className="text-sm text-gray-600">
+                            {uploading ? 'Processing CSV...' : 'Click to upload CSV/Excel file'}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Supports .csv, .xlsx, .xls files
+                          </div>
+                        </label>
+                      </div>
+
+                      {csvFile && (
+                        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                          <div className="flex items-center gap-2 text-green-800">
+                            <FileText className="w-4 h-4" />
+                            <span className="font-medium">{csvFile.name}</span>
+                          </div>
+                          <div className="text-sm text-green-700 mt-1">
+                            {csvData.length} recipients loaded
+                            {mergeFields.length > 0 && (
+                              <span> • {mergeFields.length} merge fields available: {mergeFields.join(', ')}</span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {mergeFields.length > 0 && (
+                        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                          <div className="text-sm font-medium text-blue-800 mb-2">
+                            Available Merge Fields:
+                          </div>
+                          <div className="text-sm text-blue-700">
+                            Use these in your message: {mergeFields.map(field => `{{${field}}}`).join(', ')}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div>
