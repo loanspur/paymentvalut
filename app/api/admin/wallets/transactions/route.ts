@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
         .select(`
           id,
           partner_id,
-          partners!inner (
+          partners (
             id,
             name
           )
@@ -115,7 +115,7 @@ export async function GET(request: NextRequest) {
         partnerMap = wallets.reduce((acc, wallet) => {
           acc[wallet.id] = {
             partner_id: wallet.partner_id,
-            partner_name: wallet.partners?.[0]?.name || 'Unknown Partner'
+            partner_name: (wallet.partners as any)?.name || 'Unknown Partner'
           }
           return acc
         }, {})

@@ -8,137 +8,127 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    console.log('STK Push Callback received:', JSON.stringify(body, null, 2))
+    const callbackData = await request.json()
+    
+    console.log('NCBA STK Push Callback received:', callbackData)
 
-    const { 
+    // Extract callback data
+    const {
       Body: {
         stkCallback: {
           CheckoutRequestID,
           ResultCode,
           ResultDesc,
           CallbackMetadata
-        }
-      }
-    } = body
+        } = {}
+      } = {}
+    } = callbackData
 
-    // Find the STK Push log by CheckoutRequestID
-    const { data: stkLog, error: stkLogError } = await supabase
+    if (!CheckoutRequestID) {
+      console.error('No CheckoutRequestID in callback')
+      return NextResponse.json({ success: false, error: 'Invalid callback data' }, { status: 400 })
+    }
+
+    // Find the STK Push log record
+    const { data: stkPushLog, error: stkPushError } = await supabase
       .from('ncb_stk_push_logs')
       .select('*')
-      .eq('checkout_request_id', CheckoutRequestID)
+      .eq('stk_push_transaction_id', CheckoutRequestID)
       .single()
 
-    if (stkLogError || !stkLog) {
-      console.error('STK Push log not found for CheckoutRequestID:', CheckoutRequestID)
+    if (stkPushError || !stkPushLog) {
+      console.error('STK Push log not found:', CheckoutRequestID)
       return NextResponse.json({ success: false, error: 'STK Push log not found' }, { status: 404 })
     }
 
     // Update STK Push log with callback data
     const updateData: any = {
-      callback_payload: body,
-      result_code: ResultCode,
-      result_description: ResultDesc,
+      stk_push_status: ResultCode === 0 ? 'completed' : 'failed',
+      ncb_callback_response: callbackData,
       updated_at: new Date().toISOString()
     }
 
     // If successful, extract transaction details
-    if (ResultCode === 0 && CallbackMetadata) {
-      const metadata = CallbackMetadata.Item || []
-      const mpesaReceiptNumber = metadata.find((item: any) => item.Name === 'MpesaReceiptNumber')?.Value
-      const transactionDate = metadata.find((item: any) => item.Name === 'TransactionDate')?.Value
-      const phoneNumber = metadata.find((item: any) => item.Name === 'PhoneNumber')?.Value
+    if (ResultCode === 0 && CallbackMetadata?.Item) {
+      const items = CallbackMetadata.Item
+      const receiptNumber = items.find((item: any) => item.Name === 'MpesaReceiptNumber')?.Value
+      const transactionDate = items.find((item: any) => item.Name === 'TransactionDate')?.Value
+      const phoneNumber = items.find((item: any) => item.Name === 'PhoneNumber')?.Value
 
-      updateData.mpesa_receipt_number = mpesaReceiptNumber
-      updateData.transaction_date = transactionDate
-      updateData.phone_number = phoneNumber
-      updateData.status = 'completed'
-    } else {
-      updateData.status = 'failed'
+      updateData.ncb_receipt_number = receiptNumber
+      updateData.ncb_transaction_date = transactionDate
+      updateData.ncb_phone_number = phoneNumber
     }
 
-    // Update the STK Push log
+    // Update STK Push log
     const { error: updateError } = await supabase
       .from('ncb_stk_push_logs')
       .update(updateData)
-      .eq('checkout_request_id', CheckoutRequestID)
+      .eq('stk_push_transaction_id', CheckoutRequestID)
 
     if (updateError) {
       console.error('Error updating STK Push log:', updateError)
     }
 
-    // If successful, create wallet transaction and update partner wallet
-    if (ResultCode === 0 && updateData.mpesa_receipt_number) {
-      try {
-        // Get partner wallet
-        const { data: wallet, error: walletError } = await supabase
-          .from('partner_wallets')
-          .select('*')
-          .eq('partner_id', stkLog.partner_id)
-          .single()
-
-        if (walletError || !wallet) {
-          console.error('Partner wallet not found:', stkLog.partner_id)
-        } else {
-          // Create wallet transaction
-          const { data: transaction, error: transactionError } = await supabase
-            .from('wallet_transactions')
-            .insert({
-              partner_id: stkLog.partner_id,
-              transaction_type: 'top_up',
-              amount: stkLog.amount,
-              currency: 'KES',
-              status: 'completed',
-              reference: updateData.mpesa_receipt_number,
-              description: `Wallet top-up via STK Push - ${stkLog.transaction_desc}`,
-              metadata: {
-                stk_push_log_id: stkLog.id,
-                checkout_request_id: CheckoutRequestID,
-                phone_number: updateData.phone_number,
-                transaction_date: updateData.transaction_date,
-                source: 'ncba_stk_push'
-              }
-            })
-            .select()
-            .single()
-
-          if (transactionError) {
-            console.error('Error creating wallet transaction:', transactionError)
-          } else {
-            // Update partner wallet balance
-            const newBalance = (wallet.balance || 0) + stkLog.amount
-            const { error: balanceError } = await supabase
-              .from('partner_wallets')
-              .update({ 
-                balance: newBalance,
-                updated_at: new Date().toISOString()
-              })
-              .eq('partner_id', stkLog.partner_id)
-
-            if (balanceError) {
-              console.error('Error updating wallet balance:', balanceError)
-            } else {
-              console.log(`Wallet balance updated for partner ${stkLog.partner_id}: ${wallet.balance} -> ${newBalance}`)
-            }
+    // If transaction was successful, update wallet transaction and balance
+    if (ResultCode === 0) {
+      // Update wallet transaction status
+      const { error: transactionError } = await supabase
+        .from('wallet_transactions')
+        .update({
+          status: 'completed',
+          metadata: {
+            ...stkPushLog.wallet_transaction?.metadata,
+            ncb_receipt_number: updateData.ncb_receipt_number,
+            ncb_transaction_date: updateData.ncb_transaction_date,
+            completed_at: new Date().toISOString()
           }
+        })
+        .eq('id', stkPushLog.wallet_transaction_id)
+
+      if (transactionError) {
+        console.error('Error updating wallet transaction:', transactionError)
+      } else {
+        // Update wallet balance using RPC function
+        const { error: balanceError } = await supabase
+          .rpc('update_partner_wallet_balance', {
+            p_partner_id: stkPushLog.partner_id,
+            p_amount: stkPushLog.amount,
+            p_transaction_type: 'top_up'
+          })
+
+        if (balanceError) {
+          console.error('Error updating wallet balance:', balanceError)
+        } else {
+          console.log('Wallet balance updated successfully for partner:', stkPushLog.partner_id)
         }
-      } catch (walletError) {
-        console.error('Error processing wallet update:', walletError)
+      }
+    } else {
+      // Transaction failed, update wallet transaction status
+      const { error: transactionError } = await supabase
+        .from('wallet_transactions')
+        .update({
+          status: 'failed',
+          metadata: {
+            ...stkPushLog.wallet_transaction?.metadata,
+            failure_reason: ResultDesc,
+            failed_at: new Date().toISOString()
+          }
+        })
+        .eq('id', stkPushLog.wallet_transaction_id)
+
+      if (transactionError) {
+        console.error('Error updating failed wallet transaction:', transactionError)
       }
     }
 
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Callback processed successfully' 
-    })
+    return NextResponse.json({ success: true, message: 'Callback processed successfully' })
 
   } catch (error) {
-    console.error('STK Push Callback Error:', error)
+    console.error('STK Callback Error:', error)
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }
     )
   }
 }
-
-

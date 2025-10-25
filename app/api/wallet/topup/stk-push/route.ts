@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verifyJWTToken } from '../../../../../lib/jwt-utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,17 +25,96 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get the current user's partner (for now, get first partner as demo)
-    const { data: partners, error: partnersError } = await supabase
-      .from('partners')
-      .select('id')
-      .limit(1)
+    // Validate phone number format (254XXXXXXXXX)
+    const phoneRegex = /^254\d{9}$/
+    if (!phoneRegex.test(phone_number)) {
+      return NextResponse.json(
+        { success: false, error: 'Phone number must be in format 254XXXXXXXXX' },
+        { status: 400 }
+      )
+    }
+
+    // Authentication check
+    const token = request.cookies.get('auth_token')?.value
+    
+    if (!token) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    // Verify the JWT token
+    const payload = await verifyJWTToken(token)
+    
+    if (!payload || !payload.userId) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid authentication' },
+        { status: 401 }
+      )
+    }
+
+    // Get current user from database
+    const { data: currentUser, error: userError } = await supabase
+      .from('users')
+      .select('id, role, partner_id, is_active')
+      .eq('id', payload.userId)
       .single()
 
-    if (partnersError || !partners) {
+    if (userError || !currentUser || !currentUser.is_active) {
       return NextResponse.json(
-        { success: false, error: 'No partner found' },
+        { success: false, error: 'User not found or inactive' },
+        { status: 401 }
+      )
+    }
+
+    // Get partner details
+    const { data: partner, error: partnerError } = await supabase
+      .from('partners')
+      .select('*')
+      .eq('id', currentUser.partner_id)
+      .eq('is_active', true)
+      .single()
+
+    if (partnerError || !partner) {
+      return NextResponse.json(
+        { success: false, error: 'Partner not found or inactive' },
         { status: 404 }
+      )
+    }
+
+    // Get global NCBA system settings
+    const { data: ncbaSettings, error: settingsError } = await supabase
+      .from('system_settings')
+      .select('setting_key, setting_value')
+      .in('setting_key', [
+        'ncba_business_short_code',
+        'ncba_notification_username', 
+        'ncba_notification_password',
+        'ncba_notification_secret_key',
+        'ncba_account_number',
+        'ncba_account_reference_separator'
+      ])
+
+    if (settingsError) {
+      console.error('Error fetching NCBA settings:', settingsError)
+      return NextResponse.json(
+        { success: false, error: 'Failed to fetch NCBA system settings' },
+        { status: 500 }
+      )
+    }
+
+    // Convert settings array to object
+    const settings = ncbaSettings.reduce((acc, setting) => {
+      acc[setting.setting_key] = setting.setting_value
+      return acc
+    }, {} as Record<string, string>)
+
+    // Check if global NCBA credentials are configured
+    if (!settings.ncba_notification_username || !settings.ncba_notification_password || !settings.ncba_notification_secret_key) {
+      return NextResponse.json(
+        { success: false, error: 'Global NCBA credentials not configured. Please configure NCBA system settings first.' },
+        { status: 400 }
       )
     }
 
@@ -42,7 +122,7 @@ export async function POST(request: NextRequest) {
     let { data: wallet, error: walletError } = await supabase
       .from('partner_wallets')
       .select('*')
-      .eq('partner_id', partners.id)
+      .eq('partner_id', partner.id)
       .single()
 
     if (walletError && walletError.code === 'PGRST116') {
@@ -50,7 +130,7 @@ export async function POST(request: NextRequest) {
       const { data: newWallet, error: createError } = await supabase
         .from('partner_wallets')
         .insert({
-          partner_id: partners.id,
+          partner_id: partner.id,
           current_balance: 0,
           currency: 'KES',
           low_balance_threshold: 1000,
@@ -104,25 +184,84 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Generate transaction reference for NCBA
+    const timestamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 14)
+    const business_short_code = settings.ncba_business_short_code || '880100'
+    const account_reference_separator = settings.ncba_account_reference_separator || '#'
+    const account_reference = `WALLET${account_reference_separator}${partner.id}`
+    const transaction_reference = `STK${timestamp}${Math.random().toString(36).substr(2, 4).toUpperCase()}`
+
+    // Create password (Base64 encoded) - using global NCBA credentials
+    const password = Buffer.from(`${business_short_code}${settings.ncba_notification_secret_key}${timestamp}`).toString('base64')
+
+    // Prepare STK Push request
+    const stkPushRequest = {
+      BusinessShortCode: business_short_code,
+      Password: password,
+      Timestamp: timestamp,
+      TransactionType: 'CustomerPayBillOnline',
+      Amount: Math.round(amount), // Amount in cents
+      PartyA: phone_number,
+      PartyB: business_short_code,
+      PhoneNumber: phone_number,
+      CallBackURL: `${process.env.NEXT_PUBLIC_APP_URL}/api/ncba/stk-callback`,
+      AccountReference: account_reference,
+      TransactionDesc: `Wallet Top-up - ${partner.name}`
+    }
+
+    // Get NCBA access token using global credentials
+    const authResponse = await fetch('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64')}`,
+        'Content-Type': 'application/json'
+      }
+    })
+
+    if (!authResponse.ok) {
+      console.error('NCBA Auth Error:', authResponse.status, await authResponse.text())
+      return NextResponse.json(
+        { success: false, error: 'Failed to authenticate with NCBA' },
+        { status: 500 }
+      )
+    }
+
+    const authData = await authResponse.json()
+    const access_token = authData.access_token
+
+    // Initiate STK Push
+    const stkPushResponse = await fetch('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(stkPushRequest)
+    })
+
+    const stkPushData = await stkPushResponse.json()
+
+    if (!stkPushResponse.ok) {
+      console.error('NCBA STK Push Error:', stkPushData)
+      return NextResponse.json(
+        { success: false, error: `NCBA STK Push failed: ${stkPushData.errorMessage || 'Unknown error'}` },
+        { status: 500 }
+      )
+    }
+
     // Create STK Push log record
-    const stkPushTransactionId = `STK_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    
     const { data: stkPushLog, error: stkPushError } = await supabase
       .from('ncb_stk_push_logs')
       .insert({
-        partner_id: partners.id,
+        partner_id: partner.id,
         wallet_transaction_id: walletTransaction.id,
-        stk_push_transaction_id: stkPushTransactionId,
+        stk_push_transaction_id: stkPushData.CheckoutRequestID,
         partner_phone: phone_number,
         amount: amount,
-        ncb_paybill_number: '880100',
-        ncb_account_number: '123456', // This should come from system settings
+        ncb_paybill_number: business_short_code,
+        ncb_account_number: account_reference,
         stk_push_status: 'initiated',
-        ncb_response: {
-          status: 'initiated',
-          message: 'STK Push initiated successfully',
-          transaction_id: stkPushTransactionId
-        }
+        ncb_response: stkPushData
       })
       .select()
       .single()
@@ -132,13 +271,12 @@ export async function POST(request: NextRequest) {
       // Don't fail the request, just log the error
     }
 
-    // TODO: Integrate with actual NCBA STK Push API
-    // For now, we'll simulate the STK Push initiation
-    console.log('STK Push initiated:', {
+    console.log('STK Push initiated successfully:', {
       phone_number,
       amount,
-      transaction_id: stkPushTransactionId,
-      wallet_transaction_id: walletTransaction.id
+      checkout_request_id: stkPushData.CheckoutRequestID,
+      wallet_transaction_id: walletTransaction.id,
+      partner_id: partner.id
     })
 
     return NextResponse.json({
@@ -147,7 +285,8 @@ export async function POST(request: NextRequest) {
       data: {
         wallet_transaction: walletTransaction,
         stk_push_log: stkPushLog,
-        stk_push_transaction_id: stkPushTransactionId
+        checkout_request_id: stkPushData.CheckoutRequestID,
+        merchant_request_id: stkPushData.MerchantRequestID
       }
     })
 

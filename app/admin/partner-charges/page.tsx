@@ -90,6 +90,8 @@ export default function PartnerChargesPage() {
     charge_frequency: 'per_transaction',
     description: ''
   })
+  const [isCustomChargeType, setIsCustomChargeType] = useState(false)
+  const [customChargeType, setCustomChargeType] = useState('')
   const [filters, setFilters] = useState({
     partner_id: '',
     charge_type: '',
@@ -277,6 +279,8 @@ export default function PartnerChargesPage() {
       charge_frequency: 'per_transaction',
       description: ''
     })
+    setIsCustomChargeType(false)
+    setCustomChargeType('')
   }
 
   const openEditModal = (charge: PartnerCharge) => {
@@ -294,6 +298,17 @@ export default function PartnerChargesPage() {
       charge_frequency: charge.charge_frequency,
       description: charge.description || ''
     })
+    
+    // Check if this is a custom charge type (not in predefined list)
+    const predefinedTypes = ['disbursement', 'float_purchase', 'top_up', 'manual_allocation', 'sms_charge', 'api_usage', 'transaction_fee', 'monthly_subscription']
+    if (!predefinedTypes.includes(charge.charge_type)) {
+      setIsCustomChargeType(true)
+      setCustomChargeType(charge.charge_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))
+    } else {
+      setIsCustomChargeType(false)
+      setCustomChargeType('')
+    }
+    
     setShowEditModal(true)
   }
 
@@ -677,17 +692,63 @@ export default function PartnerChargesPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Charge Type *</label>
-                  <select
-                    value={formData.charge_type}
-                    onChange={(e) => setFormData(prev => ({ ...prev, charge_type: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">Select Type</option>
-                    <option value="disbursement">Disbursement</option>
-                    <option value="float_purchase">Float Purchase</option>
-                    <option value="top_up">Top Up</option>
-                    <option value="manual_allocation">Manual Allocation</option>
-                  </select>
+                  
+                  {!isCustomChargeType ? (
+                    <div className="space-y-2">
+                      <select
+                        value={formData.charge_type}
+                        onChange={(e) => {
+                          if (e.target.value === 'custom') {
+                            setIsCustomChargeType(true)
+                            setFormData(prev => ({ ...prev, charge_type: '' }))
+                          } else {
+                            setFormData(prev => ({ ...prev, charge_type: e.target.value }))
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">Select Type</option>
+                        <option value="disbursement">Disbursement</option>
+                        <option value="float_purchase">Float Purchase</option>
+                        <option value="top_up">Top Up</option>
+                        <option value="manual_allocation">Manual Allocation</option>
+                        <option value="sms_charge">SMS Charge</option>
+                        <option value="api_usage">API Usage</option>
+                        <option value="transaction_fee">Transaction Fee</option>
+                        <option value="monthly_subscription">Monthly Subscription</option>
+                        <option value="custom">+ Add New Type</option>
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={customChargeType}
+                          onChange={(e) => {
+                            setCustomChargeType(e.target.value)
+                            setFormData(prev => ({ ...prev, charge_type: e.target.value.toLowerCase().replace(/\s+/g, '_') }))
+                          }}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Enter new charge type (e.g., SMS Bulk, API Call)"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCustomChargeType(false)
+                            setCustomChargeType('')
+                            setFormData(prev => ({ ...prev, charge_type: '' }))
+                          }}
+                          className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        Custom charge type will be saved as: <span className="font-mono bg-gray-100 px-1 rounded">{formData.charge_type || 'charge_type'}</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div>

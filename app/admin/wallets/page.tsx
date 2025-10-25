@@ -16,7 +16,8 @@ import {
   CreditCard,
   History,
   CheckCircle,
-  X
+  X,
+  MessageSquare
 } from 'lucide-react'
 
 interface PartnerWallet {
@@ -251,8 +252,31 @@ export default function AdminWalletsPage() {
         return <Plus className="w-4 h-4 text-green-600" />
       case 'manual_debit':
         return <TrendingDown className="w-4 h-4 text-red-600" />
+      case 'sms_charge':
+        return <MessageSquare className="w-4 h-4 text-purple-600" />
       default:
         return <Wallet className="w-4 h-4 text-gray-600" />
+    }
+  }
+
+  const formatTransactionType = (type: string) => {
+    switch (type) {
+      case 'topup':
+        return 'Wallet Top-up'
+      case 'disbursement':
+        return 'M-Pesa Disbursement'
+      case 'b2c_float_purchase':
+        return 'B2C Float Purchase'
+      case 'charge':
+        return 'Transaction Charge'
+      case 'manual_credit':
+        return 'Manual Credit'
+      case 'manual_debit':
+        return 'Manual Debit'
+      case 'sms_charge':
+        return 'SMS Charge'
+      default:
+        return type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
     }
   }
 
@@ -630,8 +654,8 @@ export default function AdminWalletsPage() {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             {getTransactionIcon(transaction.transaction_type)}
-                            <span className="ml-2 text-sm font-medium text-gray-900 capitalize">
-                              {transaction.transaction_type.replace('_', ' ')}
+                            <span className="ml-2 text-sm font-medium text-gray-900">
+                              {formatTransactionType(transaction.transaction_type)}
                             </span>
                           </div>
                         </td>

@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useAuth } from './AuthProvider'
 import { usePathname } from 'next/navigation'
 import Sidebar from './Sidebar'
-import Breadcrumb from './Breadcrumb'
+import { ToastProvider } from './ToastSimple'
 import { Bell, User, LogOut } from 'lucide-react'
 
 interface AppLayoutProps {
@@ -21,18 +21,17 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup', '/request-password-reset', '/reset-password']
   const isPublicRoute = publicRoutes.includes(pathname)
 
-  // For public routes, just render children without the protected layout
-  if (isPublicRoute) {
-    return <>{children}</>
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {/* Sidebar */}
-      <Sidebar />
-      
-      {/* Main content area */}
-      <div className="flex-1 flex flex-col lg:ml-0 min-w-0">
+    <ToastProvider>
+      {isPublicRoute ? (
+        children
+      ) : (
+        <div className="min-h-screen bg-gray-50 flex">
+          {/* Sidebar */}
+          <Sidebar />
+          
+          {/* Main content area */}
+          <div className="flex-1 flex flex-col lg:ml-0 min-w-0">
         {/* Header - mobile-first responsive */}
         <header className="sticky top-0 bg-white border-b border-gray-200 px-3 py-3 sm:px-4 sm:py-4 lg:px-6 shadow-sm z-20">
           <div className="flex items-center justify-between">
@@ -82,13 +81,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
         {/* Main content - mobile-first padding */}
         <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-y-auto lg:overflow-y-visible">
-          <div className="w-full max-w-full">
-            {pathname !== '/' && pathname !== '/transactions' && pathname !== '/partners' && pathname !== '/history' && pathname !== '/loan-tracking' && pathname !== '/wallet' && pathname !== '/admin-dashboard' && pathname !== '/admin/wallets' && pathname !== '/admin/partner-charges' && pathname !== '/admin/disbursement-retries' && pathname !== '/profile' && pathname !== '/disburse' && pathname !== '/management/ncba-transactions' && <Breadcrumb />}
+          <div className="w-full">
             {children}
           </div>
-        </main>
-      </div>
-    </div>
+          </main>
+        </div>
+        </div>
+      )}
+    </ToastProvider>
   )
 }
 

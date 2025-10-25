@@ -25,7 +25,8 @@ import {
   ChevronRight,
   Bell,
   HelpCircle,
-  RefreshCw
+  RefreshCw,
+  MessageSquare
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -170,6 +171,32 @@ export default function Sidebar({ className = '' }: SidebarProps) {
             href: '/settings',
             icon: Settings,
             description: 'Configure system'
+          }] : [])
+        ]
+      },
+      {
+        title: 'SMS Management',
+        items: [
+          // Only show SMS Settings for super_admin and admin
+          ...(isSuperAdmin || isAdmin ? [{
+            name: 'SMS Settings',
+            href: '/admin/sms-settings',
+            icon: MessageSquare,
+            description: 'Configure Damza SMS settings'
+          }] : []),
+          // Only show SMS Templates for super_admin and admin
+          ...(isSuperAdmin || isAdmin ? [{
+            name: 'SMS Templates',
+            href: '/admin/sms-templates',
+            icon: FileText,
+            description: 'Manage SMS message templates'
+          }] : []),
+          // Only show Bulk SMS Campaigns for super_admin and admin
+          ...(isSuperAdmin || isAdmin ? [{
+            name: 'Bulk SMS Campaigns',
+            href: '/admin/sms-campaigns',
+            icon: Bell,
+            description: 'Create and manage bulk SMS campaigns'
           }] : [])
         ]
       },
