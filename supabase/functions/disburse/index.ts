@@ -254,7 +254,8 @@ serve(async (req) => {
       body.msisdn,
       body.amount,
       clientIp,
-      body.client_request_id
+      body.client_request_id,
+      'ussd' // Pass origin to bypass restrictions for USSD transactions
     )
 
     if (duplicateCheck.isDuplicate) {

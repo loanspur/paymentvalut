@@ -35,16 +35,36 @@ export class DuplicatePreventionService {
     msisdn: string,
     amount: number,
     clientIp: string,
-    clientRequestId: string
+    clientRequestId: string,
+    origin?: string
   ): Promise<DuplicateCheckResult> {
     
-    // 1. Check basic idempotency (client_request_id)
+    // 1. Check basic idempotency (client_request_id) - Always check this
     const idempotencyCheck = await this.checkIdempotency(partnerId, clientRequestId)
     if (idempotencyCheck.isDuplicate) {
       return idempotencyCheck
     }
 
-    // 2. Check time-based restrictions
+    // 2. BYPASS: Skip restrictions for USSD transactions to prevent blocking legitimate transactions
+    if (origin === 'ussd') {
+      console.log('🚀 [USSD Bypass] Skipping duplicate prevention restrictions for USSD transaction')
+      return { isDuplicate: false }
+    }
+
+    // 3. Check if restrictions are disabled for this partner
+    const { data: restrictions } = await this.supabaseClient
+      .from('disbursement_restrictions')
+      .select('is_enabled')
+      .eq('partner_id', partnerId)
+      .eq('is_enabled', true)
+      .limit(1)
+
+    if (!restrictions || restrictions.length === 0) {
+      console.log('🚀 [Restrictions Disabled] No active restrictions found for partner, allowing transaction')
+      return { isDuplicate: false }
+    }
+
+    // 4. Check time-based restrictions
     const timeBasedCheck = await this.checkTimeBasedRestrictions(
       partnerId, customerId, msisdn, amount, clientIp
     )
@@ -52,7 +72,7 @@ export class DuplicatePreventionService {
       return timeBasedCheck
     }
 
-    // 3. Check daily limits
+    // 5. Check daily limits
     const dailyLimitCheck = await this.checkDailyLimits(
       partnerId, customerId, clientIp, amount
     )
@@ -60,7 +80,7 @@ export class DuplicatePreventionService {
       return dailyLimitCheck
     }
 
-    // 4. Check active blocks
+    // 6. Check active blocks
     const blockCheck = await this.checkActiveBlocks(
       partnerId, customerId, clientIp
     )
