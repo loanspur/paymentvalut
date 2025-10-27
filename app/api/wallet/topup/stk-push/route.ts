@@ -186,15 +186,58 @@ export async function POST(request: NextRequest) {
           
           const decryptData = async (encryptedData: string, passphrase: string): Promise<string> => {
             try {
-              const key = crypto.scryptSync(passphrase, 'salt', 32)
-              const iv = Buffer.from(encryptedData.slice(0, 32), 'hex')
-              const encrypted = encryptedData.slice(32)
-              const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
-              let decrypted = decipher.update(encrypted, 'hex', 'utf8')
-              decrypted += decipher.final('utf8')
-              return decrypted
+              // Try different decryption methods
+              
+              // Method 1: Current format (iv + encrypted data)
+              if (encryptedData.length > 32 && encryptedData.slice(32).length > 0) {
+                try {
+                  const key = crypto.scryptSync(passphrase, 'salt', 32)
+                  const iv = Buffer.from(encryptedData.slice(0, 32), 'hex')
+                  const encrypted = encryptedData.slice(32)
+                  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
+                  let decrypted = decipher.update(encrypted, 'hex', 'utf8')
+                  decrypted += decipher.final('utf8')
+                  return decrypted
+                } catch (error) {
+                  console.log(`   Method 1 failed for ${setting.setting_key}, trying method 2...`)
+                }
+              }
+              
+              // Method 2: Format with colon separator (iv:encrypted)
+              if (encryptedData.includes(':')) {
+                try {
+                  const parts = encryptedData.split(':')
+                  if (parts.length === 2) {
+                    const key = crypto.scryptSync(passphrase, 'salt', 32)
+                    const iv = Buffer.from(parts[0], 'hex')
+                    const encrypted = parts[1]
+                    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
+                    let decrypted = decipher.update(encrypted, 'hex', 'utf8')
+                    decrypted += decipher.final('utf8')
+                    return decrypted
+                  }
+                } catch (error) {
+                  console.log(`   Method 2 failed for ${setting.setting_key}, trying method 3...`)
+                }
+              }
+              
+              // Method 3: Simple base64 decode (if it's just base64 encoded)
+              try {
+                const decoded = Buffer.from(encryptedData, 'base64').toString('utf8')
+                // Check if it looks like plain text (no special characters that would indicate encryption)
+                if (/^[a-zA-Z0-9@._-]+$/.test(decoded)) {
+                  return decoded
+                }
+              } catch (error) {
+                console.log(`   Method 3 failed for ${setting.setting_key}`)
+              }
+              
+              // If all methods fail, return the original data
+              console.log(`   All decryption methods failed for ${setting.setting_key}, returning original`)
+              return encryptedData
+              
             } catch (error) {
-              console.error('Decryption error:', error)
+              console.error(`   Decryption error for ${setting.setting_key}:`, error.message)
               return encryptedData // Return original if decryption fails
             }
           }
@@ -346,11 +389,15 @@ export async function POST(request: NextRequest) {
       console.error('❌ NCBA Auth Error:', {
         status: authResponse.status,
         statusText: authResponse.statusText,
-        errorText: errorText
+        errorText: errorText,
+        username: settings.ncba_notification_username,
+        passwordLength: settings.ncba_notification_password?.length || 0
       })
       
       let errorMessage = 'Failed to authenticate with NCBA'
-      if (authResponse.status === 401) {
+      if (authResponse.status === 400) {
+        errorMessage = 'NCBA authentication failed: Bad request. Please check your NCBA credentials format and ensure they are correct.'
+      } else if (authResponse.status === 401) {
         errorMessage = 'NCBA authentication failed: Invalid credentials. Please check your NCBA username and password in system settings.'
       } else if (authResponse.status === 403) {
         errorMessage = 'NCBA access forbidden: Please check your NCBA account permissions.'
