@@ -39,6 +39,9 @@ export interface CreateUserData {
   role: string
   partner_id?: string
   notes?: string
+  two_factor_enabled?: boolean
+  password_change_required?: boolean
+  profile_picture_url?: string
 }
 
 export interface UpdateUserData {
@@ -281,6 +284,11 @@ export class UserService {
       if (userData.department) userInsertData.department = userData.department
       if (userData.partner_id) userInsertData.partner_id = userData.partner_id
       if (userData.notes) userInsertData.notes = userData.notes
+      if (userData.profile_picture_url) userInsertData.profile_picture_url = userData.profile_picture_url
+      
+      // Add security settings
+      if (userData.two_factor_enabled !== undefined) userInsertData.two_factor_enabled = userData.two_factor_enabled
+      if (userData.password_change_required !== undefined) userInsertData.password_change_required = userData.password_change_required
 
       // Create user with all provided fields
       const { data: newUser, error } = await supabase
@@ -299,6 +307,9 @@ export class UserService {
           email_verified,
           phone_verified,
           notes,
+          profile_picture_url,
+          two_factor_enabled,
+          password_change_required,
           created_at,
           updated_at
         `)

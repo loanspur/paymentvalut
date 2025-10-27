@@ -81,8 +81,14 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
     role: 'partner' as 'super_admin' | 'admin' | 'partner_admin' | 'operator' | 'viewer' | 'partner',
     partner_id: '',
     shortcode_access: [] as any[],
-    notes: ''
+    notes: '',
+    two_factor_enabled: false,
+    password_change_required: true,
+    profile_picture_url: ''
   })
+  
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({})
+  const [isValidating, setIsValidating] = useState(false)
 
   const { notifications, addNotification, removeNotification } = useNotifications()
 
@@ -91,6 +97,60 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
       loadData()
     }
   }, [isAdmin])
+
+  // Form validation function
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {}
+    
+    // Mandatory fields validation
+    if (!userForm.email.trim()) {
+      errors.email = 'Email address is required'
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userForm.email)) {
+      errors.email = 'Please enter a valid email address'
+    }
+    
+    if (!userForm.password.trim() && !editingUser) {
+      errors.password = 'Password is required for new users'
+    } else if (userForm.password.trim() && userForm.password.length < 8) {
+      errors.password = 'Password must be at least 8 characters long'
+    }
+    
+    if (!userForm.first_name.trim()) {
+      errors.first_name = 'First name is required'
+    }
+    
+    if (!userForm.last_name.trim()) {
+      errors.last_name = 'Last name is required'
+    }
+    
+    if (!userForm.phone_number.trim()) {
+      errors.phone_number = 'Phone number is required for OTP verification'
+    } else if (!/^\+?[1-9]\d{1,14}$/.test(userForm.phone_number.replace(/\s/g, ''))) {
+      errors.phone_number = 'Please enter a valid phone number (e.g., +254700000000)'
+    }
+    
+    if (!userForm.department.trim()) {
+      errors.department = 'Department is required for organizational structure'
+    }
+    
+    // Partner-specific validation
+    if (['partner', 'partner_admin', 'operator', 'viewer'].includes(userForm.role) && !userForm.partner_id) {
+      errors.partner_id = 'Partner assignment is required for this role'
+    }
+    
+    setFormErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  // Real-time validation
+  const handleFieldChange = (field: string, value: string | boolean) => {
+    setUserForm(prev => ({ ...prev, [field]: value }))
+    
+    // Clear error when user starts typing
+    if (formErrors[field]) {
+      setFormErrors(prev => ({ ...prev, [field]: '' }))
+    }
+  }
 
   const loadData = async () => {
     try {
@@ -146,6 +206,19 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
   }
 
   const handleCreateUser = async () => {
+    setIsValidating(true)
+    
+    // Validate form before submission
+    if (!validateForm()) {
+      setIsValidating(false)
+      addNotification({
+        type: 'error',
+        title: 'Validation Error',
+        message: 'Please fix the errors below before creating the user'
+      })
+      return
+    }
+    
     try {
       const response = await fetch('/api/user-management', {
         method: 'POST',
@@ -161,7 +234,7 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
         addNotification({
           type: 'success',
           title: 'Success',
-          message: 'User created successfully'
+          message: 'User created successfully with email and phone verification sent'
         })
         setShowUserModal(false)
         resetForm()
@@ -179,6 +252,8 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
         title: 'Error',
         message: 'Failed to create user'
       })
+    } finally {
+      setIsValidating(false)
     }
   }
 
@@ -313,9 +388,13 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
       role: 'partner',
       partner_id: '',
       shortcode_access: [],
-      notes: ''
+      notes: '',
+      two_factor_enabled: false,
+      password_change_required: true,
+      profile_picture_url: ''
     })
     setEditingUser(null)
+    setFormErrors({})
   }
 
   const getRoleIcon = (role: string) => {
@@ -557,152 +636,278 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
               <form onSubmit={(e) => {
                 e.preventDefault()
                 editingUser ? handleUpdateUser() : handleCreateUser()
-              }} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
+              }} className="space-y-6">
+                {/* Personal Information Section */}
+                <div className="border-b border-gray-200 pb-4">
+                  <h4 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                    <User className="w-5 h-5 mr-2" />
+                    Personal Information
+                  </h4>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        First Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={userForm.first_name}
+                        onChange={(e) => handleFieldChange('first_name', e.target.value)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                          formErrors.first_name ? 'border-red-300' : 'border-gray-300'
+                        }`}
+                        placeholder="John"
+                        required
+                      />
+                      {formErrors.first_name && (
+                        <p className="mt-1 text-sm text-red-600">{formErrors.first_name}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Last Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={userForm.last_name}
+                        onChange={(e) => handleFieldChange('last_name', e.target.value)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                          formErrors.last_name ? 'border-red-300' : 'border-gray-300'
+                        }`}
+                        placeholder="Doe"
+                        required
+                      />
+                      {formErrors.last_name && (
+                        <p className="mt-1 text-sm text-red-600">{formErrors.last_name}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      First Name
+                      Email Address <span className="text-red-500">*</span>
                     </label>
                     <input
-                      type="text"
-                      value={userForm.first_name}
-                      onChange={(e) => setUserForm({...userForm, first_name: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="John"
+                      type="email"
+                      value={userForm.email}
+                      onChange={(e) => handleFieldChange('email', e.target.value)}
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        formErrors.email ? 'border-red-300' : 'border-gray-300'
+                      }`}
+                      placeholder="user@example.com"
+                      required
                     />
+                    {formErrors.email && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.email}</p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">Used for login and system notifications</p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Last Name
-                    </label>
-                    <input
-                      type="text"
-                      value={userForm.last_name}
-                      onChange={(e) => setUserForm({...userForm, last_name: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Doe"
-                    />
-                  </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    value={userForm.email}
-                    onChange={(e) => setUserForm({...userForm, email: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="user@example.com"
-                    required
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
+                  <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Phone Number
+                      Phone Number <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="tel"
                       value={userForm.phone_number}
-                      onChange={(e) => setUserForm({...userForm, phone_number: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="+254 700 000 000"
+                      onChange={(e) => handleFieldChange('phone_number', e.target.value)}
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        formErrors.phone_number ? 'border-red-300' : 'border-gray-300'
+                      }`}
+                      placeholder="+254700000000"
+                      required
                     />
+                    {formErrors.phone_number && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.phone_number}</p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">Required for OTP verification and SMS notifications</p>
                   </div>
+                </div>
+
+                {/* Professional Information Section */}
+                <div className="border-b border-gray-200 pb-4">
+                  <h4 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                    <Building2 className="w-5 h-5 mr-2" />
+                    Professional Information
+                  </h4>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Department <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={userForm.department}
+                        onChange={(e) => handleFieldChange('department', e.target.value)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                          formErrors.department ? 'border-red-300' : 'border-gray-300'
+                        }`}
+                        required
+                      >
+                        <option value="">Select Department</option>
+                        <option value="Finance">Finance</option>
+                        <option value="Operations">Operations</option>
+                        <option value="IT">IT</option>
+                        <option value="Customer Service">Customer Service</option>
+                        <option value="Management">Management</option>
+                        <option value="Compliance">Compliance</option>
+                        <option value="Other">Other</option>
+                      </select>
+                      {formErrors.department && (
+                        <p className="mt-1 text-sm text-red-600">{formErrors.department}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Role <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={userForm.role}
+                        onChange={(e) => handleFieldChange('role', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        required
+                      >
+                        <option value="viewer">Viewer (Read-only Access)</option>
+                        <option value="operator">Operator (Limited Write Access)</option>
+                        <option value="partner">Partner (Basic Partner Access)</option>
+                        <option value="partner_admin">Partner Admin (Partner Management)</option>
+                        <option value="admin">Admin (System Management)</option>
+                        <option value="super_admin">Super Admin (Full System Access)</option>
+                      </select>
+                      <p className="mt-1 text-xs text-gray-500">Determines system access level</p>
+                    </div>
+                  </div>
+
+                  {(userForm.role === 'partner' || userForm.role === 'partner_admin' || userForm.role === 'operator' || userForm.role === 'viewer') && (
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Partner Assignment <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={userForm.partner_id}
+                        onChange={(e) => handleFieldChange('partner_id', e.target.value)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                          formErrors.partner_id ? 'border-red-300' : 'border-gray-300'
+                        }`}
+                        required={['partner', 'partner_admin', 'operator', 'viewer'].includes(userForm.role)}
+                      >
+                        <option value="">Select a partner</option>
+                        {partners.map(partner => (
+                          <option key={partner.id} value={partner.id}>
+                            {partner.name} ({partner.short_code})
+                          </option>
+                        ))}
+                      </select>
+                      {formErrors.partner_id && (
+                        <p className="mt-1 text-sm text-red-600">{formErrors.partner_id}</p>
+                      )}
+                      <p className="mt-1 text-xs text-gray-500">Required for partner-related roles</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Security Section */}
+                <div className="border-b border-gray-200 pb-4">
+                  <h4 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                    <Shield className="w-5 h-5 mr-2" />
+                    Security Settings
+                  </h4>
+                  
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Department
+                      Password <span className="text-red-500">*</span>
                     </label>
-                    <input
-                      type="text"
-                      value={userForm.department}
-                      onChange={(e) => setUserForm({...userForm, department: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Finance, Operations, etc."
-                    />
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={userForm.password}
+                        onChange={(e) => handleFieldChange('password', e.target.value)}
+                        className={`w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                          formErrors.password ? 'border-red-300' : 'border-gray-300'
+                        }`}
+                        placeholder={editingUser ? 'Leave empty to keep current password' : 'Enter secure password'}
+                        required={!editingUser}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
+                      </button>
+                    </div>
+                    {formErrors.password && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.password}</p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">Minimum 8 characters, include numbers and special characters</p>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="password_change_required"
+                        checked={userForm.password_change_required}
+                        onChange={(e) => handleFieldChange('password_change_required', e.target.checked)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="password_change_required" className="ml-2 block text-sm text-gray-700">
+                        Require password change on first login
+                      </label>
+                    </div>
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="two_factor_enabled"
+                        checked={userForm.two_factor_enabled}
+                        onChange={(e) => handleFieldChange('two_factor_enabled', e.target.checked)}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="two_factor_enabled" className="ml-2 block text-sm text-gray-700">
+                        Enable two-factor authentication
+                      </label>
+                    </div>
                   </div>
                 </div>
 
+                {/* Additional Information Section */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={userForm.password}
-                      onChange={(e) => setUserForm({...userForm, password: e.target.value})}
-                      className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder={editingUser ? 'Leave empty to keep current password' : 'Enter password'}
-                      required={!editingUser}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4 text-gray-400" /> : <Eye className="w-4 h-4 text-gray-400" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Role
-                  </label>
-                  <select
-                    value={userForm.role}
-                    onChange={(e) => setUserForm({...userForm, role: e.target.value as any})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="viewer">Viewer (Read-only)</option>
-                    <option value="operator">Operator (Limited Write)</option>
-                    <option value="partner">Partner (Basic Access)</option>
-                    <option value="partner_admin">Partner Admin (Partner Management)</option>
-                    <option value="admin">Admin (System Management)</option>
-                    <option value="super_admin">Super Admin (Full Access)</option>
-                  </select>
-                </div>
-
-                {(userForm.role === 'partner' || userForm.role === 'partner_admin' || userForm.role === 'operator' || userForm.role === 'viewer') && (
+                  <h4 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                    <Settings className="w-5 h-5 mr-2" />
+                    Additional Information
+                  </h4>
+                  
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Partner
+                      Profile Picture URL
                     </label>
-                    <select
-                      value={userForm.partner_id}
-                      onChange={(e) => setUserForm({...userForm, partner_id: e.target.value})}
+                    <input
+                      type="url"
+                      value={userForm.profile_picture_url}
+                      onChange={(e) => handleFieldChange('profile_picture_url', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      required={['partner', 'partner_admin', 'operator', 'viewer'].includes(userForm.role)}
-                    >
-                      <option value="">Select a partner</option>
-                      {partners.map(partner => (
-                        <option key={partner.id} value={partner.id}>
-                          {partner.name} ({partner.short_code})
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="https://example.com/profile.jpg"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Optional profile picture URL</p>
                   </div>
-                )}
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Notes
-                  </label>
-                  <textarea
-                    value={userForm.notes}
-                    onChange={(e) => setUserForm({...userForm, notes: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    rows={3}
-                    placeholder="Additional notes about this user..."
-                  />
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Admin Notes
+                    </label>
+                    <textarea
+                      value={userForm.notes}
+                      onChange={(e) => handleFieldChange('notes', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      rows={3}
+                      placeholder="Additional notes about this user (internal use only)..."
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Internal notes visible only to admins</p>
+                  </div>
                 </div>
 
-                <div className="flex justify-end space-x-3 pt-4">
+                {/* Form Actions */}
+                <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
                   <button
                     type="button"
                     onClick={() => {
@@ -715,9 +920,20 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    disabled={isValidating}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                   >
-                    {editingUser ? 'Update User' : 'Create User'}
+                    {isValidating ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        {editingUser ? 'Updating...' : 'Creating...'}
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 mr-2" />
+                        {editingUser ? 'Update User' : 'Create User'}
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
