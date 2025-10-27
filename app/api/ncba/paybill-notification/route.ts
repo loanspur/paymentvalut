@@ -301,6 +301,8 @@ export async function POST(request: NextRequest) {
             current_balance: newBalance,
             currency: 'KES',
             is_active: true,
+            last_topup_date: currentUtcTime,
+            last_topup_amount: parseFloat(TransAmount),
             updated_at: currentUtcTime
           })
 

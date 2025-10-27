@@ -98,20 +98,36 @@ export async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, any>)
 
-    // Transform data to include partner information and calculate wallet balance after
+    // Group transactions by wallet_id for efficient balance calculation
+    const walletTransactionGroups: Record<string, any[]> = {}
+    data?.forEach(transaction => {
+      if (!walletTransactionGroups[transaction.wallet_id]) {
+        walletTransactionGroups[transaction.wallet_id] = []
+      }
+      walletTransactionGroups[transaction.wallet_id].push(transaction)
+    })
+
+    // Calculate running balances for each wallet
+    const walletRunningBalances: Record<string, number> = {}
+    Object.keys(walletTransactionGroups).forEach(walletId => {
+      const transactions = walletTransactionGroups[walletId]
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      
+      let runningBalance = 0
+      transactions.forEach(transaction => {
+        if (transaction.transaction_type === 'top_up' || transaction.transaction_type === 'manual_credit') {
+          runningBalance += Math.abs(transaction.amount)
+        } else {
+          runningBalance -= Math.abs(transaction.amount)
+        }
+        walletRunningBalances[`${walletId}_${transaction.id}`] = runningBalance
+      })
+    })
+
+    // Transform data to include partner information and calculated wallet balance after
     const transformedData = data?.map((transaction) => {
       const walletInfo = walletMap[transaction.wallet_id]
-      
-      // Calculate wallet balance after this transaction
-      // For now, we'll use a simple calculation based on transaction type
-      // In a real implementation, you might want to calculate this more accurately
-      let balanceAfter = walletInfo?.current_balance || 0
-      
-      if (transaction.transaction_type === 'top_up' || transaction.transaction_type === 'manual_credit') {
-        balanceAfter = (walletInfo?.current_balance || 0) + Math.abs(transaction.amount)
-      } else {
-        balanceAfter = (walletInfo?.current_balance || 0) - Math.abs(transaction.amount)
-      }
+      const balanceAfter = walletRunningBalances[`${transaction.wallet_id}_${transaction.id}`] || 0
 
       return {
         ...transaction,
