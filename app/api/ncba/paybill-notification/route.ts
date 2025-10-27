@@ -179,11 +179,11 @@ export async function POST(request: NextRequest) {
     })
     
     if (BillRefNumber === accountNumber && partnerIdentifier) {
-      // Try to find partner by short code (Narrative field)
+      // Try to find partner by short code (Narrative field) - case insensitive
       const { data: partnerData, error: partnerError } = await supabase
         .from('partners')
         .select('*')
-        .eq('short_code', partnerIdentifier)
+        .ilike('short_code', partnerIdentifier)
         .eq('is_active', true)
         .single()
 
