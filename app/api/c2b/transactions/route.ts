@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
     if (partnerIds.length > 0) {
       const { data: partners, error: partnersError } = await supabase
         .from('partners')
-        .select('id, name, short_code, contact_email')
+        .select('id, name, short_code')
         .in('id', partnerIds)
       
       if (!partnersError && partners) {
