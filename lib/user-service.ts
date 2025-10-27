@@ -37,6 +37,7 @@ export interface CreateUserData {
   phone_number?: string
   department?: string
   role: string
+  partner_id?: string
   notes?: string
 }
 
@@ -261,21 +262,43 @@ export class UserService {
       const saltRounds = 12
       const password_hash = await bcrypt.hash(userData.password, saltRounds)
 
-      // Create user with only basic fields
+      // Prepare user data with all fields
+      const userInsertData: any = {
+        email: userData.email,
+        password_hash,
+        role: userData.role,
+        is_active: true,
+        email_verified: false, // New users need email verification
+        phone_verified: false,  // New users need phone verification
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+
+      // Add optional fields if provided
+      if (userData.first_name) userInsertData.first_name = userData.first_name
+      if (userData.last_name) userInsertData.last_name = userData.last_name
+      if (userData.phone_number) userInsertData.phone_number = userData.phone_number
+      if (userData.department) userInsertData.department = userData.department
+      if (userData.partner_id) userInsertData.partner_id = userData.partner_id
+      if (userData.notes) userInsertData.notes = userData.notes
+
+      // Create user with all provided fields
       const { data: newUser, error } = await supabase
         .from('users')
-        .insert({
-          email: userData.email,
-          password_hash,
-          role: userData.role,
-          is_active: true
-        })
+        .insert(userInsertData)
         .select(`
           id,
           email,
+          first_name,
+          last_name,
+          phone_number,
+          department,
           role,
+          partner_id,
           is_active,
           email_verified,
+          phone_verified,
+          notes,
           created_at,
           updated_at
         `)
@@ -284,6 +307,28 @@ export class UserService {
       if (error) {
         console.error('Create user error:', error)
         return null
+      }
+
+      // Send email verification for new user
+      if (newUser.email) {
+        try {
+          await this.sendEmailVerification(newUser.email, newUser.id)
+          console.log('✅ Email verification sent to:', newUser.email)
+        } catch (emailError) {
+          console.error('❌ Failed to send email verification:', emailError)
+          // Don't fail user creation if email verification fails
+        }
+      }
+
+      // Send phone verification if phone number provided
+      if (newUser.phone_number) {
+        try {
+          await this.sendPhoneVerification(newUser.phone_number, newUser.id)
+          console.log('✅ Phone verification sent to:', newUser.phone_number)
+        } catch (phoneError) {
+          console.error('❌ Failed to send phone verification:', phoneError)
+          // Don't fail user creation if phone verification fails
+        }
       }
 
       return newUser
@@ -462,6 +507,243 @@ export class UserService {
     } catch (error) {
       console.error('Change password error:', error)
       return false
+    }
+  }
+
+  /**
+   * Send email verification for new user
+   */
+  static async sendEmailVerification(email: string, userId: string): Promise<boolean> {
+    try {
+      const { sendEmail } = await import('./email-utils')
+      
+      // Generate verification code
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString()
+      
+      // Store verification record
+      const { error: insertError } = await supabase
+        .from('email_verifications')
+        .insert({
+          user_id: userId,
+          email: email,
+          verification_code: verificationCode,
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+          status: 'pending'
+        })
+
+      if (insertError) {
+        console.error('Failed to create email verification record:', insertError)
+        return false
+      }
+
+      // Send verification email
+      const emailHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 28px;">Payment Vault</h1>
+            <p style="color: white; margin: 10px 0 0 0; font-size: 16px;">Email Verification</p>
+          </div>
+          
+          <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+            <h2 style="color: #333; margin: 0 0 20px 0;">Welcome to Payment Vault!</h2>
+            
+            <p style="color: #666; margin: 20px 0; line-height: 1.6;">
+              Thank you for joining Payment Vault. To complete your account setup, please verify your email address.
+            </p>
+            
+            <div style="background: white; border: 2px dashed #667eea; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
+              <p style="margin: 0; font-size: 14px; color: #666;">Your verification code is:</p>
+              <h1 style="color: #667eea; font-size: 36px; margin: 10px 0; letter-spacing: 8px; font-family: 'Courier New', monospace;">${verificationCode}</h1>
+            </div>
+            
+            <p style="color: #666; margin: 20px 0; line-height: 1.6;">
+              Enter this code in the email verification form to activate your account. 
+              This code will expire in <strong>24 hours</strong>.
+            </p>
+            
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
+              <p style="margin: 0; color: #856404; font-size: 14px;">
+                <strong>Security Notice:</strong> Never share this code with anyone. 
+                Payment Vault will never ask for your verification code via phone or email.
+              </p>
+            </div>
+            
+            <p style="color: #999; font-size: 12px; margin: 30px 0 0 0;">
+              If you didn't create this account, please ignore this email or contact support.
+            </p>
+          </div>
+        </div>
+      `
+
+      const result = await sendEmail({
+        to: email,
+        subject: 'Payment Vault - Email Verification Required',
+        html: emailHtml,
+        text: `Welcome to Payment Vault! Your email verification code is: ${verificationCode}. This code expires in 24 hours.`
+      })
+
+      if (result.success) {
+        console.log(`✅ Email verification sent successfully to ${email}`)
+        return true
+      } else {
+        console.error(`❌ Failed to send email verification to ${email}:`, result.error)
+        return false
+      }
+    } catch (error) {
+      console.error('Email verification error:', error)
+      return false
+    }
+  }
+
+  /**
+   * Send phone verification for new user
+   */
+  static async sendPhoneVerification(phoneNumber: string, userId: string): Promise<boolean> {
+    try {
+      // Generate verification code
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString()
+      
+      // Store verification record
+      const { error: insertError } = await supabase
+        .from('phone_verifications')
+        .insert({
+          user_id: userId,
+          phone_number: phoneNumber,
+          verification_code: verificationCode,
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // 24 hours
+          status: 'pending',
+          max_attempts: 3,
+          attempts: 0
+        })
+
+      if (insertError) {
+        console.error('Failed to create phone verification record:', insertError)
+        return false
+      }
+
+      // Send SMS verification
+      const message = `Payment Vault: Your phone verification code is ${verificationCode}. Valid for 24 hours. Do not share this code.`
+      
+      // Get SMS settings
+      const { data: smsSettings } = await supabase
+        .from('system_settings')
+        .select('setting_key, setting_value')
+        .eq('category', 'sms')
+        .in('setting_key', ['sms_enabled', 'sms_sender_id', 'sms_username', 'sms_api_key', 'sms_password'])
+
+      const settings = smsSettings?.reduce((acc, setting) => {
+        acc[setting.setting_key] = setting.setting_value
+        return acc
+      }, {} as Record<string, string>) || {}
+
+      if (settings.sms_enabled !== 'true') {
+        console.log('SMS is disabled in system settings')
+        return false
+      }
+
+      // Send SMS using AirTouch API
+      const smsResult = await this.sendSMSViaAirTouch({
+        phoneNumber: phoneNumber,
+        message: message,
+        senderId: settings.sms_sender_id || 'PaymentVault',
+        username: settings.sms_username || '',
+        apiKey: settings.sms_api_key || '',
+        isEncrypted: true
+      })
+
+      if (smsResult.success) {
+        console.log(`✅ Phone verification SMS sent successfully to ${phoneNumber}`)
+        return true
+      } else {
+        console.error(`❌ Failed to send phone verification SMS to ${phoneNumber}:`, smsResult.error)
+        return false
+      }
+    } catch (error) {
+      console.error('Phone verification error:', error)
+      return false
+    }
+  }
+
+  /**
+   * Send SMS via AirTouch API (reused from OTP generation)
+   */
+  static async sendSMSViaAirTouch({
+    phoneNumber,
+    message,
+    senderId,
+    username,
+    apiKey,
+    isEncrypted = true
+  }: {
+    phoneNumber: string
+    message: string
+    senderId: string
+    username: string
+    apiKey: string
+    isEncrypted?: boolean
+  }) {
+    try {
+      // Decrypt credentials if encrypted
+      let decryptedApiKey = apiKey
+      let decryptedUsername = username
+      
+      if (isEncrypted) {
+        const crypto = await import('crypto')
+        const passphrase = process.env.ENCRYPTION_PASSPHRASE || 'default-passphrase'
+        
+        const decryptData = async (encryptedData: string, passphrase: string): Promise<string> => {
+          try {
+            const key = crypto.scryptSync(passphrase, 'salt', 32)
+            const iv = Buffer.from(encryptedData.slice(0, 32), 'hex')
+            const encrypted = encryptedData.slice(32)
+            const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
+            let decrypted = decipher.update(encrypted, 'hex', 'utf8')
+            decrypted += decipher.final('utf8')
+            return decrypted
+          } catch (error) {
+            console.error('Decryption error:', error)
+            return encryptedData // Return original if decryption fails
+          }
+        }
+        
+        decryptedApiKey = await decryptData(apiKey, passphrase)
+        decryptedUsername = await decryptData(username, passphrase)
+      }
+
+      const response = await fetch('https://api.airtouch.co.ke/api/sms/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${decryptedApiKey}`
+        },
+        body: JSON.stringify({
+          username: decryptedUsername,
+          to: phoneNumber,
+          message: message,
+          from: senderId
+        })
+      })
+
+      const result = await response.json()
+      
+      if (response.ok && result.success) {
+        return {
+          success: true,
+          messageId: result.messageId || result.id
+        }
+      } else {
+        console.error('SMS API Error:', result)
+        return {
+          success: false,
+          error: result.message || 'SMS sending failed'
+        }
+      }
+    } catch (error) {
+      console.error('SMS sending error:', error)
+      return {
+        success: false,
+        error: 'SMS sending failed'
+      }
     }
   }
 }
