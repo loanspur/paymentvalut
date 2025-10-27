@@ -157,9 +157,8 @@ export async function POST(request: NextRequest) {
       .select('setting_key, setting_value, is_encrypted')
       .in('setting_key', [
         'ncba_business_short_code',
-        'ncba_stk_push_username', 
-        'ncba_stk_push_password',
-        'ncba_stk_push_passkey',
+        'ncba_notification_username', 
+        'ncba_notification_password',
         'ncba_account_number',
         'ncba_account_reference_separator'
       ])
