@@ -253,20 +253,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Debug: Log global NCBA STK Push credentials status
-    console.log('🔍 [DEBUG] Global NCBA STK Push Credentials Status:', {
-      hasStkPushUsername: !!settings.ncba_stk_push_username,
-      hasStkPushPassword: !!settings.ncba_stk_push_password,
-      hasStkPushPasskey: !!settings.ncba_stk_push_passkey,
+    console.log('🔍 [DEBUG] NCBA Notification Credentials Status:', {
+      hasNotificationUsername: !!settings.ncba_notification_username,
+      hasNotificationPassword: !!settings.ncba_notification_password,
       hasBusinessShortCode: !!settings.ncba_business_short_code,
-      stkPushUsernameLength: settings.ncba_stk_push_username?.length || 0,
-      stkPushPasswordLength: settings.ncba_stk_push_password?.length || 0,
-      stkPushPasskeyLength: settings.ncba_stk_push_passkey?.length || 0
+      notificationUsernameLength: settings.ncba_notification_username?.length || 0,
+      notificationPasswordLength: settings.ncba_notification_password?.length || 0
     })
 
-    // Check if global NCBA STK Push credentials are configured
-    if (!settings.ncba_stk_push_username || !settings.ncba_stk_push_password || !settings.ncba_stk_push_passkey) {
+    // Check if NCBA notification credentials are configured (we'll use these for STK Push)
+    if (!settings.ncba_notification_username || !settings.ncba_notification_password) {
       return NextResponse.json(
-        { success: false, error: 'Global NCBA STK Push credentials not configured. Please configure NCBA STK Push credentials in system settings.' },
+        { success: false, error: 'NCBA notification credentials not configured. Please configure NCBA notification credentials in system settings.' },
         { status: 400 }
       )
     }
@@ -355,26 +353,25 @@ export async function POST(request: NextRequest) {
       TransactionType: "CustomerPayBillOnline"
     }
 
-    // Get NCBA access token using global credentials
-    console.log('🔍 [DEBUG] NCBA STK Push Authentication attempt:', {
-      stkPushUsername: settings.ncba_stk_push_username ? 'SET' : 'NOT SET',
-      stkPushPassword: settings.ncba_stk_push_password ? 'SET' : 'NOT SET',
-      stkPushPasskey: settings.ncba_stk_push_passkey ? 'SET' : 'NOT SET',
+    // Get NCBA access token using notification credentials
+    console.log('🔍 [DEBUG] NCBA Authentication attempt:', {
+      notificationUsername: settings.ncba_notification_username ? 'SET' : 'NOT SET',
+      notificationPassword: settings.ncba_notification_password ? 'SET' : 'NOT SET',
       paybillNumber: paybill_number
     })
 
     // Debug: Log authentication attempt details
-    console.log('🔍 [DEBUG] NCBA STK Push Authentication Attempt:', {
+    console.log('🔍 [DEBUG] NCBA Authentication Attempt:', {
       authUrl: 'https://c2bapis.ncbagroup.com/payments/api/v1/auth/token',
-      stkPushUsername: settings.ncba_stk_push_username,
-      stkPushPasswordLength: settings.ncba_stk_push_password?.length || 0,
-      authHeaderLength: Buffer.from(`${settings.ncba_stk_push_username}:${settings.ncba_stk_push_password}`).toString('base64').length
+      notificationUsername: settings.ncba_notification_username,
+      notificationPasswordLength: settings.ncba_notification_password?.length || 0,
+      authHeaderLength: Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64').length
     })
 
     const authResponse = await fetch('https://c2bapis.ncbagroup.com/payments/api/v1/auth/token', {
       method: 'GET',
       headers: {
-        'Authorization': `Basic ${Buffer.from(`${settings.ncba_stk_push_username}:${settings.ncba_stk_push_password}`).toString('base64')}`,
+        'Authorization': `Basic ${Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64')}`,
         'Content-Type': 'application/json'
       }
     })
@@ -387,19 +384,19 @@ export async function POST(request: NextRequest) {
 
     if (!authResponse.ok) {
       const errorText = await authResponse.text()
-      console.error('❌ NCBA STK Push Auth Error:', {
+      console.error('❌ NCBA Auth Error:', {
         status: authResponse.status,
         statusText: authResponse.statusText,
         errorText: errorText,
-        stkPushUsername: settings.ncba_stk_push_username,
-        stkPushPasswordLength: settings.ncba_stk_push_password?.length || 0
+        notificationUsername: settings.ncba_notification_username,
+        notificationPasswordLength: settings.ncba_notification_password?.length || 0
       })
       
       let errorMessage = 'Failed to authenticate with NCBA'
       if (authResponse.status === 400) {
         errorMessage = 'NCBA authentication failed: Bad request. Please check your NCBA credentials format and ensure they are correct.'
       } else if (authResponse.status === 401) {
-        errorMessage = 'NCBA authentication failed: Invalid credentials. Please check your NCBA username and password in system settings.'
+        errorMessage = 'NCBA authentication failed: Invalid credentials. Please check your NCBA notification username and password in system settings.'
       } else if (authResponse.status === 403) {
         errorMessage = 'NCBA access forbidden: Please check your NCBA account permissions.'
       } else if (authResponse.status >= 500) {
