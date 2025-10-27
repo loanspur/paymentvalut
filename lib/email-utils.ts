@@ -8,8 +8,6 @@ interface EmailOptions {
   text?: string
 }
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-
 export async function sendEmail(options: EmailOptions): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     if (!process.env.RESEND_API_KEY) {
@@ -21,6 +19,9 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
       console.error('❌ RESEND_FROM_EMAIL is not configured')
       return { success: false, error: 'From email not configured' }
     }
+
+    // Initialize Resend inside the function to avoid build-time issues
+    const resend = new Resend(process.env.RESEND_API_KEY)
 
     const result = await resend.emails.send({
       from: process.env.RESEND_FROM_EMAIL,
