@@ -243,6 +243,9 @@ export async function POST(request: NextRequest) {
           
           value = await decryptData(value, passphrase)
           console.log(`🔓 Decrypted ${setting.setting_key}: ${value ? 'SUCCESS' : 'FAILED'}`)
+          if (setting.setting_key === 'ncba_notification_username' || setting.setting_key === 'ncba_notification_password') {
+            console.log(`🔍 [DEBUG] Decrypted ${setting.setting_key}:`, value ? value.substring(0, 3) + '...' : 'FAILED')
+          }
         } catch (error) {
           console.error(`❌ Failed to decrypt ${setting.setting_key}:`, error)
         }
@@ -364,7 +367,9 @@ export async function POST(request: NextRequest) {
       authUrl: 'https://c2bapis.ncbagroup.com/payments/api/v1/auth/token',
       notificationUsername: settings.ncba_notification_username,
       notificationPasswordLength: settings.ncba_notification_password?.length || 0,
-      authHeaderLength: Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64').length
+      notificationPasswordPreview: settings.ncba_notification_password ? settings.ncba_notification_password.substring(0, 3) + '...' : 'NOT SET',
+      authHeaderLength: Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64').length,
+      authHeaderPreview: Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64').substring(0, 20) + '...'
     })
 
     const authResponse = await fetch('https://c2bapis.ncbagroup.com/payments/api/v1/auth/token', {
@@ -381,12 +386,15 @@ export async function POST(request: NextRequest) {
       ok: authResponse.ok
     })
 
+    // Log the actual response content for debugging
+    const responseText = await authResponse.text()
+    console.log('🔍 [DEBUG] NCBA Auth Response Content:', responseText)
+
     if (!authResponse.ok) {
-      const errorText = await authResponse.text()
       console.error('❌ NCBA Auth Error:', {
         status: authResponse.status,
         statusText: authResponse.statusText,
-        errorText: errorText,
+        errorText: responseText,
         notificationUsername: settings.ncba_notification_username,
         notificationPasswordLength: settings.ncba_notification_password?.length || 0
       })
