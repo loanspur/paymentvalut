@@ -31,9 +31,10 @@ WHERE variance_drop_threshold IS NULL;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM information_schema.check_constraints 
-        WHERE constraint_name = 'chk_variance_drop_threshold_min'
-        AND table_name = 'balance_monitoring_config'
+        SELECT 1 FROM information_schema.check_constraints cc
+        JOIN information_schema.constraint_column_usage ccu ON cc.constraint_name = ccu.constraint_name
+        WHERE cc.constraint_name = 'chk_variance_drop_threshold_min'
+        AND ccu.table_name = 'balance_monitoring_config'
     ) THEN
         ALTER TABLE balance_monitoring_config 
         ADD CONSTRAINT chk_variance_drop_threshold_min 

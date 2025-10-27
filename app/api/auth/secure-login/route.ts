@@ -68,7 +68,20 @@ export async function POST(request: NextRequest) {
     // Find user in database
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, email, password_hash, role, is_active, created_at')
+      .select(`
+        id, 
+        email, 
+        password_hash, 
+        role, 
+        is_active, 
+        created_at,
+        phone_number,
+        phone_verified,
+        email_verified,
+        phone_verified_at,
+        email_verified_at,
+        partner_id
+      `)
       .eq('email', email)
       .single()
 
@@ -105,12 +118,28 @@ export async function POST(request: NextRequest) {
       }, { status: 403 })
     }
 
+    // Check if OTP validation is required (should be first step)
+    // Get OTP settings from system_settings
+    const { data: otpSettings } = await supabase
+      .from('system_settings')
+      .select('setting_value')
+      .eq('setting_key', 'login_otp_enabled')
+      .single()
+
+    const otpEnabled = otpSettings?.setting_value === 'true'
+    const requiresOTP = otpEnabled // OTP is required if enabled in settings
+    const requiresEmailVerification = !user.email_verified
+    const requiresPhoneVerification = user.email_verified && !user.phone_verified
+
     // Generate JWT token with expiration using secure utility
+    // If OTP is required, create a temporary token that doesn't allow full access
     const token = await createJWTToken({ 
       userId: user.id,
       email: user.email,
       role: user.role,
-      isActive: user.is_active
+      isActive: user.is_active,
+      otpValidated: !requiresOTP, // Only set to true if OTP is not required
+      requiresOTP: requiresOTP
     })
 
     console.log('✅ Login successful for user:', user.email, 'Role:', user.role)
@@ -132,17 +161,38 @@ export async function POST(request: NextRequest) {
         id: user.id,
         email: user.email,
         role: user.role,
-        isActive: user.is_active
-      }
+        isActive: user.is_active,
+        phone_number: user.phone_number,
+        phone_verified: user.phone_verified,
+        email_verified: user.email_verified,
+        phone_verified_at: user.phone_verified_at,
+        email_verified_at: user.email_verified_at,
+        partner_id: user.partner_id
+      },
+      requires_otp: requiresOTP,
+      requires_email_verification: requiresEmailVerification,
+      requires_phone_verification: requiresPhoneVerification
     })
 
     // Set secure HTTP-only cookie
+    console.log('🔍 [DEBUG] Setting auth_token cookie:', {
+      token: token ? 'SET' : 'NOT SET',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      maxAge: 8 * 60 * 60,
+      path: '/'
+    })
+    
     response.cookies.set('auth_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 8 * 60 * 60 // 8 hours
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax', // More permissive for development
+      maxAge: 8 * 60 * 60, // 8 hours
+      path: '/' // Explicitly set path
     })
+    
+    console.log('🔍 [DEBUG] Cookie set successfully')
 
     return response
 

@@ -107,7 +107,8 @@ function getPageTitle(pathname: string): string {
     '/management/ncba-transactions': 'NCBA Transactions',
     '/settings': 'Settings',
     '/api-docs': 'API Documentation',
-    '/admin-dashboard': 'User Management'
+    '/admin-dashboard': 'User Management',
+    '/admin-dashboard/audit-trail': 'Audit Trail'
   }
   
   return titles[pathname] || 'M-Pesa Vault'
@@ -128,7 +129,8 @@ function getPageDescription(pathname: string): string {
     '/management/ncba-transactions': 'Manage NCBA Paybill transactions and partner allocations',
     '/settings': 'Configure system settings and preferences',
     '/api-docs': 'Integration guides and API documentation',
-    '/admin-dashboard': 'Manage users, roles, and system activity'
+    '/admin-dashboard': 'Manage users, roles, and system activity',
+    '/admin-dashboard/audit-trail': 'Monitor system logs, user activities, and audit trail'
   }
   
   return descriptions[pathname] || 'M-Pesa B2C Disbursement System'

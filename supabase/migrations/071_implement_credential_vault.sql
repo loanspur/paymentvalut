@@ -1,14 +1,36 @@
 -- Migration to implement secure credential vault
 -- This migration adds encrypted credential storage and removes plain text credentials
 
--- Add encrypted credentials column
-ALTER TABLE partners 
-ADD COLUMN encrypted_credentials TEXT;
+-- Add encrypted credentials column if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'partners' 
+        AND column_name = 'encrypted_credentials'
+    ) THEN
+        ALTER TABLE partners ADD COLUMN encrypted_credentials TEXT;
+        RAISE NOTICE 'Added encrypted_credentials column to partners table';
+    ELSE
+        RAISE NOTICE 'encrypted_credentials column already exists in partners table';
+    END IF;
+END $$;
 
 -- Add vault passphrase (this should be set as an environment variable)
 -- For now, we'll use a placeholder that should be changed
-ALTER TABLE partners 
-ADD COLUMN vault_passphrase_hash TEXT;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'partners' 
+        AND column_name = 'vault_passphrase_hash'
+    ) THEN
+        ALTER TABLE partners ADD COLUMN vault_passphrase_hash TEXT;
+        RAISE NOTICE 'Added vault_passphrase_hash column to partners table';
+    ELSE
+        RAISE NOTICE 'vault_passphrase_hash column already exists in partners table';
+    END IF;
+END $$;
 
 -- Create a function to hash passphrases
 CREATE OR REPLACE FUNCTION hash_vault_passphrase(passphrase TEXT)

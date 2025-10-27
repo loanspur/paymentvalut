@@ -85,6 +85,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const profileData = await request.json()
+    console.log('🔍 [DEBUG] Profile update request data:', profileData)
 
     // Remove fields that users shouldn't be able to update directly
     const allowedFields = [
@@ -102,6 +103,9 @@ export async function PUT(request: NextRequest) {
         filteredProfileData[field] = profileData[field]
       }
     }
+
+    console.log('🔍 [DEBUG] Filtered profile data:', filteredProfileData)
+    console.log('🔍 [DEBUG] User ID:', authContext.userId)
 
     // Update profile
     const updatedUser = await UserService.updateProfile(authContext.userId, filteredProfileData)

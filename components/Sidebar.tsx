@@ -26,7 +26,8 @@ import {
   Bell,
   HelpCircle,
   RefreshCw,
-  MessageSquare
+  MessageSquare,
+  ClipboardList
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -137,6 +138,13 @@ export default function Sidebar({ className = '' }: SidebarProps) {
             href: '/admin-dashboard',
             icon: Users,
             description: 'Manage users & roles'
+          }] : []),
+          // Only show Audit Trail for super_admin, admin, and partner_admin
+          ...(isSuperAdmin || isAdmin || isPartnerAdmin ? [{
+            name: 'Audit Trail',
+            href: '/admin-dashboard/audit-trail',
+            icon: ClipboardList,
+            description: 'System logs & audit trail'
           }] : []),
           // Only show Admin Wallets for super_admin and admin
           ...(isSuperAdmin || isAdmin ? [{

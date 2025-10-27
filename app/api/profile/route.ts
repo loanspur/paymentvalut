@@ -178,6 +178,15 @@ export async function PUT(request: NextRequest) {
     // Add updated_at timestamp
     filteredUpdateData.updated_at = new Date().toISOString()
 
+    // If phone number is being updated, reset phone verification status
+    if (filteredUpdateData.phone_number !== undefined) {
+      filteredUpdateData.phone_verified = false
+      filteredUpdateData.phone_verified_at = null
+      console.log('📱 Phone number being updated, resetting verification status')
+    }
+
+    console.log('🔍 [DEBUG] Updating profile with data:', filteredUpdateData)
+
     // Update the user's profile
     const { data: updatedUser, error: updateError } = await supabase
       .from('users')
@@ -190,6 +199,8 @@ export async function PUT(request: NextRequest) {
         first_name,
         last_name,
         phone_number,
+        phone_verified,
+        phone_verified_at,
         department,
         notes,
         role,

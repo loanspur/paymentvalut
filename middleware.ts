@@ -40,6 +40,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/secure-login', request.url))
   }
 
+  // Check if OTP validation is required and completed
+  // We need to check the system settings for OTP requirement
+  // For now, we'll check if the token has otpValidated flag
+  if (decoded.requiresOTP && !decoded.otpValidated) {
+    console.log('🔒 OTP validation required but not completed, redirecting to login')
+    return NextResponse.redirect(new URL('/secure-login', request.url))
+  }
+
   // Additional role-based protection for admin routes
   if (request.nextUrl.pathname.startsWith('/admin-dashboard') && decoded && !['admin', 'super_admin'].includes(decoded.role as string)) {
     console.log('🔒 Insufficient permissions for admin route, redirecting to login')

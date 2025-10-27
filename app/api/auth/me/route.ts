@@ -29,6 +29,24 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Check if OTP validation is required and completed
+    const { data: otpSettings } = await supabase
+      .from('system_settings')
+      .select('setting_value')
+      .eq('setting_key', 'login_otp_enabled')
+      .single()
+
+    const otpEnabled = otpSettings?.setting_value === 'true'
+    
+    // If OTP is enabled but not validated, deny access
+    if (otpEnabled && !payload.otpValidated) {
+      console.log('🔒 OTP validation required but not completed for user:', payload.email)
+      return NextResponse.json(
+        { error: 'OTP validation required' },
+        { status: 401 }
+      )
+    }
+
     // Get user from database
     const { data: user, error } = await supabase
       .from('users')

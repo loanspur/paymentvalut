@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, User, Lock, Shield } from 'lucide-react'
+import OTPVerification from '../../components/OTPVerification'
+import EmailVerification from '../../components/EmailVerification'
+import PhoneVerification from '../../components/PhoneVerification'
 
 export default function SecureLoginPage() {
   const [formData, setFormData] = useState({
@@ -14,6 +17,8 @@ export default function SecureLoginPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [currentUser, setCurrentUser] = useState<any>(null)
+  const [loginStep, setLoginStep] = useState<'login' | 'email-verify' | 'phone-verify' | 'otp-verify'>('login')
   const router = useRouter()
 
   // Check if user is already authenticated and redirect
@@ -99,29 +104,44 @@ export default function SecureLoginPage() {
         headers: {
           'Content-Type': 'application/json'
         },
+        credentials: 'include', // Include cookies in the request
         body: JSON.stringify(formData)
       })
 
       const data = await response.json()
 
       if (response.ok) {
-        // Show success message
-        setSuccess('Login successful! Redirecting...')
+        setCurrentUser(data.user)
         setIsLoading(false)
         setIsSubmitting(false)
         
-        // Force a page reload to ensure auth state is properly set
-        setTimeout(() => {
-          // Force reload to ensure cookies are set and auth state is updated
-          const redirectUrl = ['admin', 'super_admin'].includes(data.user.role) 
-            ? '/admin-dashboard' 
-            : '/'
+        // Check if OTP validation is required
+        if (data.requires_otp) {
+          console.log('🔐 OTP validation required')
+          setLoginStep('otp-verify')
+        } else if (!data.user.email_verified) {
+          console.log('📧 Email verification required')
+          setLoginStep('email-verify')
+        } else if (!data.user.phone_verified) {
+          console.log('📱 Phone verification required')
+          setLoginStep('phone-verify')
+        } else {
+          // Direct login success
+          setSuccess('Login successful! Redirecting...')
           
-          console.log('🔄 Redirecting to:', redirectUrl, 'for role:', data.user.role)
-          
-          // Use window.location.replace to prevent back button issues
-          window.location.replace(redirectUrl)
-        }, 2000) // Increased delay to ensure cookie is set
+          // Force a page reload to ensure auth state is properly set
+          setTimeout(() => {
+            // Force reload to ensure cookies are set and auth state is updated
+            const redirectUrl = ['admin', 'super_admin'].includes(data.user.role) 
+              ? '/admin-dashboard' 
+              : '/'
+            
+            console.log('🔄 Redirecting to:', redirectUrl, 'for role:', data.user.role)
+            
+            // Use window.location.replace to prevent back button issues
+            window.location.replace(redirectUrl)
+          }, 2000) // Increased delay to ensure cookie is set
+        }
       } else {
         setError(data.error || 'Login failed')
         setIsLoading(false)
@@ -132,6 +152,65 @@ export default function SecureLoginPage() {
       setIsLoading(false)
       setIsSubmitting(false)
     }
+  }
+
+  // Handle verification step completion
+  const handleVerificationSuccess = () => {
+    if (loginStep === 'email-verify') {
+      setLoginStep('phone-verify')
+    } else if (loginStep === 'phone-verify') {
+      setLoginStep('otp-verify')
+    } else if (loginStep === 'otp-verify') {
+      // All verifications complete, redirect
+      setSuccess('All verifications complete! Redirecting...')
+      setTimeout(() => {
+        const redirectUrl = ['admin', 'super_admin'].includes(currentUser?.role) 
+          ? '/admin-dashboard' 
+          : '/'
+        window.location.replace(redirectUrl)
+      }, 2000)
+    }
+  }
+
+  const handleVerificationBack = () => {
+    if (loginStep === 'phone-verify') {
+      setLoginStep('email-verify')
+    } else if (loginStep === 'otp-verify') {
+      setLoginStep('phone-verify')
+    } else {
+      setLoginStep('login')
+    }
+  }
+
+  // Render verification components
+  if (loginStep === 'email-verify') {
+    return (
+      <EmailVerification
+        userEmail={currentUser?.email}
+        onSuccess={handleVerificationSuccess}
+        onBack={handleVerificationBack}
+      />
+    )
+  }
+
+  if (loginStep === 'phone-verify') {
+    return (
+      <PhoneVerification
+        onSuccess={handleVerificationSuccess}
+        onBack={handleVerificationBack}
+      />
+    )
+  }
+
+  if (loginStep === 'otp-verify') {
+    return (
+      <OTPVerification
+        userEmail={currentUser?.email}
+        userPhone={currentUser?.phone_number}
+        onSuccess={handleVerificationSuccess}
+        onCancel={handleVerificationBack}
+      />
+    )
   }
 
   return (

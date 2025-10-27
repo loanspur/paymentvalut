@@ -36,6 +36,8 @@ interface Activity {
   resource: string
   ip_address: string
   created_at: string
+  type?: string
+  status?: string
 }
 
 export default function AdminDashboard() {
@@ -98,6 +100,29 @@ export default function AdminDashboard() {
       case 'operator': return 'bg-green-100 text-green-800'
       case 'viewer': return 'bg-gray-100 text-gray-800'
       default: return 'bg-blue-100 text-blue-800'
+    }
+  }
+
+  const getActivityIcon = (type: string) => {
+    switch (type) {
+      case 'disbursement': return <Activity className="w-4 h-4 text-green-600" />
+      case 'loan': return <Key className="w-4 h-4 text-blue-600" />
+      case 'user_login': return <UserCheck className="w-4 h-4 text-purple-600" />
+      case 'otp_validation': return <Shield className="w-4 h-4 text-orange-600" />
+      case 'partner': return <Building2 className="w-4 h-4 text-indigo-600" />
+      default: return <Activity className="w-4 h-4 text-gray-600" />
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'success': return 'text-green-600'
+      case 'failed': return 'text-red-600'
+      case 'pending': return 'text-yellow-600'
+      case 'active': return 'text-green-600'
+      case 'inactive': return 'text-red-600'
+      case 'validated': return 'text-green-600'
+      default: return 'text-gray-600'
     }
   }
 
@@ -207,9 +232,21 @@ export default function AdminDashboard() {
             <tbody className="bg-white divide-y divide-gray-200">
               {activities.length > 0 ? (
                 activities.map((activity) => (
-                  <tr key={activity.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {activity.action}
+                  <tr key={activity.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        {getActivityIcon(activity.type || 'default')}
+                        <div className="ml-3">
+                          <div className="text-sm font-medium text-gray-900">
+                            {activity.action}
+                          </div>
+                          {activity.status && (
+                            <div className={`text-xs ${getStatusColor(activity.status)}`}>
+                              {activity.status.toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {activity.resource}
@@ -227,6 +264,7 @@ export default function AdminDashboard() {
                   <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
                     <Activity className="w-8 h-8 mx-auto mb-2 text-gray-400" />
                     <p>No activities found</p>
+                    <p className="text-xs text-gray-400 mt-1">Activities will appear here as they occur</p>
                   </td>
                 </tr>
               )}

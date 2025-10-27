@@ -374,10 +374,13 @@ export class UserService {
     profile_picture_url?: string
   }): Promise<User | null> {
     try {
-      // For now, only update basic fields that exist in the database
+      // Prepare update data with the provided profile data
       const updateData = {
+        ...profileData,
         updated_at: new Date().toISOString()
       }
+
+      console.log('🔍 [DEBUG] Updating profile for user:', userId, 'with data:', updateData)
 
       const { data: updatedUser, error } = await supabase
         .from('users')
@@ -386,22 +389,30 @@ export class UserService {
         .select(`
           id,
           email,
+          first_name,
+          last_name,
+          phone_number,
+          department,
+          notes,
+          profile_picture_url,
           role,
           is_active,
           email_verified,
+          phone_verified,
           created_at,
           updated_at
         `)
         .single()
 
       if (error) {
-        console.error('Update profile error:', error)
+        console.error('❌ Update profile error:', error)
         return null
       }
 
+      console.log('✅ Profile updated successfully:', updatedUser)
       return updatedUser
     } catch (error) {
-      console.error('Update profile error:', error)
+      console.error('❌ Update profile error:', error)
       return null
     }
   }

@@ -129,22 +129,22 @@ export default function AuthProvider({ children }: AuthProviderProps) {
       setIsLoading(true)
       console.log('🔄 Starting logout process...')
       
-      // Clear user state immediately to prevent re-authentication
-      setUser(null)
-      console.log('👤 User state cleared')
+      // Call logout API first
+      const response = await fetch('/api/auth/secure-logout', { 
+        method: 'POST',
+        credentials: 'include'
+      })
       
-      // Clear localStorage immediately
+      // Clear localStorage after API call
       if (typeof window !== 'undefined') {
         localStorage.removeItem('auth_token')
         localStorage.removeItem('user')
         console.log('🗑️ Cleared localStorage')
       }
       
-      // Call logout API
-      const response = await fetch('/api/auth/secure-logout', { 
-        method: 'POST',
-        credentials: 'include'
-      })
+      // Clear user state after API call to prevent button disappearing
+      setUser(null)
+      console.log('👤 User state cleared')
       
       console.log('📡 Logout API response:', response.status, response.ok)
       
