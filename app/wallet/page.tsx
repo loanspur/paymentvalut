@@ -29,7 +29,10 @@ import {
   ChevronsRight,
   MoreHorizontal,
   X,
-  Info
+  Info,
+  BarChart3,
+  Receipt,
+  Activity
 } from 'lucide-react'
 import { useToast } from '../../components/ToastSimple'
 
@@ -44,6 +47,29 @@ interface WalletData {
   is_active: boolean
   created_at: string
   updated_at: string
+}
+
+interface ChargeStatistics {
+  today: {
+    totalTransactions: number
+    totalAmount: number
+    chargeTypes: Record<string, { count: number, amount: number }>
+  }
+  week: {
+    totalTransactions: number
+    totalAmount: number
+    chargeTypes: Record<string, { count: number, amount: number }>
+  }
+  month: {
+    totalTransactions: number
+    totalAmount: number
+    chargeTypes: Record<string, { count: number, amount: number }>
+  }
+  quarter: {
+    totalTransactions: number
+    totalAmount: number
+    chargeTypes: Record<string, { count: number, amount: number }>
+  }
 }
 
 interface WalletTransaction {
@@ -136,12 +162,14 @@ export default function WalletPage() {
   })
   const [showTransactionDetails, setShowTransactionDetails] = useState(false)
   const [selectedTransaction, setSelectedTransaction] = useState<WalletTransaction | null>(null)
+  const [chargeStats, setChargeStats] = useState<ChargeStatistics | null>(null)
 
   useEffect(() => {
     loadWalletData()
     loadTransactions()
     loadCurrentUser()
     loadPartners()
+    loadChargeStatistics()
   }, [pagination.page, filters])
 
   const loadWalletData = async () => {
@@ -182,6 +210,18 @@ export default function WalletPage() {
       }
     } catch (error) {
       console.error('Failed to load partners:', error)
+    }
+  }
+
+  const loadChargeStatistics = async () => {
+    try {
+      const response = await fetch('/api/wallet/charge-statistics')
+      if (response.ok) {
+        const data = await response.json()
+        setChargeStats(data.data)
+      }
+    } catch (error) {
+      console.error('Failed to load charge statistics:', error)
     }
   }
 
@@ -435,6 +475,30 @@ export default function WalletPage() {
               </div>
             </div>
             <div className="flex items-center space-x-3">
+              {/* Wallet Action Buttons */}
+              <button
+                onClick={() => setShowTopUpModal(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Top Up Wallet
+              </button>
+              <button
+                onClick={() => setShowFloatModal(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+              >
+                <CreditCard className="w-4 h-4 mr-2" />
+                Purchase B2C Float
+              </button>
+              <button
+                onClick={downloadCSV}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download CSV
+              </button>
+              
+              {/* Balance and Refresh Controls */}
               <button
                 onClick={() => setShowBalance(!showBalance)}
                 className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors flex items-center"
@@ -443,7 +507,10 @@ export default function WalletPage() {
                 {showBalance ? 'Hide' : 'Show'} Balance
               </button>
               <button
-                onClick={loadWalletData}
+                onClick={() => {
+                  loadWalletData()
+                  loadChargeStatistics()
+                }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
               >
                 <RefreshCw className="w-4 h-4 mr-2" />
@@ -506,37 +573,100 @@ export default function WalletPage() {
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="bg-white shadow rounded-lg mb-6">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">Wallet Actions</h2>
-        </div>
-        <div className="p-6">
-          <div className="flex flex-wrap gap-4">
-            <button
-              onClick={() => setShowTopUpModal(true)}
-              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center"
-            >
-              <Plus className="w-5 h-5 mr-2" />
-              Top Up Wallet
-            </button>
-            <button
-              onClick={() => setShowFloatModal(true)}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-            >
-              <CreditCard className="w-5 h-5 mr-2" />
-              Purchase B2C Float
-            </button>
-            <button
-              onClick={downloadCSV}
-              className="px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center"
-            >
-              <Download className="w-5 h-5 mr-2" />
-              Download CSV
-            </button>
+      {/* Charge Statistics Cards */}
+      {chargeStats && (
+        <div className="bg-white shadow rounded-lg mb-6">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h2 className="text-lg font-medium text-gray-900 flex items-center">
+              <BarChart3 className="w-5 h-5 mr-2 text-purple-600" />
+              Charge Management Statistics
+            </h2>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Today's Charges */}
+              <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-blue-600">Today's Charges</p>
+                    <p className="text-2xl font-bold text-blue-900">{chargeStats.today.totalTransactions}</p>
+                    <p className="text-sm text-blue-700">{formatAmount(chargeStats.today.totalAmount)}</p>
+                  </div>
+                  <Receipt className="h-8 w-8 text-blue-600" />
+                </div>
+                <div className="mt-3">
+                  {Object.entries(chargeStats.today.chargeTypes).map(([type, data]) => (
+                    <div key={type} className="flex justify-between text-xs text-blue-700">
+                      <span>{type}</span>
+                      <span>{data.count} ({formatAmount(data.amount)})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 7 Days Charges */}
+              <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-green-600">7 Days Charges</p>
+                    <p className="text-2xl font-bold text-green-900">{chargeStats.week.totalTransactions}</p>
+                    <p className="text-sm text-green-700">{formatAmount(chargeStats.week.totalAmount)}</p>
+                  </div>
+                  <Activity className="h-8 w-8 text-green-600" />
+                </div>
+                <div className="mt-3">
+                  {Object.entries(chargeStats.week.chargeTypes).map(([type, data]) => (
+                    <div key={type} className="flex justify-between text-xs text-green-700">
+                      <span>{type}</span>
+                      <span>{data.count} ({formatAmount(data.amount)})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 30 Days Charges */}
+              <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-purple-600">30 Days Charges</p>
+                    <p className="text-2xl font-bold text-purple-900">{chargeStats.month.totalTransactions}</p>
+                    <p className="text-sm text-purple-700">{formatAmount(chargeStats.month.totalAmount)}</p>
+                  </div>
+                  <BarChart3 className="h-8 w-8 text-purple-600" />
+                </div>
+                <div className="mt-3">
+                  {Object.entries(chargeStats.month.chargeTypes).map(([type, data]) => (
+                    <div key={type} className="flex justify-between text-xs text-purple-700">
+                      <span>{type}</span>
+                      <span>{data.count} ({formatAmount(data.amount)})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 90 Days Charges */}
+              <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-orange-600">90 Days Charges</p>
+                    <p className="text-2xl font-bold text-orange-900">{chargeStats.quarter.totalTransactions}</p>
+                    <p className="text-sm text-orange-700">{formatAmount(chargeStats.quarter.totalAmount)}</p>
+                  </div>
+                  <TrendingUp className="h-8 w-8 text-orange-600" />
+                </div>
+                <div className="mt-3">
+                  {Object.entries(chargeStats.quarter.chargeTypes).map(([type, data]) => (
+                    <div key={type} className="flex justify-between text-xs text-orange-700">
+                      <span>{type}</span>
+                      <span>{data.count} ({formatAmount(data.amount)})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Transaction History */}
       <div className="bg-white shadow rounded-lg">
@@ -546,15 +676,6 @@ export default function WalletPage() {
               <History className="w-5 h-5 mr-2" />
               Transaction History ({pagination.total})
             </h2>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={downloadCSV}
-                className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700 transition-colors flex items-center"
-              >
-                <Download className="w-4 h-4 mr-1" />
-                Export CSV
-              </button>
-            </div>
           </div>
         </div>
 
@@ -720,42 +841,85 @@ export default function WalletPage() {
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* Enhanced Pagination */}
         {pagination.totalPages > 1 && (
           <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
             <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-700">
-                Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} transactions
+              <div className="flex items-center text-sm text-gray-700">
+                <span>
+                  Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
+                  {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
+                  {pagination.total} transactions
+                </span>
               </div>
+              
               <div className="flex items-center space-x-2">
+                {/* First Page */}
                 <button
                   onClick={() => goToPage(1)}
                   disabled={pagination.page === 1}
-                  className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                  title="First page"
                 >
                   <ChevronsLeft className="w-4 h-4" />
                 </button>
+                
+                {/* Previous Page */}
                 <button
                   onClick={() => goToPage(pagination.page - 1)}
                   disabled={pagination.page === 1}
-                  className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                  title="Previous page"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <span className="px-3 py-1 text-sm text-gray-700">
-                  Page {pagination.page} of {pagination.totalPages}
-                </span>
+                
+                {/* Page Numbers */}
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                    let pageNum
+                    if (pagination.totalPages <= 5) {
+                      pageNum = i + 1
+                    } else if (pagination.page <= 3) {
+                      pageNum = i + 1
+                    } else if (pagination.page >= pagination.totalPages - 2) {
+                      pageNum = pagination.totalPages - 4 + i
+                    } else {
+                      pageNum = pagination.page - 2 + i
+                    }
+                    
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => goToPage(pageNum)}
+                        className={`px-3 py-1 text-sm border rounded ${
+                          pageNum === pagination.page
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    )
+                  })}
+                </div>
+                
+                {/* Next Page */}
                 <button
                   onClick={() => goToPage(pagination.page + 1)}
                   disabled={pagination.page === pagination.totalPages}
-                  className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                  title="Next page"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
+                
+                {/* Last Page */}
                 <button
                   onClick={() => goToPage(pagination.totalPages)}
                   disabled={pagination.page === pagination.totalPages}
-                  className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-2 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                  title="Last page"
                 >
                   <ChevronsRight className="w-4 h-4" />
                 </button>
