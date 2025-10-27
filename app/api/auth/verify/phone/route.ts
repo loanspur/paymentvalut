@@ -288,9 +288,9 @@ export async function PUT(request: NextRequest) {
 }
 
 // Decryption function (same as SMS campaigns)
-function decryptData(encryptedData: string, passphrase: string): string {
+async function decryptData(encryptedData: string, passphrase: string): Promise<string> {
   try {
-    const crypto = require('crypto')
+    const crypto = await import('crypto')
     const algorithm = 'aes-256-cbc'
     const key = crypto.scryptSync(passphrase, 'salt', 32)
     const textParts = encryptedData.split(':')
@@ -344,8 +344,8 @@ async function sendSMSViaAirTouch({
         throw new Error('JWT_SECRET environment variable is required')
       }
 
-      decryptedApiKey = decryptData(apiKey, passphrase)
-      decryptedUsername = decryptData(username, passphrase)
+      decryptedApiKey = await decryptData(apiKey, passphrase)
+      decryptedUsername = await decryptData(username, passphrase)
     }
 
     // Format phone number

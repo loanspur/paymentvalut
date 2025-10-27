@@ -383,7 +383,7 @@ async function sendSMSViaAirTouch({
     
     // According to AirTouch API docs:
     // password = md5 sum from the string "api key" in hexadecimal
-    const crypto = require('crypto')
+    const crypto = await import('crypto')
     
     // Create MD5 hash of the API key as required by AirTouch API
     const hashedPassword = crypto.createHash('md5').update(apiKey).digest('hex')
