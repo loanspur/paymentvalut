@@ -259,7 +259,7 @@ export async function POST(request: NextRequest) {
     // Update partner wallet balance
     try {
       // Get current wallet balance
-      const { data: wallet, error: walletError } = await supabase
+      let { data: wallet, error: walletError } = await supabase
         .from('partner_wallets')
         .select('*')
         .eq('partner_id', partner.id)
@@ -270,14 +270,14 @@ export async function POST(request: NextRequest) {
       } else {
         let currentBalance = 0
         if (wallet) {
-          currentBalance = wallet.balance || 0
+          currentBalance = wallet.current_balance || 0
         } else {
           // Create wallet if it doesn't exist
           const { data: newWallet, error: createError } = await supabase
             .from('partner_wallets')
             .insert({
               partner_id: partner.id,
-              balance: 0,
+              current_balance: 0,
               currency: 'KES',
               is_active: true
             })
@@ -287,6 +287,7 @@ export async function POST(request: NextRequest) {
           if (createError) {
             console.error('Error creating wallet:', createError)
           } else {
+            wallet = newWallet // Update wallet reference to the newly created wallet
             currentBalance = 0
           }
         }
@@ -297,7 +298,7 @@ export async function POST(request: NextRequest) {
           .from('partner_wallets')
           .upsert({
             partner_id: partner.id,
-            balance: newBalance,
+            current_balance: newBalance,
             currency: 'KES',
             is_active: true,
             updated_at: currentUtcTime
@@ -310,34 +311,40 @@ export async function POST(request: NextRequest) {
         }
 
         // Create wallet transaction record
-        const { data: walletTransaction, error: walletTransactionError } = await supabase
-          .from('wallet_transactions')
-          .insert({
-            wallet_id: wallet.id,
-            transaction_type: 'top_up',
-            amount: parseFloat(TransAmount),
-            currency: 'KES',
-            status: 'completed',
-            reference: TransID,
-            description: `Wallet top-up via NCBA Paybill (Manual Payment) - ${BillRefNumber} ${partnerIdentifier}`,
-            metadata: {
-              c2b_transaction_id: c2bTransaction.id,
-              transaction_type: TransType,
-              business_short_code: BusinessShortCode,
-              bill_reference: BillRefNumber,
-              customer_phone: Mobile,
-              customer_name: name,
-              source: 'ncba_paybill_notification',
-              payment_method: 'manual_paybill',
-              partner_name: partner.name,
-              partner_short_code: partner.short_code
-            }
-          })
-          .select()
-          .single()
+        if (wallet && wallet.id) {
+          const { data: walletTransaction, error: walletTransactionError } = await supabase
+            .from('wallet_transactions')
+            .insert({
+              partner_id: partner.id, // Use partner_id instead of wallet_id
+              transaction_type: 'top_up',
+              amount: parseFloat(TransAmount),
+              currency: 'KES',
+              status: 'completed',
+              reference: TransID,
+              description: `Wallet top-up via NCBA Paybill (Manual Payment) - ${BillRefNumber} ${partnerIdentifier}`,
+              metadata: {
+                c2b_transaction_id: c2bTransaction.id,
+                transaction_type: TransType,
+                business_short_code: BusinessShortCode,
+                bill_reference: BillRefNumber,
+                customer_phone: Mobile,
+                customer_name: name,
+                source: 'ncba_paybill_notification',
+                payment_method: 'manual_paybill',
+                partner_name: partner.name,
+                partner_short_code: partner.short_code
+              }
+            })
+            .select()
+            .single()
 
-        if (walletTransactionError) {
-          console.error('Error creating wallet transaction:', walletTransactionError)
+          if (walletTransactionError) {
+            console.error('Error creating wallet transaction:', walletTransactionError)
+          } else {
+            console.log(`Wallet transaction created for partner ${partner.name}: ${TransAmount} KES`)
+          }
+        } else {
+          console.error('Cannot create wallet transaction: wallet not found or has no ID')
         }
       }
     } catch (walletError) {
