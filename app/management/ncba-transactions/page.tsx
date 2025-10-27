@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { formatDateOnly } from '../../../lib/utils'
 import { 
   CreditCard, 
   Filter, 
@@ -221,7 +222,7 @@ export default function NCBATransactionsPage() {
         t.bill_reference_number,
         t.status,
         `"${t.partner_name || 'Unallocated'}"`,
-        new Date(t.created_at).toLocaleDateString()
+        formatDateOnly(t.created_at)
       ].join(','))
     ].join('\n')
 
@@ -315,22 +316,24 @@ export default function NCBATransactionsPage() {
       const second = dateString.substring(12, 14)
       
       const isoString = `${year}-${month}-${day}T${hour}:${minute}:${second}`
-      return new Date(isoString).toLocaleString('en-KE', {
+      return new Date(isoString).toLocaleString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        timeZone: 'Africa/Nairobi'
       })
     }
     
     // Handle regular ISO date strings
-    return new Date(dateString).toLocaleString('en-KE', {
+    return new Date(dateString).toLocaleString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: 'Africa/Nairobi'
     })
   }
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { formatDate, formatDateOnly } from '../../../lib/utils'
 import { 
   DollarSign, 
   Plus, 
@@ -320,12 +321,13 @@ export default function PartnerChargesPage() {
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-KE', {
+    return new Date(dateString).toLocaleString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: 'Africa/Nairobi'
     })
   }
 
@@ -377,7 +379,7 @@ export default function PartnerChargesPage() {
           c.is_automatic ? 'Yes' : 'No',
           c.total_amount_collected || 0,
           c.total_transactions || 0,
-          new Date(c.created_at).toLocaleDateString()
+          formatDateOnly(c.created_at)
         ].join(','))
       ].join('\n')
 

@@ -22,14 +22,59 @@ export const formatVariance = (variance: number): string => {
   return `${sign}${variance.toFixed(2)}%`
 }
 
-// Date formatting
+// Date formatting with East Africa Time (UTC+3)
 export const formatDate = (date: string | Date): string => {
-  return new Date(date).toLocaleDateString('en-KE', {
+  const dateObj = new Date(date)
+  
+  // Convert to East Africa Time (UTC+3)
+  const eastAfricaTime = new Date(dateObj.getTime() + (3 * 60 * 60 * 1000))
+  
+  return eastAfricaTime.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
+    timeZone: 'Africa/Nairobi'
+  })
+}
+
+// Date and time formatting with East Africa Time (UTC+3)
+export const formatDateTime = (date: string | Date): string => {
+  const dateObj = new Date(date)
+  
+  return dateObj.toLocaleString('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: 'Africa/Nairobi'
+  })
+}
+
+// Date only formatting with East Africa Time (UTC+3)
+export const formatDateOnly = (date: string | Date): string => {
+  const dateObj = new Date(date)
+  
+  return dateObj.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Africa/Nairobi'
+  })
+}
+
+// Time only formatting with East Africa Time (UTC+3)
+export const formatTimeOnly = (date: string | Date): string => {
+  const dateObj = new Date(date)
+  
+  return dateObj.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: 'Africa/Nairobi'
   })
 }
 

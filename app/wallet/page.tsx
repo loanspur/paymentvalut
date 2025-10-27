@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { formatDate, formatDateOnly } from '../../lib/utils'
 import { 
   Wallet, 
   Plus, 
@@ -299,12 +300,13 @@ export default function WalletPage() {
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-KE', {
+    return new Date(dateString).toLocaleString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: 'Africa/Nairobi'
     })
   }
 
@@ -349,7 +351,7 @@ export default function WalletPage() {
     const csvContent = [
       headers.join(','),
       ...transactions.map(t => [
-        new Date(t.created_at).toLocaleDateString(),
+        formatDateOnly(t.created_at),
         t.transaction_type,
         t.amount,
         `"${t.reference || ''}"`,

@@ -19,7 +19,7 @@ import {
   ChevronsRight
 } from 'lucide-react'
 import { AUTO_REFRESH_INTERVALS, DEFAULT_VALUES } from '../../lib/constants'
-import { formatCurrency, formatDate, downloadFile } from '../../lib/utils'
+import { formatCurrency, formatDate, formatDateTime, formatDateOnly, formatTimeOnly, downloadFile } from '../../lib/utils'
 
 interface DisbursementRequest {
   id: string
@@ -240,10 +240,10 @@ export default function HistoryPage() {
         disbursement.utilityBalanceAtTransaction || 'N/A',
         disbursement.workingBalanceAtTransaction || 'N/A',
         disbursement.chargesBalanceAtTransaction || 'N/A',
-        new Date(disbursement.createdAt).toLocaleDateString(),
-        new Date(disbursement.createdAt).toLocaleTimeString(),
-        new Date(disbursement.updatedAt).toLocaleDateString(),
-        new Date(disbursement.updatedAt).toLocaleTimeString()
+        formatDateOnly(disbursement.createdAt),
+        formatTimeOnly(disbursement.createdAt),
+        formatDateOnly(disbursement.updatedAt),
+        formatTimeOnly(disbursement.updatedAt)
       ])
 
       // Create CSV content
@@ -692,10 +692,10 @@ export default function HistoryPage() {
                     <td className="px-3 py-2">
                       <div>
                         <div className="text-xs text-gray-900">
-                          {new Date(disbursement.createdAt).toLocaleDateString()}
+                          {formatDateOnly(disbursement.createdAt)}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {new Date(disbursement.createdAt).toLocaleTimeString()}
+                          {formatTimeOnly(disbursement.createdAt)}
                         </div>
                       </div>
                     </td>
