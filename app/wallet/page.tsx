@@ -10,6 +10,8 @@ import {
   RefreshCw,
   CreditCard,
   Smartphone,
+  Copy,
+  Check,
   AlertCircle,
   CheckCircle,
   Clock,
@@ -83,8 +85,29 @@ export default function WalletPage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null)
   const [isTopUpLoading, setIsTopUpLoading] = useState(false)
+  const [topUpMethod, setTopUpMethod] = useState<'stk_push' | 'manual'>('stk_push')
   
   const { addToast } = useToast()
+  
+  // Copy to clipboard function
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      addToast({
+        type: 'success',
+        title: 'Copied!',
+        message: `${label} copied to clipboard`,
+        duration: 3000
+      })
+    } catch (err) {
+      addToast({
+        type: 'error',
+        title: 'Copy Failed',
+        message: 'Failed to copy to clipboard',
+        duration: 3000
+      })
+    }
+  }
   const [filters, setFilters] = useState({
     transaction_type: '',
     status: '',
@@ -598,6 +621,39 @@ export default function WalletPage() {
             <div className="mt-3">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Top Up Wallet</h3>
               
+              {/* Payment Method Selection */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Choose Payment Method
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setTopUpMethod('stk_push')}
+                    className={`p-3 rounded-lg border-2 transition-all ${
+                      topUpMethod === 'stk_push'
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <Smartphone className="w-5 h-5 mx-auto mb-2" />
+                    <div className="text-sm font-medium">STK Push</div>
+                    <div className="text-xs text-gray-500">Instant payment</div>
+                  </button>
+                  <button
+                    onClick={() => setTopUpMethod('manual')}
+                    className={`p-3 rounded-lg border-2 transition-all ${
+                      topUpMethod === 'manual'
+                        ? 'border-green-500 bg-green-50 text-green-700'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    <CreditCard className="w-5 h-5 mx-auto mb-2" />
+                    <div className="text-sm font-medium">Manual Payment</div>
+                    <div className="text-xs text-gray-500">Paybill instructions</div>
+                  </button>
+                </div>
+              </div>
+              
               {/* Partner Selection for Super Admin */}
               {currentUser?.role === 'super_admin' && (
                 <div className="mb-4">
@@ -658,27 +714,137 @@ export default function WalletPage() {
                   required
                 />
               </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Phone Number <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="tel"
-                  value={topUpData.phone_number}
-                  onChange={(e) => setTopUpData(prev => ({ ...prev, phone_number: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="254XXXXXXXXX"
-                  required
-                />
-                <p className="mt-1 text-xs text-gray-500">Format: 254XXXXXXXXX (e.g., 254700000000)</p>
-              </div>
+              {/* STK Push Form Fields */}
+              {topUpMethod === 'stk_push' && (
+                <>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Phone Number <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={topUpData.phone_number}
+                      onChange={(e) => setTopUpData(prev => ({ ...prev, phone_number: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="254XXXXXXXXX"
+                      required
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Format: 254XXXXXXXXX (e.g., 254700000000)</p>
+                  </div>
 
-              {/* Information Box */}
-              <div className="mb-4 p-3 bg-green-50 rounded-lg">
-                <p className="text-sm text-green-800">
-                  <strong>Note:</strong> You will receive an STK Push notification on your phone to complete the payment.
-                </p>
-              </div>
+                  {/* STK Push Information Box */}
+                  <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <strong>Note:</strong> You will receive an STK Push notification on your phone to complete the payment.
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {/* Manual Payment Instructions */}
+              {topUpMethod === 'manual' && (
+                <>
+                  {/* Manual Payment Instructions */}
+                  <div className="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                    <h4 className="text-sm font-semibold text-green-900 mb-3 flex items-center">
+                      <CreditCard className="w-4 h-4 mr-2" />
+                      Manual Payment Instructions
+                    </h4>
+                    
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-2 bg-white rounded border">
+                        <div>
+                          <span className="text-xs text-gray-500">Paybill Number</span>
+                          <div className="font-mono text-sm font-semibold">880100</div>
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard('880100', 'Paybill Number')}
+                          className="p-1 text-green-600 hover:bg-green-100 rounded transition-colors"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                      </div>
+                      
+                      <div className="flex items-center justify-between p-2 bg-white rounded border">
+                        <div>
+                          <span className="text-xs text-gray-500">Account Number</span>
+                          <div className="font-mono text-sm font-semibold">
+                            774451#{(() => {
+                              if (currentUser?.role === 'super_admin' && selectedPartner) {
+                                return selectedPartner.short_code
+                              } else if (currentUser?.partner_id) {
+                                const userPartner = partners.find(p => p.id === currentUser.partner_id)
+                                return userPartner?.short_code || 'PARTNER'
+                              }
+                              return 'PARTNER'
+                            })()}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard(
+                            `774451#${(() => {
+                              if (currentUser?.role === 'super_admin' && selectedPartner) {
+                                return selectedPartner.short_code
+                              } else if (currentUser?.partner_id) {
+                                const userPartner = partners.find(p => p.id === currentUser.partner_id)
+                                return userPartner?.short_code || 'PARTNER'
+                              }
+                              return 'PARTNER'
+                            })()}`,
+                            'Account Number'
+                          )}
+                          className="p-1 text-green-600 hover:bg-green-100 rounded transition-colors"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                      </div>
+                      
+                      <div className="flex items-center justify-between p-2 bg-white rounded border">
+                        <div>
+                          <span className="text-xs text-gray-500">Amount</span>
+                          <div className="font-mono text-sm font-semibold">KES {topUpData.amount || 0}</div>
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard(topUpData.amount.toString(), 'Amount')}
+                          className="p-1 text-green-600 hover:bg-green-100 rounded transition-colors"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-3 p-2 bg-yellow-50 rounded border border-yellow-200">
+                      <p className="text-xs text-yellow-800">
+                        <strong>Steps:</strong>
+                      </p>
+                      <ol className="text-xs text-yellow-700 mt-1 list-decimal list-inside space-y-1">
+                        <li>Go to M-Pesa menu on your phone</li>
+                        <li>Select "Lipa na M-Pesa"</li>
+                        <li>Select "Paybill"</li>
+                        <li>Enter Paybill Number: <span className="font-mono font-semibold">880100</span></li>
+                        <li>Enter Account Number: <span className="font-mono font-semibold">774451#{(() => {
+                          if (currentUser?.role === 'super_admin' && selectedPartner) {
+                            return selectedPartner.short_code
+                          } else if (currentUser?.partner_id) {
+                            const userPartner = partners.find(p => p.id === currentUser.partner_id)
+                            return userPartner?.short_code || 'PARTNER'
+                          }
+                          return 'PARTNER'
+                        })()}</span></li>
+                        <li>Enter Amount: <span className="font-mono font-semibold">KES {topUpData.amount || 0}</span></li>
+                        <li>Enter your M-Pesa PIN</li>
+                        <li>Confirm the transaction</li>
+                      </ol>
+                    </div>
+                    
+                    <div className="mt-3 p-2 bg-blue-50 rounded border border-blue-200">
+                      <p className="text-xs text-blue-800">
+                        <strong>Auto-Credit:</strong> Your wallet will be automatically credited once NCBA confirms the payment.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="flex justify-end space-x-3">
                 <button
@@ -686,28 +852,51 @@ export default function WalletPage() {
                     setShowTopUpModal(false)
                     setTopUpData({ amount: 0, phone_number: '' })
                     setSelectedPartner(null)
+                    setTopUpMethod('stk_push')
                   }}
                   className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
                 >
                   Cancel
                 </button>
-                <button
-                  onClick={handleTopUp}
-                  disabled={isTopUpLoading}
-                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                >
-                  {isTopUpLoading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                      Initiating STK Push...
-                    </>
-                  ) : (
-                    <>
-                      <Smartphone className="w-4 h-4 mr-2" />
-                      Initiate STK Push
-                    </>
-                  )}
-                </button>
+                
+                {topUpMethod === 'stk_push' ? (
+                  <button
+                    onClick={handleTopUp}
+                    disabled={isTopUpLoading || !topUpData.phone_number}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                  >
+                    {isTopUpLoading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Initiating STK Push...
+                      </>
+                    ) : (
+                      <>
+                        <Smartphone className="w-4 h-4 mr-2" />
+                        Initiate STK Push
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setShowTopUpModal(false)
+                      setTopUpData({ amount: 0, phone_number: '' })
+                      setSelectedPartner(null)
+                      setTopUpMethod('stk_push')
+                      addToast({
+                        type: 'success',
+                        title: 'Payment Instructions Ready',
+                        message: 'Follow the instructions above to make your payment. Your wallet will be credited automatically.',
+                        duration: 8000
+                      })
+                    }}
+                    className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center"
+                  >
+                    <Check className="w-4 h-4 mr-2" />
+                    Got It!
+                  </button>
+                )}
               </div>
             </div>
           </div>
