@@ -360,7 +360,7 @@ export async function POST(request: NextRequest) {
       stkPushUsername: settings.ncba_stk_push_username ? 'SET' : 'NOT SET',
       stkPushPassword: settings.ncba_stk_push_password ? 'SET' : 'NOT SET',
       stkPushPasskey: settings.ncba_stk_push_passkey ? 'SET' : 'NOT SET',
-      businessShortCode: business_short_code
+      paybillNumber: paybill_number
     })
 
     // Debug: Log authentication attempt details
