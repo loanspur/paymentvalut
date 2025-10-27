@@ -86,7 +86,12 @@ export async function GET(request: NextRequest) {
             transactionSummaries[wallet.partner_id] = {
               total_transactions: walletTransactions.length,
               total_topups: walletTransactions.filter(t => t.transaction_type === 'top_up').length,
-              total_disbursements: walletTransactions.filter(t => t.transaction_type === 'disbursement').length,
+              total_disbursements: walletTransactions.filter(t => 
+                t.transaction_type === 'disbursement' || 
+                (t.transaction_type === 'charge' && 
+                 (t.description?.includes('Disbursement charge') || 
+                  t.metadata?.disbursement_id))
+              ).length,
               total_float_purchases: walletTransactions.filter(t => t.transaction_type === 'b2c_float_purchase').length,
               total_charges: walletTransactions.filter(t => t.transaction_type === 'charge').length,
               total_manual_credits: walletTransactions.filter(t => t.transaction_type === 'manual_credit').length,
