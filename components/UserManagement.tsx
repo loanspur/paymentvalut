@@ -14,7 +14,8 @@ import {
   UserCheck,
   UserX,
   Key,
-  Settings
+  Settings,
+  User
 } from 'lucide-react'
 import NotificationSystem, { useNotifications } from './NotificationSystem'
 import UserPermissionsManager from './UserPermissionsManager'

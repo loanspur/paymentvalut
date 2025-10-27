@@ -9,7 +9,7 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { amount, phone_number } = await request.json()
+    const { amount, phone_number, partner_id } = await request.json()
 
     if (!amount || !phone_number) {
       return NextResponse.json(
@@ -57,14 +57,55 @@ export async function POST(request: NextRequest) {
     // Get current user from database
     const { data: currentUser, error: userError } = await supabase
       .from('users')
-      .select('id, role, partner_id, is_active')
+      .select('id, role, partner_id, is_active, email')
       .eq('id', payload.userId)
       .single()
 
+    console.log('🔍 [DEBUG] Current user lookup:', {
+      userId: payload.userId,
+      userError: userError,
+      currentUser: currentUser ? {
+        id: currentUser.id,
+        email: currentUser.email,
+        role: currentUser.role,
+        partner_id: currentUser.partner_id,
+        is_active: currentUser.is_active
+      } : null
+    })
+
     if (userError || !currentUser || !currentUser.is_active) {
+      console.error('❌ User validation failed:', {
+        userError,
+        currentUser,
+        userId: payload.userId
+      })
       return NextResponse.json(
         { success: false, error: 'User not found or inactive' },
         { status: 401 }
+      )
+    }
+
+    // Determine which partner to use
+    let targetPartnerId: string
+
+    if (currentUser.role === 'super_admin' && partner_id) {
+      // Super admin can specify any partner
+      targetPartnerId = partner_id
+      console.log('🔍 [DEBUG] Super admin selected partner:', targetPartnerId)
+    } else if (currentUser.partner_id) {
+      // Regular users use their assigned partner
+      targetPartnerId = currentUser.partner_id
+      console.log('🔍 [DEBUG] Regular user using assigned partner:', targetPartnerId)
+    } else {
+      console.error('❌ User has no partner_id:', {
+        userId: currentUser.id,
+        email: currentUser.email,
+        role: currentUser.role,
+        partner_id: currentUser.partner_id
+      })
+      return NextResponse.json(
+        { success: false, error: 'User is not assigned to any partner. Please contact administrator to assign you to a partner.' },
+        { status: 400 }
       )
     }
 
@@ -72,14 +113,41 @@ export async function POST(request: NextRequest) {
     const { data: partner, error: partnerError } = await supabase
       .from('partners')
       .select('*')
-      .eq('id', currentUser.partner_id)
-      .eq('is_active', true)
+      .eq('id', targetPartnerId)
       .single()
 
+    console.log('🔍 [DEBUG] Partner lookup:', {
+      partnerId: targetPartnerId,
+      partnerError: partnerError,
+      partner: partner ? {
+        id: partner.id,
+        name: partner.name,
+        short_code: partner.short_code,
+        is_active: partner.is_active
+      } : null
+    })
+
     if (partnerError || !partner) {
+      console.error('❌ Partner lookup failed:', {
+        partnerError,
+        partner,
+        partnerId: targetPartnerId
+      })
       return NextResponse.json(
-        { success: false, error: 'Partner not found or inactive' },
+        { success: false, error: 'Partner not found in database' },
         { status: 404 }
+      )
+    }
+
+    if (!partner.is_active) {
+      console.error('❌ Partner is inactive:', {
+        partnerId: partner.id,
+        partnerName: partner.name,
+        is_active: partner.is_active
+      })
+      return NextResponse.json(
+        { success: false, error: 'Partner account is inactive. Please contact administrator.' },
+        { status: 400 }
       )
     }
 

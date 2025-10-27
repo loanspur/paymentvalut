@@ -50,6 +50,23 @@ interface WalletTransaction {
 interface TopUpRequest {
   amount: number
   phone_number: string
+  partner_id?: string
+}
+
+interface Partner {
+  id: string
+  name: string
+  short_code: string
+  is_active: boolean
+}
+
+interface User {
+  id: string
+  email: string
+  role: string
+  partner_id?: string
+  first_name?: string
+  last_name?: string
 }
 
 export default function WalletPage() {
@@ -61,6 +78,9 @@ export default function WalletPage() {
   const [topUpData, setTopUpData] = useState<TopUpRequest>({ amount: 0, phone_number: '' })
   const [floatAmount, setFloatAmount] = useState(0)
   const [showBalance, setShowBalance] = useState(true)
+  const [partners, setPartners] = useState<Partner[]>([])
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null)
   const [filters, setFilters] = useState({
     transaction_type: '',
     status: '',
@@ -77,6 +97,8 @@ export default function WalletPage() {
   useEffect(() => {
     loadWalletData()
     loadTransactions()
+    loadCurrentUser()
+    loadPartners()
   }, [pagination.page, filters])
 
   const loadWalletData = async () => {
@@ -91,6 +113,32 @@ export default function WalletPage() {
       console.error('Failed to load wallet data:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadCurrentUser = async () => {
+    try {
+      const response = await fetch('/api/auth/me', {
+        credentials: 'include'
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setCurrentUser(data.user)
+      }
+    } catch (error) {
+      console.error('Failed to load current user:', error)
+    }
+  }
+
+  const loadPartners = async () => {
+    try {
+      const response = await fetch('/api/partners')
+      if (response.ok) {
+        const data = await response.json()
+        setPartners(data.partners || [])
+      }
+    } catch (error) {
+      console.error('Failed to load partners:', error)
     }
   }
 
@@ -123,6 +171,12 @@ export default function WalletPage() {
       return
     }
 
+    // For super admin, require partner selection
+    if (currentUser?.role === 'super_admin' && !topUpData.partner_id) {
+      alert('Please select a partner for the top-up')
+      return
+    }
+
     try {
       const response = await fetch('/api/wallet/topup/stk-push', {
         method: 'POST',
@@ -137,6 +191,7 @@ export default function WalletPage() {
         alert('STK Push initiated! Check your phone to complete the payment.')
         setShowTopUpModal(false)
         setTopUpData({ amount: 0, phone_number: '' })
+        setSelectedPartner(null)
         loadWalletData()
       } else {
         const error = await response.json()
@@ -508,9 +563,56 @@ export default function WalletPage() {
           <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
             <div className="mt-3">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Top Up Wallet</h3>
+              
+              {/* Partner Selection for Super Admin */}
+              {currentUser?.role === 'super_admin' && (
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Partner <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={topUpData.partner_id || ''}
+                    onChange={(e) => {
+                      const partnerId = e.target.value
+                      const partner = partners.find(p => p.id === partnerId)
+                      setTopUpData(prev => ({ ...prev, partner_id: partnerId }))
+                      setSelectedPartner(partner || null)
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select a partner</option>
+                    {partners.filter(p => p.is_active).map(partner => (
+                      <option key={partner.id} value={partner.id}>
+                        {partner.name} ({partner.short_code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Partner Details Display */}
+              {(currentUser?.role !== 'super_admin' && currentUser?.partner_id) && (
+                <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+                  <h4 className="text-sm font-medium text-blue-900 mb-2">Partner Details</h4>
+                  {(() => {
+                    const userPartner = partners.find(p => p.id === currentUser.partner_id)
+                    return userPartner ? (
+                      <div className="text-sm text-blue-800">
+                        <p><strong>Name:</strong> {userPartner.name}</p>
+                        <p><strong>Short Code:</strong> {userPartner.short_code}</p>
+                        <p><strong>Status:</strong> {userPartner.is_active ? '✅ Active' : '❌ Inactive'}</p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-red-600">Partner not found</p>
+                    )
+                  })()}
+                </div>
+              )}
+
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Amount (KES)
+                  Amount (KES) <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -519,11 +621,12 @@ export default function WalletPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter amount"
                   min="1"
+                  required
                 />
               </div>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Phone Number
+                  Phone Number <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="tel"
@@ -531,11 +634,25 @@ export default function WalletPage() {
                   onChange={(e) => setTopUpData(prev => ({ ...prev, phone_number: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="254XXXXXXXXX"
+                  required
                 />
+                <p className="mt-1 text-xs text-gray-500">Format: 254XXXXXXXXX (e.g., 254700000000)</p>
               </div>
+
+              {/* Information Box */}
+              <div className="mb-4 p-3 bg-green-50 rounded-lg">
+                <p className="text-sm text-green-800">
+                  <strong>Note:</strong> You will receive an STK Push notification on your phone to complete the payment.
+                </p>
+              </div>
+
               <div className="flex justify-end space-x-3">
                 <button
-                  onClick={() => setShowTopUpModal(false)}
+                  onClick={() => {
+                    setShowTopUpModal(false)
+                    setTopUpData({ amount: 0, phone_number: '' })
+                    setSelectedPartner(null)
+                  }}
                   className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
                 >
                   Cancel
