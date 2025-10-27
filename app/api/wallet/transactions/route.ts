@@ -19,46 +19,39 @@ export async function GET(request: NextRequest) {
     
     const offset = (page - 1) * limit
 
-    // Get the current user's partner (for now, get first partner as demo)
+    // Get all wallets
+    const { data: wallets, error: walletsError } = await supabase
+      .from('partner_wallets')
+      .select('id, current_balance, partner_id')
+
+    if (walletsError || !wallets || wallets.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'No wallets found' },
+        { status: 404 }
+      )
+    }
+
+    // Get all partners
     const { data: partners, error: partnersError } = await supabase
       .from('partners')
-      .select('id')
-      .limit(1)
-      .single()
+      .select('id, name, short_code')
 
-    if (partnersError || !partners) {
-      return NextResponse.json(
-        { success: false, error: 'No partner found' },
-        { status: 404 }
-      )
+    if (partnersError) {
+      console.error('Error fetching partners:', partnersError)
     }
 
-    // Get wallet for the partner
-    const { data: wallet, error: walletError } = await supabase
-      .from('partner_wallets')
-      .select('id, current_balance')
-      .eq('partner_id', partners.id)
-      .single()
+    // Create maps for quick lookup
+    const walletIds = wallets.map(w => w.id)
+    const partnerMap = partners?.reduce((acc, partner) => {
+      acc[partner.id] = partner
+      return acc
+    }, {} as Record<string, any>) || {}
 
-    if (walletError || !wallet) {
-      return NextResponse.json(
-        { success: false, error: 'Wallet not found' },
-        { status: 404 }
-      )
-    }
-
-    // Build query for wallet transactions with partner information
+    // Build query for wallet transactions
     let query = supabase
       .from('wallet_transactions')
-      .select(`
-        *,
-        partners!inner(
-          id,
-          name,
-          short_code
-        )
-      `)
-      .eq('wallet_id', wallet.id)
+      .select('*')
+      .in('wallet_id', walletIds)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
@@ -93,24 +86,38 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Create a map of wallet_id to wallet info for quick lookup
+    const walletMap = wallets.reduce((acc, wallet) => {
+      const partner = partnerMap[wallet.partner_id]
+      acc[wallet.id] = {
+        current_balance: wallet.current_balance,
+        partner_name: partner?.name || 'N/A',
+        partner_short_code: partner?.short_code || 'N/A',
+        partner_id: wallet.partner_id
+      }
+      return acc
+    }, {} as Record<string, any>)
+
     // Transform data to include partner information and calculate wallet balance after
-    const transformedData = data?.map((transaction, index) => {
-      // Calculate wallet balance after this transaction
-      // We need to get the current wallet balance and subtract/add amounts from subsequent transactions
-      let balanceAfter = wallet?.current_balance || 0
+    const transformedData = data?.map((transaction) => {
+      const walletInfo = walletMap[transaction.wallet_id]
       
+      // Calculate wallet balance after this transaction
       // For now, we'll use a simple calculation based on transaction type
       // In a real implementation, you might want to calculate this more accurately
-      if (transaction.transaction_type === 'top_up') {
-        balanceAfter = (wallet?.current_balance || 0) + transaction.amount
+      let balanceAfter = walletInfo?.current_balance || 0
+      
+      if (transaction.transaction_type === 'top_up' || transaction.transaction_type === 'manual_credit') {
+        balanceAfter = (walletInfo?.current_balance || 0) + Math.abs(transaction.amount)
       } else {
-        balanceAfter = (wallet?.current_balance || 0) - transaction.amount
+        balanceAfter = (walletInfo?.current_balance || 0) - Math.abs(transaction.amount)
       }
 
       return {
         ...transaction,
-        partner_name: transaction.partners?.name || 'N/A',
-        partner_short_code: transaction.partners?.short_code || 'N/A',
+        partner_id: walletInfo?.partner_id,
+        partner_name: walletInfo?.partner_name || 'N/A',
+        partner_short_code: walletInfo?.partner_short_code || 'N/A',
         wallet_balance_after: balanceAfter
       }
     }) || []
@@ -119,7 +126,7 @@ export async function GET(request: NextRequest) {
     const { data: summaryData, error: summaryError } = await supabase
       .from('wallet_transactions')
       .select('transaction_type, amount, status, created_at')
-      .eq('wallet_id', wallet.id)
+      .in('wallet_id', walletIds)
 
     if (summaryError) {
       console.error('Error fetching wallet transaction summary:', summaryError)
