@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     // Get user details
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('id, email, phone_number, phone_verified, email_verified')
+      .select('id, email, phone_number, phone_verified, email_verified, role, partner_id')
       .eq('id', payload.userId || payload.sub || payload.id)
       .single()
 
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     // Get OTP settings
     const { data: otpSettings } = await supabase
       .from('system_settings')
-      .select('setting_value')
+      .select('setting_key, setting_value')
       .eq('category', 'otp')
       .in('setting_key', ['otp_expiry_minutes', 'otp_max_attempts', 'otp_length'])
 

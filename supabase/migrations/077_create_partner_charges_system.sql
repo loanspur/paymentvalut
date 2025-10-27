@@ -137,3 +137,4 @@ COMMENT ON COLUMN partner_charge_transactions.wallet_balance_after IS 'Wallet ba
 
 
 
+
