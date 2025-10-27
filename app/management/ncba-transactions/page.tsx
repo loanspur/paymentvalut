@@ -41,7 +41,7 @@ interface NCBATransaction {
   transaction_id: string
   transaction_type: string
   transaction_time: string
-  transaction_amount: number
+  amount: number
   business_short_code: string
   bill_reference_number: string
   customer_phone: string
@@ -215,7 +215,7 @@ export default function NCBATransactionsPage() {
       ...transactions.map(t => [
         t.transaction_id,
         t.transaction_type,
-        t.transaction_amount,
+        t.amount,
         `"${t.customer_name || ''}"`,
         t.customer_phone,
         t.bill_reference_number,
@@ -655,7 +655,7 @@ export default function NCBATransactionsPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
-                          {formatAmount(transaction.transaction_amount)}
+                          {formatAmount(transaction.amount)}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -864,7 +864,7 @@ export default function NCBATransactionsPage() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-600">Amount:</span>
-                      <span className="text-sm font-medium text-gray-900">{formatAmount(selectedTransaction.transaction_amount)}</span>
+                      <span className="text-sm font-medium text-gray-900">{formatAmount(selectedTransaction.amount)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-600">Status:</span>
@@ -1024,7 +1024,7 @@ export default function NCBATransactionsPage() {
                   Transaction: <span className="font-medium">{selectedTransaction.transaction_id}</span>
                 </p>
                 <p className="text-sm text-gray-600 mb-2">
-                  Amount: <span className="font-medium">{formatAmount(selectedTransaction.transaction_amount)}</span>
+                  Amount: <span className="font-medium">{formatAmount(selectedTransaction.amount)}</span>
                 </p>
                 <p className="text-sm text-gray-600 mb-4">
                   Customer: <span className="font-medium">{selectedTransaction.customer_name}</span>

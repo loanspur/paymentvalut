@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
     if (partnerIds.length > 0) {
       const { data: partners, error: partnersError } = await supabase
         .from('partners')
-        .select('id, name, contact_email')
+        .select('id, name, short_code, contact_email')
         .in('id', partnerIds)
       
       if (!partnersError && partners) {
@@ -84,16 +84,37 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Transform data to include partner information
+    // Check wallet transactions for each C2B transaction
+    const transactionIds = data?.map(t => t.transaction_id) || []
+    let walletTransactionsMap = {}
+    
+    if (transactionIds.length > 0) {
+      const { data: walletTransactions, error: walletError } = await supabase
+        .from('wallet_transactions')
+        .select('reference, status, amount')
+        .in('reference', transactionIds)
+      
+      if (!walletError && walletTransactions) {
+        walletTransactionsMap = walletTransactions.reduce((acc, wt) => {
+          acc[wt.reference] = wt
+          return acc
+        }, {})
+      }
+    }
+
+    // Transform data to include partner information and wallet status
     const transformedData = data?.map(transaction => ({
       ...transaction,
-      partner_name: transaction.partner_id ? partnersMap[transaction.partner_id]?.name || null : null
+      partner_name: transaction.partner_id ? partnersMap[transaction.partner_id]?.name || null : null,
+      partner_short_code: transaction.partner_id ? partnersMap[transaction.partner_id]?.short_code || null : null,
+      payment_method: transaction.transaction_type === 'Pay Bill' ? 'NCBA Paybill' : 'Unknown',
+      wallet_credited: walletTransactionsMap[transaction.transaction_id]?.status === 'completed' || false
     })) || []
 
     // Get transaction summary (without partner filter for global view)
     const { data: summaryData, error: summaryError } = await supabase
       .from('c2b_transactions')
-      .select('transaction_type, transaction_amount, status, created_at, partner_id')
+      .select('transaction_type, amount, status, created_at, partner_id')
 
     if (summaryError) {
       console.error('Error fetching C2B transaction summary:', summaryError)
@@ -102,7 +123,7 @@ export async function GET(request: NextRequest) {
     // Calculate summary
     const summary = {
       total_transactions: summaryData?.length || 0,
-      total_amount: summaryData?.reduce((sum, t) => sum + (t.transaction_amount || 0), 0) || 0,
+      total_amount: summaryData?.reduce((sum, t) => sum + (t.amount || 0), 0) || 0,
       total_paybill_transactions: summaryData?.filter(t => t.transaction_type === 'PAYBILL').length || 0,
       total_till_transactions: summaryData?.filter(t => t.transaction_type === 'TILLNUMBER').length || 0,
       completed_transactions: summaryData?.filter(t => t.status === 'completed').length || 0,
@@ -117,7 +138,7 @@ export async function GET(request: NextRequest) {
       today_amount: summaryData?.filter(t => {
         const today = new Date().toISOString().split('T')[0]
         return t.created_at?.startsWith(today)
-      }).reduce((sum, t) => sum + (t.transaction_amount || 0), 0) || 0
+      }).reduce((sum, t) => sum + (t.amount || 0), 0) || 0
     }
 
     return NextResponse.json({
