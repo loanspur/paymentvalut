@@ -68,7 +68,9 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    console.log('NCBA Paybill Notification received:', JSON.stringify(notificationData, null, 2))
+    console.log('🎯 NCBA Paybill Notification received:', JSON.stringify(notificationData, null, 2))
+    console.log('📅 Timestamp:', new Date().toISOString())
+    console.log('🌐 Source IP:', request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown')
 
     // Extract notification data
     const {
@@ -149,19 +151,42 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Find partner by account reference (BillRefNumber should be in format 123456#UNIQUE_PARTNER_ID)
+    // Find partner by account reference (BillRefNumber should be in format 774451#PARTNER_SHORT_CODE)
     let partner = null
     if (BillRefNumber && BillRefNumber.includes(settings.ncba_account_reference_separator)) {
       const parts = BillRefNumber.split(settings.ncba_account_reference_separator)
       if (parts.length === 2 && parts[0] === settings.ncba_account_number) {
-        const partnerId = parts[1]
+        const partnerIdentifier = parts[1] // This could be partner ID or short code
         
-        const { data: partnerData, error: partnerError } = await supabase
+        // First try to find by ID (for backward compatibility)
+        let { data: partnerData, error: partnerError } = await supabase
           .from('partners')
           .select('*')
-          .eq('id', partnerId)
+          .eq('id', partnerIdentifier)
           .eq('is_active', true)
           .single()
+
+        // If not found by ID, try to find by short code
+        if (partnerError || !partnerData) {
+          console.log('Partner not found by ID, trying short code:', partnerIdentifier)
+          const { data: partnerByShortCode, error: shortCodeError } = await supabase
+            .from('partners')
+            .select('*')
+            .eq('short_code', partnerIdentifier)
+            .eq('is_active', true)
+            .single()
+
+          if (shortCodeError || !partnerByShortCode) {
+            console.error('Partner not found for account reference:', BillRefNumber)
+            return NextResponse.json({
+              ResultCode: "1",
+              ResultDesc: "Partner not found"
+            })
+          }
+          
+          partnerData = partnerByShortCode
+          partnerError = shortCodeError
+        }
 
         if (partnerError || !partnerData) {
           console.error('Partner not found for account reference:', BillRefNumber)
@@ -172,6 +197,7 @@ export async function POST(request: NextRequest) {
         }
         
         partner = partnerData
+        console.log(`Partner found: ${partner.name} (${partner.short_code}) for account reference: ${BillRefNumber}`)
       } else {
         console.error('Invalid account reference format:', BillRefNumber)
         return NextResponse.json({
@@ -210,7 +236,7 @@ export async function POST(request: NextRequest) {
         transaction_id: TransID,
         transaction_type: TransType || 'PAYBILL',
         transaction_time: TransTime,
-        transaction_amount: parseFloat(TransAmount),
+        amount: parseFloat(TransAmount), // Use 'amount' instead of 'transaction_amount'
         business_short_code: BusinessShortCode,
         bill_reference_number: BillRefNumber || null,
         customer_phone: Mobile,
@@ -287,13 +313,13 @@ export async function POST(request: NextRequest) {
         const { data: walletTransaction, error: walletTransactionError } = await supabase
           .from('wallet_transactions')
           .insert({
-            partner_id: partner.id,
+            wallet_id: wallet.id,
             transaction_type: 'top_up',
             amount: parseFloat(TransAmount),
             currency: 'KES',
             status: 'completed',
             reference: TransID,
-            description: `Wallet top-up via NCBA Paybill - ${BillRefNumber || 'N/A'}`,
+            description: `Wallet top-up via NCBA Paybill (Manual Payment) - ${BillRefNumber || 'N/A'}`,
             metadata: {
               c2b_transaction_id: c2bTransaction.id,
               transaction_type: TransType,
@@ -301,7 +327,10 @@ export async function POST(request: NextRequest) {
               bill_reference: BillRefNumber,
               customer_phone: Mobile,
               customer_name: name,
-              source: 'ncba_paybill_notification'
+              source: 'ncba_paybill_notification',
+              payment_method: 'manual_paybill',
+              partner_name: partner.name,
+              partner_short_code: partner.short_code
             }
           })
           .select()
@@ -315,7 +344,15 @@ export async function POST(request: NextRequest) {
       console.error('Error processing wallet update:', walletError)
     }
 
-    console.log('NCBA Paybill notification processed successfully:', TransID)
+    console.log('NCBA Paybill notification processed successfully:', {
+      transactionId: TransID,
+      partnerName: partner.name,
+      partnerShortCode: partner.short_code,
+      amount: TransAmount,
+      accountReference: BillRefNumber,
+      customerPhone: Mobile,
+      customerName: name
+    })
 
     // Return success response
     return NextResponse.json({
