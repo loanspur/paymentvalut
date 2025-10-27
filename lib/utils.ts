@@ -22,14 +22,30 @@ export const formatVariance = (variance: number): string => {
   return `${sign}${variance.toFixed(2)}%`
 }
 
+// Utility function to get current UTC timestamp (always with Z suffix)
+export const getCurrentUtcTimestamp = (): string => {
+  return new Date().toISOString()
+}
+
+// Utility function to ensure a timestamp is properly formatted as UTC
+export const ensureUtcTimestamp = (timestamp?: string): string => {
+  if (!timestamp) {
+    return new Date().toISOString()
+  }
+  
+  // If timestamp doesn't end with Z, add it
+  if (!timestamp.endsWith('Z')) {
+    return timestamp + 'Z'
+  }
+  
+  return timestamp
+}
+
 // Date formatting with East Africa Time (UTC+3)
 export const formatDate = (date: string | Date): string => {
   const dateObj = new Date(date)
   
-  // Convert to East Africa Time (UTC+3)
-  const eastAfricaTime = new Date(dateObj.getTime() + (3 * 60 * 60 * 1000))
-  
-  return eastAfricaTime.toLocaleDateString('en-US', {
+  return dateObj.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

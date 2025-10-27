@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
+import { getCurrentUtcTimestamp, ensureUtcTimestamp } from '../../../../lib/utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -68,8 +69,11 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Get current UTC timestamp with proper Z suffix
+    const currentUtcTime = getCurrentUtcTimestamp()
+    
     console.log('🎯 NCBA Paybill Notification received:', JSON.stringify(notificationData, null, 2))
-    console.log('📅 Timestamp:', new Date().toISOString())
+    console.log('📅 Timestamp:', currentUtcTime)
     console.log('🌐 Source IP:', request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown')
 
     // Extract notification data
@@ -239,7 +243,7 @@ export async function POST(request: NextRequest) {
         customer_name: name || null,
         status: 'completed',
         raw_notification: notificationData,
-        created_at: created_at || new Date().toISOString()
+        created_at: ensureUtcTimestamp(created_at) || currentUtcTime
       })
       .select()
       .single()
@@ -296,7 +300,7 @@ export async function POST(request: NextRequest) {
             balance: newBalance,
             currency: 'KES',
             is_active: true,
-            updated_at: new Date().toISOString()
+            updated_at: currentUtcTime
           })
 
         if (balanceError) {
