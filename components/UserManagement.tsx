@@ -47,6 +47,9 @@ interface User {
     access_type: string
     granted_at: string
   }>
+  two_factor_enabled?: boolean
+  password_change_required?: boolean
+  profile_picture_url?: string
 }
 
 interface Partner {
@@ -270,7 +273,10 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
       role: user.role,
       partner_id: user.partner_id || '',
       shortcode_access: user.shortcode_access || [],
-      notes: user.notes || ''
+      notes: user.notes || '',
+      two_factor_enabled: user.two_factor_enabled || false,
+      password_change_required: user.password_change_required || false,
+      profile_picture_url: user.profile_picture_url || ''
     })
     setShowUserModal(true)
   }
