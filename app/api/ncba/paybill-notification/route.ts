@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       notificationData = await request.json()
     } else if (contentType.includes('application/xml') || contentType.includes('text/xml')) {
       const xmlBody = await request.text()
-      console.log('Received XML notification:', xmlBody)
+      // Received XML notification
       
       // For now, we'll focus on JSON notifications
       // XML parsing can be added later if needed
@@ -72,9 +72,7 @@ export async function POST(request: NextRequest) {
     // Get current UTC timestamp with proper Z suffix
     const currentUtcTime = getCurrentUtcTimestamp()
     
-    console.log('🎯 NCBA Paybill Notification received:', JSON.stringify(notificationData, null, 2))
-    console.log('📅 Timestamp:', currentUtcTime)
-    console.log('🌐 Source IP:', request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown')
+    // NCBA Paybill notification received
 
     // Extract notification data
     const {
@@ -147,19 +145,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate hash (temporarily disabled for testing)
-    console.log('🔐 Hash validation temporarily disabled for testing')
-    console.log('📊 Received hash:', Hash)
-    console.log('📊 Generated hash would be:', generateHash(
-      settings.ncba_notification_secret_key,
-      TransType,
-      TransID,
-      TransTime,
-      TransAmount,
-      BusinessShortCode,
-      BillRefNumber || 'N/A',
-      Mobile,
-      name || 'N/A'
-    ))
+    // Hash validation temporarily disabled for testing
     
     // TODO: Fix hash validation method - NCBA is using different hash generation
     // if (!validateHash(Hash, settings.ncba_notification_secret_key, notificationData)) {
@@ -176,11 +162,7 @@ export async function POST(request: NextRequest) {
     const accountNumber = settings.ncba_account_number || '774451'
     const partnerIdentifier = notificationData.Narrative || notificationData.narrative
     
-    console.log('🔍 Partner lookup:', {
-      billRefNumber: BillRefNumber,
-      narrative: partnerIdentifier,
-      accountNumber: accountNumber
-    })
+    // Partner lookup in progress
     
     if (BillRefNumber === accountNumber && partnerIdentifier) {
       // Try to find partner by short code (Narrative field) - case insensitive
@@ -200,7 +182,7 @@ export async function POST(request: NextRequest) {
       }
       
       partner = partnerData
-      console.log(`✅ Partner found: ${partner.name} (${partner.short_code}) for account reference: ${BillRefNumber} ${partnerIdentifier}`)
+      // Partner found successfully
     } else {
       console.error('Invalid account reference format:', {
         billRefNumber: BillRefNumber,
@@ -221,7 +203,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (existingTransaction) {
-      console.log('Transaction already processed:', TransID)
+      // Transaction already processed
       return NextResponse.json({
         ResultCode: "0",
         ResultDesc: "Transaction already processed"
@@ -309,7 +291,7 @@ export async function POST(request: NextRequest) {
         if (balanceError) {
           console.error('Error updating wallet balance:', balanceError)
         } else {
-          console.log(`Wallet balance updated for partner ${partner.name}: ${currentBalance} -> ${newBalance}`)
+          // Wallet balance updated successfully
         }
 
         // Create wallet transaction record
@@ -343,7 +325,7 @@ export async function POST(request: NextRequest) {
           if (walletTransactionError) {
             console.error('Error creating wallet transaction:', walletTransactionError)
           } else {
-            console.log(`Wallet transaction created for partner ${partner.name}: ${TransAmount} KES`)
+            // Wallet transaction created successfully
           }
         } else {
           console.error('Cannot create wallet transaction: wallet not found or has no ID')
@@ -353,15 +335,7 @@ export async function POST(request: NextRequest) {
       console.error('Error processing wallet update:', walletError)
     }
 
-    console.log('NCBA Paybill notification processed successfully:', {
-      transactionId: TransID,
-      partnerName: partner.name,
-      partnerShortCode: partner.short_code,
-      amount: TransAmount,
-      accountReference: BillRefNumber,
-      customerPhone: Mobile,
-      customerName: name
-    })
+    // NCBA Paybill notification processed successfully
 
     // Return success response
     return NextResponse.json({
