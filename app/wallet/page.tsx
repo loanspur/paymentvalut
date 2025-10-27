@@ -21,7 +21,15 @@ import {
   Filter,
   Download,
   Eye,
-  EyeOff
+  EyeOff,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  MoreHorizontal,
+  X,
+  Info
 } from 'lucide-react'
 import { useToast } from '../../components/ToastSimple'
 
@@ -41,6 +49,7 @@ interface WalletData {
 interface WalletTransaction {
   id: string
   wallet_id: string
+  partner_id: string
   transaction_type: string
   amount: number
   currency: string
@@ -49,6 +58,9 @@ interface WalletTransaction {
   status: string
   created_at: string
   metadata?: any
+  partner_name?: string
+  partner_short_code?: string
+  wallet_balance_after?: number
 }
 
 interface TopUpRequest {
@@ -113,7 +125,8 @@ export default function WalletPage() {
     transaction_type: '',
     status: '',
     start_date: '',
-    end_date: ''
+    end_date: '',
+    search: ''
   })
   const [pagination, setPagination] = useState({
     page: 1,
@@ -121,6 +134,8 @@ export default function WalletPage() {
     total: 0,
     totalPages: 0
   })
+  const [showTransactionDetails, setShowTransactionDetails] = useState(false)
+  const [selectedTransaction, setSelectedTransaction] = useState<WalletTransaction | null>(null)
 
   useEffect(() => {
     loadWalletData()
@@ -345,7 +360,9 @@ export default function WalletPage() {
       'Amount',
       'Reference',
       'Description',
-      'Status'
+      'Status',
+      'Partner',
+      'Wallet Balance After'
     ]
 
     const csvContent = [
@@ -356,7 +373,9 @@ export default function WalletPage() {
         t.amount,
         `"${t.reference || ''}"`,
         `"${t.description || ''}"`,
-        t.status
+        t.status,
+        `"${t.partner_name || ''}"`,
+        t.wallet_balance_after || ''
       ].join(','))
     ].join('\n')
 
@@ -367,6 +386,30 @@ export default function WalletPage() {
     a.download = `wallet-transactions-${new Date().toISOString().split('T')[0]}.csv`
     a.click()
     window.URL.revokeObjectURL(url)
+  }
+
+  const handleViewTransactionDetails = (transaction: WalletTransaction) => {
+    setSelectedTransaction(transaction)
+    setShowTransactionDetails(true)
+  }
+
+  const truncateText = (text: string, maxLength: number = 30) => {
+    if (!text) return '-'
+    return text.length > maxLength ? `${text.substring(0, maxLength)}...` : text
+  }
+
+  const clearFilters = () => {
+    setFilters({
+      transaction_type: '',
+      status: '',
+      start_date: '',
+      end_date: '',
+      search: ''
+    })
+  }
+
+  const goToPage = (page: number) => {
+    setPagination(prev => ({ ...prev, page }))
   }
 
   if (loading) {
@@ -504,10 +547,40 @@ export default function WalletPage() {
               Transaction History ({pagination.total})
             </h2>
             <div className="flex items-center space-x-2">
+              <button
+                onClick={downloadCSV}
+                className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700 transition-colors flex items-center"
+              >
+                <Download className="w-4 h-4 mr-1" />
+                Export CSV
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Search and Filters */}
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+            {/* Search */}
+            <div className="md:col-span-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Search transactions..."
+                  value={filters.search}
+                  onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            {/* Transaction Type Filter */}
+            <div>
               <select
                 value={filters.transaction_type}
                 onChange={(e) => setFilters(prev => ({ ...prev, transaction_type: e.target.value }))}
-                className="px-3 py-1 border border-gray-300 rounded text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">All Types</option>
                 <option value="top_up">Top Up</option>
@@ -515,16 +588,42 @@ export default function WalletPage() {
                 <option value="b2c_float_purchase">B2C Float</option>
                 <option value="charge">Charge</option>
               </select>
+            </div>
+
+            {/* Status Filter */}
+            <div>
               <select
                 value={filters.status}
                 onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
-                className="px-3 py-1 border border-gray-300 rounded text-sm"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">All Status</option>
                 <option value="completed">Completed</option>
                 <option value="pending">Pending</option>
                 <option value="failed">Failed</option>
               </select>
+            </div>
+
+            {/* Date Range */}
+            <div>
+              <input
+                type="date"
+                placeholder="Start Date"
+                value={filters.start_date}
+                onChange={(e) => setFilters(prev => ({ ...prev, start_date: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* Clear Filters */}
+            <div>
+              <button
+                onClick={clearFilters}
+                className="w-full px-3 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm hover:bg-gray-300 transition-colors flex items-center justify-center"
+              >
+                <X className="w-4 h-4 mr-1" />
+                Clear
+              </button>
             </div>
           </div>
         </div>
@@ -533,30 +632,39 @@ export default function WalletPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Type
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Amount
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Reference
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Description
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Partner
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Balance After
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Date
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {transactions.map((transaction) => (
                 <tr key={transaction.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       {getTransactionIcon(transaction.transaction_type)}
                       <span className="ml-2 text-sm font-medium text-gray-900 capitalize">
@@ -564,32 +672,97 @@ export default function WalletPage() {
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-4 whitespace-nowrap">
                     <div className={`text-sm font-medium ${
                       transaction.transaction_type === 'top_up' ? 'text-green-600' : 'text-red-600'
                     }`}>
                       {transaction.transaction_type === 'top_up' ? '+' : '-'}{formatAmount(transaction.amount)}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {transaction.reference || '-'}
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <div className="max-w-24 truncate" title={transaction.reference || ''}>
+                      {truncateText(transaction.reference || '', 15)}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-900">
-                    {transaction.description || '-'}
+                  <td className="px-4 py-4 text-sm text-gray-900">
+                    <div className="max-w-32 truncate" title={transaction.description || ''}>
+                      {truncateText(transaction.description || '', 20)}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    <div className="max-w-24 truncate" title={transaction.partner_name || ''}>
+                      {transaction.partner_short_code || '-'}
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {transaction.wallet_balance_after ? formatAmount(transaction.wallet_balance_after) : '-'}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(transaction.status)}`}>
                       {transaction.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                     {formatDate(transaction.created_at)}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <button
+                      onClick={() => handleViewTransactionDetails(transaction)}
+                      className="text-blue-600 hover:text-blue-800 transition-colors"
+                      title="View Details"
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {pagination.totalPages > 1 && (
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-gray-700">
+                Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} transactions
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => goToPage(1)}
+                  disabled={pagination.page === 1}
+                  className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronsLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => goToPage(pagination.page - 1)}
+                  disabled={pagination.page === 1}
+                  className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="px-3 py-1 text-sm text-gray-700">
+                  Page {pagination.page} of {pagination.totalPages}
+                </span>
+                <button
+                  onClick={() => goToPage(pagination.page + 1)}
+                  disabled={pagination.page === pagination.totalPages}
+                  className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => goToPage(pagination.totalPages)}
+                  disabled={pagination.page === pagination.totalPages}
+                  className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <ChevronsRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {transactions.length === 0 && (
           <div className="text-center py-12">
@@ -941,6 +1114,130 @@ export default function WalletPage() {
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   Purchase Float
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transaction Details Modal */}
+      {showTransactionDetails && selectedTransaction && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                  <Info className="w-5 h-5 mr-2 text-blue-600" />
+                  Transaction Details
+                </h3>
+                <button
+                  onClick={() => setShowTransactionDetails(false)}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Basic Information */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Basic Information</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Transaction ID:</span>
+                      <span className="text-sm font-mono text-gray-900">{selectedTransaction.id}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Type:</span>
+                      <span className="text-sm text-gray-900 capitalize">{selectedTransaction.transaction_type.replace('_', ' ')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Amount:</span>
+                      <span className={`text-sm font-medium ${
+                        selectedTransaction.transaction_type === 'top_up' ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {selectedTransaction.transaction_type === 'top_up' ? '+' : '-'}{formatAmount(selectedTransaction.amount)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Status:</span>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(selectedTransaction.status)}`}>
+                        {selectedTransaction.status}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Date:</span>
+                      <span className="text-sm text-gray-900">{formatDate(selectedTransaction.created_at)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Partner Information */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Partner Information</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Partner Name:</span>
+                      <span className="text-sm text-gray-900">{selectedTransaction.partner_name || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Short Code:</span>
+                      <span className="text-sm text-gray-900">{selectedTransaction.partner_short_code || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Wallet Balance After:</span>
+                      <span className="text-sm text-gray-900">
+                        {selectedTransaction.wallet_balance_after ? formatAmount(selectedTransaction.wallet_balance_after) : 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transaction Details */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Transaction Details</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Reference:</span>
+                      <span className="text-sm font-mono text-gray-900">{selectedTransaction.reference || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Currency:</span>
+                      <span className="text-sm text-gray-900">{selectedTransaction.currency}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-600">Wallet ID:</span>
+                      <span className="text-sm font-mono text-gray-900">{selectedTransaction.wallet_id}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Description</h4>
+                  <p className="text-sm text-gray-900">{selectedTransaction.description || 'No description available'}</p>
+                </div>
+              </div>
+
+              {/* Metadata */}
+              {selectedTransaction.metadata && (
+                <div className="mt-6 bg-gray-50 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-gray-900 mb-3">Additional Information</h4>
+                  <div className="bg-white rounded border p-3">
+                    <pre className="text-xs text-gray-700 whitespace-pre-wrap overflow-x-auto">
+                      {JSON.stringify(selectedTransaction.metadata, null, 2)}
+                    </pre>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => setShowTransactionDetails(false)}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  Close
                 </button>
               </div>
             </div>

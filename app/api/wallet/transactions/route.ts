@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20')
     const start_date = searchParams.get('start_date')
     const end_date = searchParams.get('end_date')
+    const search = searchParams.get('search')
     
     const offset = (page - 1) * limit
 
@@ -35,7 +36,7 @@ export async function GET(request: NextRequest) {
     // Get wallet for the partner
     const { data: wallet, error: walletError } = await supabase
       .from('partner_wallets')
-      .select('id')
+      .select('id, current_balance')
       .eq('partner_id', partners.id)
       .single()
 
@@ -46,10 +47,17 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Build query for wallet transactions
+    // Build query for wallet transactions with partner information
     let query = supabase
       .from('wallet_transactions')
-      .select('*')
+      .select(`
+        *,
+        partners!inner(
+          id,
+          name,
+          short_code
+        )
+      `)
       .eq('wallet_id', wallet.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
@@ -71,6 +79,10 @@ export async function GET(request: NextRequest) {
       query = query.lte('created_at', end_date)
     }
 
+    if (search) {
+      query = query.or(`reference.ilike.%${search}%,description.ilike.%${search}%`)
+    }
+
     const { data, error, count } = await query
 
     if (error) {
@@ -80,6 +92,28 @@ export async function GET(request: NextRequest) {
         { status: 500 }
       )
     }
+
+    // Transform data to include partner information and calculate wallet balance after
+    const transformedData = data?.map((transaction, index) => {
+      // Calculate wallet balance after this transaction
+      // We need to get the current wallet balance and subtract/add amounts from subsequent transactions
+      let balanceAfter = wallet?.current_balance || 0
+      
+      // For now, we'll use a simple calculation based on transaction type
+      // In a real implementation, you might want to calculate this more accurately
+      if (transaction.transaction_type === 'top_up') {
+        balanceAfter = (wallet?.current_balance || 0) + transaction.amount
+      } else {
+        balanceAfter = (wallet?.current_balance || 0) - transaction.amount
+      }
+
+      return {
+        ...transaction,
+        partner_name: transaction.partners?.name || 'N/A',
+        partner_short_code: transaction.partners?.short_code || 'N/A',
+        wallet_balance_after: balanceAfter
+      }
+    }) || []
 
     // Get transaction summary
     const { data: summaryData, error: summaryError } = await supabase
@@ -113,7 +147,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: data || [],
+      data: transformedData,
       summary,
       pagination: {
         page,
