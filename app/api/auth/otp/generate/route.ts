@@ -227,11 +227,21 @@ export async function POST(request: NextRequest) {
 
     // Send OTP via Email
     try {
+      console.log('🔍 [DEBUG] Starting email sending process...')
+      console.log('📧 Email configuration check:', {
+        hasResendApiKey: !!process.env.RESEND_API_KEY,
+        hasResendFromEmail: !!process.env.RESEND_FROM_EMAIL,
+        resendApiKeyPrefix: process.env.RESEND_API_KEY ? process.env.RESEND_API_KEY.substring(0, 10) + '...' : 'NOT SET',
+        resendFromEmail: process.env.RESEND_FROM_EMAIL || 'NOT SET'
+      })
+      
       const emailSent = await sendOTPEmail({
         email: user.email,
         otpCode: otpCode,
         expiryMinutes: expiryMinutes
       })
+
+      console.log('📧 Email sending result:', { emailSent, userEmail: user.email })
 
       if (emailSent) {
         // Update OTP record
@@ -239,9 +249,12 @@ export async function POST(request: NextRequest) {
           .from('login_otp_validations')
           .update({ email_sent: true })
           .eq('id', otpRecord.id)
+        console.log('✅ OTP record updated with email_sent: true')
+      } else {
+        console.log('❌ Email sending failed, OTP record not updated')
       }
     } catch (emailError) {
-      console.error('Error sending email:', emailError)
+      console.error('❌ Error sending email:', emailError)
     }
 
     return NextResponse.json({
@@ -427,6 +440,14 @@ async function sendOTPEmail({
   expiryMinutes: number
 }) {
   try {
+    console.log('📧 [DEBUG] sendOTPEmail called with:', {
+      email,
+      otpCodeLength: otpCode.length,
+      expiryMinutes,
+      hasResendApiKey: !!process.env.RESEND_API_KEY,
+      hasResendFromEmail: !!process.env.RESEND_FROM_EMAIL
+    })
+    
     const { sendEmail } = await import('../../../../../lib/email-utils')
     
     const emailHtml = `
