@@ -317,7 +317,7 @@ export async function POST(request: NextRequest) {
           const { data: walletTransaction, error: walletTransactionError } = await supabase
             .from('wallet_transactions')
             .insert({
-              partner_id: partner.id, // Use partner_id instead of wallet_id
+              wallet_id: wallet.id, // Use wallet_id as required by schema
               transaction_type: 'top_up',
               amount: parseFloat(TransAmount),
               currency: 'KES',
