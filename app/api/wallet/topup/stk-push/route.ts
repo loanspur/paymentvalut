@@ -151,15 +151,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get global NCBA system settings
+    // Get global NCBA system settings for STK Push authentication
     const { data: ncbaSettings, error: settingsError } = await supabase
       .from('system_settings')
       .select('setting_key, setting_value, is_encrypted')
       .in('setting_key', [
         'ncba_business_short_code',
-        'ncba_notification_username', 
-        'ncba_notification_password',
-        'ncba_notification_secret_key',
+        'ncba_stk_push_username', 
+        'ncba_stk_push_password',
+        'ncba_stk_push_passkey',
         'ncba_account_number',
         'ncba_account_reference_separator'
       ])
@@ -252,16 +252,24 @@ export async function POST(request: NextRequest) {
       settings[setting.setting_key] = value
     }
 
-    // Debug: Log decrypted credentials (without exposing actual values)
-    console.log('🔍 [DEBUG] NCBA Settings Status:', {
-      hasUsername: !!settings.ncba_notification_username,
-      hasPassword: !!settings.ncba_notification_password,
-      hasSecretKey: !!settings.ncba_notification_secret_key,
+    // Debug: Log global NCBA STK Push credentials status
+    console.log('🔍 [DEBUG] Global NCBA STK Push Credentials Status:', {
+      hasStkPushUsername: !!settings.ncba_stk_push_username,
+      hasStkPushPassword: !!settings.ncba_stk_push_password,
+      hasStkPushPasskey: !!settings.ncba_stk_push_passkey,
       hasBusinessShortCode: !!settings.ncba_business_short_code,
-      usernameLength: settings.ncba_notification_username?.length || 0,
-      passwordLength: settings.ncba_notification_password?.length || 0,
-      secretKeyLength: settings.ncba_notification_secret_key?.length || 0
+      stkPushUsernameLength: settings.ncba_stk_push_username?.length || 0,
+      stkPushPasswordLength: settings.ncba_stk_push_password?.length || 0,
+      stkPushPasskeyLength: settings.ncba_stk_push_passkey?.length || 0
     })
+
+    // Check if global NCBA STK Push credentials are configured
+    if (!settings.ncba_stk_push_username || !settings.ncba_stk_push_password || !settings.ncba_stk_push_passkey) {
+      return NextResponse.json(
+        { success: false, error: 'Global NCBA STK Push credentials not configured. Please configure NCBA STK Push credentials in system settings.' },
+        { status: 400 }
+      )
+    }
 
     // Get or create wallet for the partner
     let { data: wallet, error: walletError } = await supabase
@@ -331,49 +339,42 @@ export async function POST(request: NextRequest) {
 
     // Generate transaction reference for NCBA
     const timestamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 14)
-    const business_short_code = settings.ncba_business_short_code || '880100'
+    const paybill_number = settings.ncba_business_short_code || '880100'
+    const account_number = settings.ncba_account_number || '774451'
     const account_reference_separator = settings.ncba_account_reference_separator || '#'
-    const account_reference = `WALLET${account_reference_separator}${partner.id}`
+    const account_reference = `${account_number}${account_reference_separator}${partner.id}`
     const transaction_reference = `STK${timestamp}${Math.random().toString(36).substr(2, 4).toUpperCase()}`
 
-    // Create password (Base64 encoded) - using global NCBA credentials
-    const password = Buffer.from(`${business_short_code}${settings.ncba_notification_secret_key}${timestamp}`).toString('base64')
-
-    // Prepare STK Push request
+    // Prepare NCBA STK Push request (different format from Safaricom)
     const stkPushRequest = {
-      BusinessShortCode: business_short_code,
-      Password: password,
-      Timestamp: timestamp,
-      TransactionType: 'CustomerPayBillOnline',
-      Amount: Math.round(amount), // Amount in cents
-      PartyA: phone_number,
-      PartyB: business_short_code,
-      PhoneNumber: phone_number,
-      CallBackURL: `${process.env.NEXT_PUBLIC_APP_URL}/api/ncba/stk-callback`,
-      AccountReference: account_reference,
-      TransactionDesc: `Wallet Top-up - ${partner.name}`
+      TelephoneNo: phone_number,
+      Amount: amount.toString(), // Amount as string
+      PayBillNo: paybill_number,
+      AccountNo: account_reference,
+      Network: "Safaricom",
+      TransactionType: "CustomerPayBillOnline"
     }
 
     // Get NCBA access token using global credentials
-    console.log('🔍 [DEBUG] NCBA Authentication attempt:', {
-      username: settings.ncba_notification_username ? 'SET' : 'NOT SET',
-      password: settings.ncba_notification_password ? 'SET' : 'NOT SET',
-      secretKey: settings.ncba_notification_secret_key ? 'SET' : 'NOT SET',
-      businessShortCode: settings.ncba_business_short_code || '880100'
+    console.log('🔍 [DEBUG] NCBA STK Push Authentication attempt:', {
+      stkPushUsername: settings.ncba_stk_push_username ? 'SET' : 'NOT SET',
+      stkPushPassword: settings.ncba_stk_push_password ? 'SET' : 'NOT SET',
+      stkPushPasskey: settings.ncba_stk_push_passkey ? 'SET' : 'NOT SET',
+      businessShortCode: business_short_code
     })
 
     // Debug: Log authentication attempt details
-    console.log('🔍 [DEBUG] NCBA Authentication Attempt:', {
-      authUrl: 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials',
-      username: settings.ncba_notification_username,
-      passwordLength: settings.ncba_notification_password?.length || 0,
-      authHeaderLength: Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64').length
+    console.log('🔍 [DEBUG] NCBA STK Push Authentication Attempt:', {
+      authUrl: 'https://c2bapis.ncbagroup.com/payments/api/v1/auth/token',
+      stkPushUsername: settings.ncba_stk_push_username,
+      stkPushPasswordLength: settings.ncba_stk_push_password?.length || 0,
+      authHeaderLength: Buffer.from(`${settings.ncba_stk_push_username}:${settings.ncba_stk_push_password}`).toString('base64').length
     })
 
-    const authResponse = await fetch('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
+    const authResponse = await fetch('https://c2bapis.ncbagroup.com/payments/api/v1/auth/token', {
       method: 'GET',
       headers: {
-        'Authorization': `Basic ${Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64')}`,
+        'Authorization': `Basic ${Buffer.from(`${settings.ncba_stk_push_username}:${settings.ncba_stk_push_password}`).toString('base64')}`,
         'Content-Type': 'application/json'
       }
     })
@@ -386,12 +387,12 @@ export async function POST(request: NextRequest) {
 
     if (!authResponse.ok) {
       const errorText = await authResponse.text()
-      console.error('❌ NCBA Auth Error:', {
+      console.error('❌ NCBA STK Push Auth Error:', {
         status: authResponse.status,
         statusText: authResponse.statusText,
         errorText: errorText,
-        username: settings.ncba_notification_username,
-        passwordLength: settings.ncba_notification_password?.length || 0
+        stkPushUsername: settings.ncba_stk_push_username,
+        stkPushPasswordLength: settings.ncba_stk_push_password?.length || 0
       })
       
       let errorMessage = 'Failed to authenticate with NCBA'
@@ -427,16 +428,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Initiate STK Push
-    console.log('🔍 [DEBUG] STK Push Request:', {
-      businessShortCode: stkPushRequest.BusinessShortCode,
+    // Initiate STK Push using NCBA API
+    console.log('🔍 [DEBUG] NCBA STK Push Request:', {
+      telephoneNo: stkPushRequest.TelephoneNo,
       amount: stkPushRequest.Amount,
-      phoneNumber: stkPushRequest.PhoneNumber,
-      accountReference: stkPushRequest.AccountReference,
-      callbackUrl: stkPushRequest.CallBackURL
+      payBillNo: stkPushRequest.PayBillNo,
+      accountNo: stkPushRequest.AccountNo,
+      network: stkPushRequest.Network,
+      transactionType: stkPushRequest.TransactionType
     })
 
-    const stkPushResponse = await fetch('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
+    const stkPushResponse = await fetch('https://c2bapis.ncbagroup.com/payments/api/v1/stk-push/initiate', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${access_token}`,
@@ -457,10 +459,8 @@ export async function POST(request: NextRequest) {
       console.error('❌ NCBA STK Push Error:', stkPushData)
       
       let errorMessage = 'STK Push failed'
-      if (stkPushData.errorMessage) {
-        errorMessage = `STK Push failed: ${stkPushData.errorMessage}`
-      } else if (stkPushData.error) {
-        errorMessage = `STK Push failed: ${stkPushData.error}`
+      if (stkPushData.message) {
+        errorMessage = `STK Push failed: ${stkPushData.message}`
       } else if (stkPushResponse.status === 401) {
         errorMessage = 'STK Push failed: Authentication expired. Please try again.'
       } else if (stkPushResponse.status >= 500) {
@@ -473,16 +473,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Check NCBA response status (NCBA uses StatusCode field)
+    if (stkPushData.StatusCode !== "0" && stkPushData.StatusCode !== 0) {
+      console.error('❌ NCBA STK Push Failed:', stkPushData)
+      return NextResponse.json(
+        { success: false, error: `STK Push failed: ${stkPushData.StatusDescription || 'Unknown error'}` },
+        { status: 500 }
+      )
+    }
+
     // Create STK Push log record
     const { data: stkPushLog, error: stkPushError } = await supabase
       .from('ncb_stk_push_logs')
       .insert({
         partner_id: partner.id,
         wallet_transaction_id: walletTransaction.id,
-        stk_push_transaction_id: stkPushData.CheckoutRequestID,
+        stk_push_transaction_id: stkPushData.TransactionID,
         partner_phone: phone_number,
         amount: amount,
-        ncb_paybill_number: business_short_code,
+        ncb_paybill_number: paybill_number,
         ncb_account_number: account_reference,
         stk_push_status: 'initiated',
         ncb_response: stkPushData
@@ -495,10 +504,11 @@ export async function POST(request: NextRequest) {
       // Don't fail the request, just log the error
     }
 
-    console.log('STK Push initiated successfully:', {
+    console.log('NCBA STK Push initiated successfully:', {
       phone_number,
       amount,
-      checkout_request_id: stkPushData.CheckoutRequestID,
+      transaction_id: stkPushData.TransactionID,
+      reference_id: stkPushData.ReferenceID,
       wallet_transaction_id: walletTransaction.id,
       partner_id: partner.id
     })
@@ -509,8 +519,8 @@ export async function POST(request: NextRequest) {
       data: {
         wallet_transaction: walletTransaction,
         stk_push_log: stkPushLog,
-        checkout_request_id: stkPushData.CheckoutRequestID,
-        merchant_request_id: stkPushData.MerchantRequestID
+        transaction_id: stkPushData.TransactionID,
+        reference_id: stkPushData.ReferenceID
       }
     })
 
