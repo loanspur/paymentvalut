@@ -20,6 +20,7 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react'
+import { useToast } from '../../components/ToastSimple'
 
 interface WalletData {
   id: string
@@ -81,6 +82,9 @@ export default function WalletPage() {
   const [partners, setPartners] = useState<Partner[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null)
+  const [isTopUpLoading, setIsTopUpLoading] = useState(false)
+  
+  const { addToast } = useToast()
   const [filters, setFilters] = useState({
     transaction_type: '',
     status: '',
@@ -167,15 +171,27 @@ export default function WalletPage() {
 
   const handleTopUp = async () => {
     if (!topUpData.amount || !topUpData.phone_number) {
-      alert('Please fill in all fields')
+      addToast({
+        type: 'error',
+        title: 'Validation Error',
+        message: 'Please fill in all fields',
+        duration: 5000
+      })
       return
     }
 
     // For super admin, require partner selection
     if (currentUser?.role === 'super_admin' && !topUpData.partner_id) {
-      alert('Please select a partner for the top-up')
+      addToast({
+        type: 'error',
+        title: 'Partner Required',
+        message: 'Please select a partner for the top-up',
+        duration: 5000
+      })
       return
     }
+
+    setIsTopUpLoading(true)
 
     try {
       const response = await fetch('/api/wallet/topup/stk-push', {
@@ -183,23 +199,41 @@ export default function WalletPage() {
         headers: {
           'Content-Type': 'application/json'
         },
+        credentials: 'include',
         body: JSON.stringify(topUpData)
       })
 
       if (response.ok) {
         const result = await response.json()
-        alert('STK Push initiated! Check your phone to complete the payment.')
+        addToast({
+          type: 'success',
+          title: 'STK Push Initiated',
+          message: 'Check your phone to complete the payment',
+          duration: 8000
+        })
         setShowTopUpModal(false)
         setTopUpData({ amount: 0, phone_number: '' })
         setSelectedPartner(null)
         loadWalletData()
       } else {
         const error = await response.json()
-        alert(`Top-up failed: ${error.error}`)
+        addToast({
+          type: 'error',
+          title: 'Top-up Failed',
+          message: error.error || 'An error occurred during top-up',
+          duration: 8000
+        })
       }
     } catch (error) {
       console.error('Top-up error:', error)
-      alert('Top-up failed. Please try again.')
+      addToast({
+        type: 'error',
+        title: 'Network Error',
+        message: 'Top-up failed. Please check your connection and try again.',
+        duration: 8000
+      })
+    } finally {
+      setIsTopUpLoading(false)
     }
   }
 
@@ -659,9 +693,20 @@ export default function WalletPage() {
                 </button>
                 <button
                   onClick={handleTopUp}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  disabled={isTopUpLoading}
+                  className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                 >
-                  Initiate STK Push
+                  {isTopUpLoading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Initiating STK Push...
+                    </>
+                  ) : (
+                    <>
+                      <Smartphone className="w-4 h-4 mr-2" />
+                      Initiate STK Push
+                    </>
+                  )}
                 </button>
               </div>
             </div>

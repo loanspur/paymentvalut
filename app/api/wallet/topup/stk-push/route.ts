@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
     // Get global NCBA system settings
     const { data: ncbaSettings, error: settingsError } = await supabase
       .from('system_settings')
-      .select('setting_key, setting_value')
+      .select('setting_key, setting_value, is_encrypted')
       .in('setting_key', [
         'ncba_business_short_code',
         'ncba_notification_username', 
@@ -172,19 +172,53 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Convert settings array to object
-    const settings = ncbaSettings.reduce((acc, setting) => {
-      acc[setting.setting_key] = setting.setting_value
-      return acc
-    }, {} as Record<string, string>)
-
-    // Check if global NCBA credentials are configured
-    if (!settings.ncba_notification_username || !settings.ncba_notification_password || !settings.ncba_notification_secret_key) {
-      return NextResponse.json(
-        { success: false, error: 'Global NCBA credentials not configured. Please configure NCBA system settings first.' },
-        { status: 400 }
-      )
+    // Convert settings array to object and decrypt encrypted values
+    const settings: Record<string, string> = {}
+    
+    for (const setting of ncbaSettings) {
+      let value = setting.setting_value
+      
+      // Decrypt if the setting is encrypted
+      if (setting.is_encrypted && value) {
+        try {
+          const crypto = await import('crypto')
+          const passphrase = process.env.ENCRYPTION_PASSPHRASE || 'default-passphrase'
+          
+          const decryptData = async (encryptedData: string, passphrase: string): Promise<string> => {
+            try {
+              const key = crypto.scryptSync(passphrase, 'salt', 32)
+              const iv = Buffer.from(encryptedData.slice(0, 32), 'hex')
+              const encrypted = encryptedData.slice(32)
+              const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
+              let decrypted = decipher.update(encrypted, 'hex', 'utf8')
+              decrypted += decipher.final('utf8')
+              return decrypted
+            } catch (error) {
+              console.error('Decryption error:', error)
+              return encryptedData // Return original if decryption fails
+            }
+          }
+          
+          value = await decryptData(value, passphrase)
+          console.log(`🔓 Decrypted ${setting.setting_key}: ${value ? 'SUCCESS' : 'FAILED'}`)
+        } catch (error) {
+          console.error(`❌ Failed to decrypt ${setting.setting_key}:`, error)
+        }
+      }
+      
+      settings[setting.setting_key] = value
     }
+
+    // Debug: Log decrypted credentials (without exposing actual values)
+    console.log('🔍 [DEBUG] NCBA Settings Status:', {
+      hasUsername: !!settings.ncba_notification_username,
+      hasPassword: !!settings.ncba_notification_password,
+      hasSecretKey: !!settings.ncba_notification_secret_key,
+      hasBusinessShortCode: !!settings.ncba_business_short_code,
+      usernameLength: settings.ncba_notification_username?.length || 0,
+      passwordLength: settings.ncba_notification_password?.length || 0,
+      secretKeyLength: settings.ncba_notification_secret_key?.length || 0
+    })
 
     // Get or create wallet for the partner
     let { data: wallet, error: walletError } = await supabase
@@ -278,6 +312,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Get NCBA access token using global credentials
+    console.log('🔍 [DEBUG] NCBA Authentication attempt:', {
+      username: settings.ncba_notification_username ? 'SET' : 'NOT SET',
+      password: settings.ncba_notification_password ? 'SET' : 'NOT SET',
+      secretKey: settings.ncba_notification_secret_key ? 'SET' : 'NOT SET',
+      businessShortCode: settings.ncba_business_short_code || '880100'
+    })
+
+    // Debug: Log authentication attempt details
+    console.log('🔍 [DEBUG] NCBA Authentication Attempt:', {
+      authUrl: 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials',
+      username: settings.ncba_notification_username,
+      passwordLength: settings.ncba_notification_password?.length || 0,
+      authHeaderLength: Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64').length
+    })
+
     const authResponse = await fetch('https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials', {
       method: 'GET',
       headers: {
@@ -286,18 +335,60 @@ export async function POST(request: NextRequest) {
       }
     })
 
+    console.log('🔍 [DEBUG] NCBA Auth Response:', {
+      status: authResponse.status,
+      statusText: authResponse.statusText,
+      ok: authResponse.ok
+    })
+
     if (!authResponse.ok) {
-      console.error('NCBA Auth Error:', authResponse.status, await authResponse.text())
+      const errorText = await authResponse.text()
+      console.error('❌ NCBA Auth Error:', {
+        status: authResponse.status,
+        statusText: authResponse.statusText,
+        errorText: errorText
+      })
+      
+      let errorMessage = 'Failed to authenticate with NCBA'
+      if (authResponse.status === 401) {
+        errorMessage = 'NCBA authentication failed: Invalid credentials. Please check your NCBA username and password in system settings.'
+      } else if (authResponse.status === 403) {
+        errorMessage = 'NCBA access forbidden: Please check your NCBA account permissions.'
+      } else if (authResponse.status >= 500) {
+        errorMessage = 'NCBA service temporarily unavailable. Please try again later.'
+      }
+      
       return NextResponse.json(
-        { success: false, error: 'Failed to authenticate with NCBA' },
+        { success: false, error: errorMessage },
         { status: 500 }
       )
     }
 
     const authData = await authResponse.json()
+    console.log('✅ NCBA Auth Success:', {
+      hasAccessToken: !!authData.access_token,
+      tokenLength: authData.access_token ? authData.access_token.length : 0
+    })
+    
     const access_token = authData.access_token
 
+    if (!access_token) {
+      console.error('❌ No access token received from NCBA')
+      return NextResponse.json(
+        { success: false, error: 'NCBA authentication failed: No access token received' },
+        { status: 500 }
+      )
+    }
+
     // Initiate STK Push
+    console.log('🔍 [DEBUG] STK Push Request:', {
+      businessShortCode: stkPushRequest.BusinessShortCode,
+      amount: stkPushRequest.Amount,
+      phoneNumber: stkPushRequest.PhoneNumber,
+      accountReference: stkPushRequest.AccountReference,
+      callbackUrl: stkPushRequest.CallBackURL
+    })
+
     const stkPushResponse = await fetch('https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest', {
       method: 'POST',
       headers: {
@@ -308,11 +399,29 @@ export async function POST(request: NextRequest) {
     })
 
     const stkPushData = await stkPushResponse.json()
+    
+    console.log('🔍 [DEBUG] STK Push Response:', {
+      status: stkPushResponse.status,
+      ok: stkPushResponse.ok,
+      responseData: stkPushData
+    })
 
     if (!stkPushResponse.ok) {
-      console.error('NCBA STK Push Error:', stkPushData)
+      console.error('❌ NCBA STK Push Error:', stkPushData)
+      
+      let errorMessage = 'STK Push failed'
+      if (stkPushData.errorMessage) {
+        errorMessage = `STK Push failed: ${stkPushData.errorMessage}`
+      } else if (stkPushData.error) {
+        errorMessage = `STK Push failed: ${stkPushData.error}`
+      } else if (stkPushResponse.status === 401) {
+        errorMessage = 'STK Push failed: Authentication expired. Please try again.'
+      } else if (stkPushResponse.status >= 500) {
+        errorMessage = 'STK Push failed: NCBA service temporarily unavailable.'
+      }
+      
       return NextResponse.json(
-        { success: false, error: `NCBA STK Push failed: ${stkPushData.errorMessage || 'Unknown error'}` },
+        { success: false, error: errorMessage },
         { status: 500 }
       )
     }
