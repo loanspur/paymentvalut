@@ -286,6 +286,10 @@ export default function NCBATransactionsPage() {
         return 'Manual Paybill'
       case 'stk_push':
         return 'STK Push'
+      case 'NCBA Paybill':
+        return 'NCBA Paybill'
+      case 'Pay Bill':
+        return 'NCBA Paybill'
       default:
         return 'Unknown'
     }
@@ -299,6 +303,28 @@ export default function NCBATransactionsPage() {
   }
 
   const formatDate = (dateString: string) => {
+    if (!dateString) return 'Invalid Date'
+    
+    // Handle NCBA timestamp format (YYYYMMDDhhmmss)
+    if (dateString.length === 14 && /^\d{14}$/.test(dateString)) {
+      const year = dateString.substring(0, 4)
+      const month = dateString.substring(4, 6)
+      const day = dateString.substring(6, 8)
+      const hour = dateString.substring(8, 10)
+      const minute = dateString.substring(10, 12)
+      const second = dateString.substring(12, 14)
+      
+      const isoString = `${year}-${month}-${day}T${hour}:${minute}:${second}`
+      return new Date(isoString).toLocaleString('en-KE', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }
+    
+    // Handle regular ISO date strings
     return new Date(dateString).toLocaleString('en-KE', {
       year: 'numeric',
       month: 'short',
@@ -877,6 +903,12 @@ export default function NCBATransactionsPage() {
                       <span className="text-sm text-gray-600">Business Short Code:</span>
                       <span className="text-sm font-mono text-gray-900">{selectedTransaction.business_short_code}</span>
                     </div>
+                    {selectedTransaction.raw_notification?.FTRef && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-600">FT Reference:</span>
+                        <span className="text-sm font-mono text-gray-900">{selectedTransaction.raw_notification.FTRef}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -930,6 +962,14 @@ export default function NCBATransactionsPage() {
                           </div>
                         )}
                       </>
+                    ) : selectedTransaction.raw_notification?.Narrative ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-sm text-gray-600">Partner Short Code:</span>
+                          <span className="text-sm font-mono text-gray-900">{selectedTransaction.raw_notification.Narrative}</span>
+                        </div>
+                        <div className="text-sm text-gray-500 italic">Partner details not fully loaded</div>
+                      </>
                     ) : (
                       <div className="text-sm text-gray-500 italic">No partner allocated</div>
                     )}
@@ -946,9 +986,9 @@ export default function NCBATransactionsPage() {
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-600">Payment Method:</span>
                       <div className="flex items-center">
-                        {getPaymentMethodIcon(selectedTransaction.payment_method || 'unknown')}
+                        {getPaymentMethodIcon(selectedTransaction.payment_method || selectedTransaction.raw_notification?.TransType || 'unknown')}
                         <span className="ml-2 text-sm text-gray-900">
-                          {getPaymentMethodLabel(selectedTransaction.payment_method || 'unknown')}
+                          {getPaymentMethodLabel(selectedTransaction.payment_method || selectedTransaction.raw_notification?.TransType || 'unknown')}
                         </span>
                       </div>
                     </div>
