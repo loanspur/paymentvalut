@@ -91,6 +91,17 @@ export async function POST(request: NextRequest) {
       created_at
     } = notificationData
 
+    // Debug logging for transaction data
+    console.log('NCBA Paybill notification received:', {
+      TransID,
+      TransAmount,
+      BusinessShortCode,
+      BillRefNumber,
+      Mobile,
+      name,
+      Narrative: notificationData.Narrative || notificationData.narrative
+    })
+
     // Validate required fields
     if (!TransID || !TransAmount || !BusinessShortCode || !Mobile) {
       console.error('Missing required fields in notification')
@@ -161,6 +172,7 @@ export async function POST(request: NextRequest) {
     // Handle different NCBA formats:
     // Format 1: BillRefNumber = "774451", Narrative = "FINSAFE" 
     // Format 2: BillRefNumber = "FINSAFE", BusinessShortCode = "774451"
+    // Format 3: BusinessShortCode = "880100", BillRefNumber = "774451", Narrative = "umoja"
     let partner = null
     const accountNumber = settings.ncba_account_number || '774451'
     
@@ -172,7 +184,15 @@ export async function POST(request: NextRequest) {
       partnerIdentifier = BillRefNumber
     }
     
-    if (BusinessShortCode === accountNumber && partnerIdentifier) {
+    // Check if this is the new format (BusinessShortCode = "880100", BillRefNumber = account number)
+    const isNewFormat = BusinessShortCode === '880100' && BillRefNumber === accountNumber && partnerIdentifier
+    
+    // Check if this is the old format (BusinessShortCode = account number)
+    const isOldFormat = BusinessShortCode === accountNumber && partnerIdentifier
+    
+    if ((isNewFormat || isOldFormat) && partnerIdentifier) {
+      console.log(`Looking for partner with identifier: "${partnerIdentifier}" (case-insensitive)`)
+      
       // Try to find partner by short code - case insensitive
       const { data: partnerData, error: partnerError } = await supabase
         .from('partners')
@@ -183,19 +203,33 @@ export async function POST(request: NextRequest) {
 
       if (partnerError || !partnerData) {
         console.error('Partner not found for short code:', partnerIdentifier)
+        console.error('Partner error details:', partnerError)
+        
+        // Try to find any partners with similar names for debugging
+        const { data: similarPartners } = await supabase
+          .from('partners')
+          .select('id, name, short_code, is_active')
+          .or(`short_code.ilike.%${partnerIdentifier}%,name.ilike.%${partnerIdentifier}%`)
+          .limit(5)
+        
+        console.error('Similar partners found:', similarPartners)
+        
         return NextResponse.json({
           ResultCode: "1",
-          ResultDesc: "Partner not found"
+          ResultDesc: `Partner not found for identifier: ${partnerIdentifier}`
         })
       }
       
+      console.log(`Found partner: ${partnerData.name} (${partnerData.short_code})`)
       partner = partnerData
     } else {
       console.error('Invalid account reference format:', {
         businessShortCode: BusinessShortCode,
         billRefNumber: BillRefNumber,
         narrative: partnerIdentifier,
-        expectedAccountNumber: accountNumber
+        expectedAccountNumber: accountNumber,
+        isNewFormat,
+        isOldFormat
       })
       return NextResponse.json({
         ResultCode: "1",
