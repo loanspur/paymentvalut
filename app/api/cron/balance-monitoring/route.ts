@@ -65,12 +65,12 @@ async function getBalanceMonitoringData() {
       current_balance,
       last_topup_date,
       last_topup_amount,
+      low_balance_threshold,
       partners (
         id,
         name,
         short_code,
-        is_active,
-        low_balance_threshold
+        is_active
       )
     `)
 
@@ -96,7 +96,7 @@ async function getBalanceMonitoringData() {
   for (const wallet of wallets || []) {
     const balance = wallet.current_balance || 0
     const partner = wallet.partners as any // Type assertion to fix TypeScript issue
-    const threshold = partner?.low_balance_threshold || defaultLowBalanceThreshold
+    const threshold = wallet.low_balance_threshold || defaultLowBalanceThreshold
     
     totalSystemBalance += balance
 
