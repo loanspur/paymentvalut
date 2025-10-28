@@ -55,6 +55,7 @@ export interface UpdateUserData {
   is_active?: boolean
   email_verified?: boolean
   notes?: string
+  two_factor_enabled?: boolean
 }
 
 export interface AuthContext {
@@ -273,6 +274,7 @@ export class UserService {
         is_active: true,
         email_verified: false, // New users need email verification
         phone_verified: false,  // New users need phone verification
+        password_change_required: true, // Force password change on first login
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
@@ -320,14 +322,14 @@ export class UserService {
         return null
       }
 
-      // Send email verification for new user
+      // Send welcome email with login instructions for new user
       if (newUser.email) {
         try {
-          await this.sendEmailVerification(newUser.email, newUser.id)
-          console.log('✅ Email verification sent to:', newUser.email)
+          await this.sendWelcomeEmail(newUser.email, userData.password, newUser.first_name || 'User')
+          console.log('✅ Welcome email sent to:', newUser.email)
         } catch (emailError) {
-          console.error('❌ Failed to send email verification:', emailError)
-          // Don't fail user creation if email verification fails
+          console.error('❌ Failed to send welcome email:', emailError)
+          // Don't fail user creation if welcome email fails
         }
       }
 
@@ -517,6 +519,105 @@ export class UserService {
       return true
     } catch (error) {
       console.error('Change password error:', error)
+      return false
+    }
+  }
+
+  /**
+   * Send welcome email with login instructions for new user
+   */
+  static async sendWelcomeEmail(email: string, temporaryPassword: string, firstName: string): Promise<boolean> {
+    try {
+      const { sendEmail } = await import('./email-utils')
+      
+      const loginUrl = 'https://eazzypay.online/secure-login'
+      
+      // Send welcome email with login instructions
+      const emailHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 28px;">Payment Vault</h1>
+            <p style="color: white; margin: 10px 0 0 0; font-size: 16px;">Welcome to Your New Account</p>
+          </div>
+          
+          <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
+            <h2 style="color: #333; margin: 0 0 20px 0;">Welcome ${firstName}!</h2>
+            
+            <p style="color: #666; margin: 20px 0; line-height: 1.6;">
+              Your Payment Vault account has been created successfully. You can now access the system using your login credentials.
+            </p>
+            
+            <div style="background: white; border: 2px solid #667eea; padding: 25px; border-radius: 8px; margin: 25px 0;">
+              <h3 style="color: #333; margin: 0 0 15px 0; font-size: 18px;">Your Login Credentials</h3>
+              <div style="margin: 15px 0;">
+                <p style="margin: 5px 0; color: #666;"><strong>Email:</strong> ${email}</p>
+                <p style="margin: 5px 0; color: #666;"><strong>Temporary Password:</strong> <code style="background: #f1f3f4; padding: 4px 8px; border-radius: 4px; font-family: 'Courier New', monospace;">${temporaryPassword}</code></p>
+              </div>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${loginUrl}" target="_blank" style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+                Login to Payment Vault
+              </a>
+            </div>
+            
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 20px; border-radius: 8px; margin: 25px 0;">
+              <h4 style="color: #856404; margin: 0 0 10px 0;">Important Next Steps:</h4>
+              <ol style="color: #856404; margin: 0; padding-left: 20px;">
+                <li style="margin: 5px 0;">Use the temporary password above to log in</li>
+                <li style="margin: 5px 0;">You will be prompted to verify your email address</li>
+                <li style="margin: 5px 0;">If you provided a phone number, you'll also need to verify it</li>
+                <li style="margin: 5px 0;">After verification, you can change your password</li>
+              </ol>
+            </div>
+            
+            <div style="background: #d1ecf1; border: 1px solid #bee5eb; padding: 20px; border-radius: 8px; margin: 25px 0;">
+              <h4 style="color: #0c5460; margin: 0 0 10px 0;">Security Notice:</h4>
+              <p style="color: #0c5460; margin: 0; font-size: 14px;">
+                This is a temporary password. Please change it after your first login for security reasons.
+              </p>
+            </div>
+            
+            <p style="color: #666; margin: 30px 0 0 0; font-size: 14px; text-align: center;">
+              If you have any questions or need assistance, please contact your system administrator.
+            </p>
+          </div>
+        </div>
+      `
+
+      const emailText = `
+Welcome ${firstName}!
+
+Your Payment Vault account has been created successfully.
+
+Login Credentials:
+- Email: ${email}
+- Temporary Password: ${temporaryPassword}
+
+Login URL: ${loginUrl}
+
+Important Next Steps:
+1. Use the temporary password above to log in
+2. You will be prompted to verify your email address
+3. If you provided a phone number, you'll also need to verify it
+4. After verification, you can change your password
+
+Security Notice:
+This is a temporary password. Please change it after your first login for security reasons.
+
+If you have any questions or need assistance, please contact your system administrator.
+      `
+
+      const result = await sendEmail({
+        to: email,
+        subject: 'Welcome to Payment Vault - Your Account is Ready',
+        html: emailHtml,
+        text: emailText
+      })
+
+      return result.success
+    } catch (error) {
+      console.error('Send welcome email error:', error)
       return false
     }
   }

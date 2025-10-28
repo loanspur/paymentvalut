@@ -56,7 +56,17 @@ export default function Sidebar({ className = '' }: SidebarProps) {
   const pathname = usePathname()
 
   const handleLogout = async () => {
-    await logout()
+    try {
+      console.log('🔄 Sidebar logout initiated...')
+      await logout()
+      console.log('✅ Sidebar logout completed')
+    } catch (error) {
+      console.error('❌ Sidebar logout error:', error)
+      // Even if logout fails, try to redirect
+      if (typeof window !== 'undefined') {
+        window.location.href = '/secure-login'
+      }
+    }
   }
 
   // Filter navigation based on user role
@@ -168,18 +178,11 @@ export default function Sidebar({ className = '' }: SidebarProps) {
             description: 'Monitor & retry failed disbursements'
           }] : []),
           {
-            name: 'My Profile',
-            href: '/profile',
-            icon: User,
-            description: 'Manage your profile & password'
-          },
-          // Only show System Settings for super_admin
-          ...(isSuperAdmin ? [{
             name: 'System Settings',
             href: '/settings',
             icon: Settings,
             description: 'Configure system'
-          }] : [])
+          }
         ]
       },
       {
@@ -360,70 +363,23 @@ export default function Sidebar({ className = '' }: SidebarProps) {
             ))}
           </nav>
 
-          {/* User section */}
+          {/* Logout section */}
           {isAuthenticated && (
             <div className="border-t border-gray-200 p-4">
-              {!isCollapsed ? (
-                <div className="flex items-center space-x-3">
-                  <div className="flex items-center justify-center w-8 h-8 bg-gray-100 rounded-full">
-                    <User className="w-4 h-4 text-gray-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {user?.first_name && user?.last_name 
-                        ? `${user.first_name} ${user.last_name}` 
-                        : user?.email || 'User'
-                      }
-                    </p>
-                    <p className="text-xs text-gray-500 truncate">
-                      {user?.email || 'user@example.com'}
-                    </p>
-                    {user?.role && (
-                      <p className="text-xs text-blue-600 truncate capitalize">
-                        {user.role.replace('_', ' ')}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex space-x-1">
-                    <Link
-                      href="/profile"
-                      className="flex items-center justify-center w-8 h-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                      title="My Profile"
-                    >
-                      <User className="w-4 h-4" />
-                    </Link>
-                    <button
-                      onClick={handleLogout}
-                      className="flex items-center justify-center w-8 h-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                      title="Logout"
-                    >
-                      <LogOut className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center space-y-2">
-                  <div className="flex items-center justify-center w-8 h-8 bg-gray-100 rounded-full">
-                    <User className="w-4 h-4 text-gray-600" />
-                  </div>
-                  <div className="flex space-x-1">
-                    <Link
-                      href="/profile"
-                      className="flex items-center justify-center w-8 h-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                      title="My Profile"
-                    >
-                      <User className="w-4 h-4" />
-                    </Link>
-                    <button
-                      onClick={handleLogout}
-                      className="flex items-center justify-center w-8 h-8 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                      title="Logout"
-                    >
-                      <LogOut className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              )}
+              <button
+                onClick={handleLogout}
+                className={`
+                  w-full flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium transition-colors
+                  ${isCollapsed 
+                    ? 'text-gray-400 hover:text-gray-600 hover:bg-gray-100' 
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }
+                `}
+                title="Logout"
+              >
+                <LogOut className="h-5 w-5 flex-shrink-0" />
+                {!isCollapsed && <span className="ml-3">Logout</span>}
+              </button>
             </div>
           )}
         </div>

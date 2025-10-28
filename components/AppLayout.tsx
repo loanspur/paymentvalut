@@ -4,8 +4,9 @@ import { useEffect } from 'react'
 import { useAuth } from './AuthProvider'
 import { usePathname } from 'next/navigation'
 import Sidebar from './Sidebar'
+import ProfileDropdown from './ProfileDropdown'
 import { ToastProvider } from './ToastSimple'
-import { Bell, User, LogOut } from 'lucide-react'
+import { Bell } from 'lucide-react'
 
 interface AppLayoutProps {
   children: React.ReactNode
@@ -53,27 +54,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
 
-              {/* User info - mobile responsive */}
+              {/* Profile Dropdown */}
               {user && (
-                <div className="flex items-center space-x-2 sm:space-x-3">
-                  <div className="flex items-center space-x-1 sm:space-x-2 text-xs sm:text-sm text-gray-700">
-                    <User className="w-3 h-3 sm:w-4 sm:h-4" />
-                    <span className="hidden md:block truncate max-w-32">{user.email}</span>
-                    <span className="px-1.5 py-0.5 sm:px-2 sm:py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
-                      {user.role}
-                    </span>
-                  </div>
-                  
-                  {/* Logout button - mobile responsive */}
-                  <button
-                    onClick={logout}
-                    className="flex items-center px-2 py-1.5 sm:px-3 sm:py-2 text-xs sm:text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-                    title="Logout"
-                  >
-                    <LogOut className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2" />
-                    <span className="hidden sm:block">Logout</span>
-                  </button>
-                </div>
+                <ProfileDropdown />
               )}
             </div>
           </div>

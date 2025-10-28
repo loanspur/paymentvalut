@@ -135,6 +135,12 @@ export default function AuthProvider({ children }: AuthProviderProps) {
         credentials: 'include'
       })
       
+      if (!response.ok) {
+        console.error('❌ Logout API failed:', response.status, response.statusText)
+        const errorText = await response.text()
+        console.error('❌ Logout API error details:', errorText)
+      }
+      
       // Clear localStorage after API call
       if (typeof window !== 'undefined') {
         localStorage.removeItem('auth_token')

@@ -94,7 +94,8 @@ export async function PUT(request: NextRequest) {
       'phone_number',
       'department',
       'notes',
-      'profile_picture_url'
+      'profile_picture_url',
+      'two_factor_enabled'
     ]
 
     const filteredProfileData: any = {}

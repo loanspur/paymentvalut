@@ -33,15 +33,8 @@ export default function OTPVerification({ onSuccess, onCancel, userEmail, userPh
     }
   }, [timeLeft])
 
-  // Auto-generate OTP on component mount (with delay to ensure JWT cookie is set)
-  useEffect(() => {
-    // Add a small delay to ensure JWT cookie is set after login
-    const timer = setTimeout(() => {
-      generateOTP()
-    }, 1000) // 1 second delay
-    
-    return () => clearTimeout(timer)
-  }, [])
+  // Remove auto-generation of OTP to prevent unwanted emails
+  // Users will manually trigger OTP generation via the "Send OTP" button
 
   const generateOTP = async () => {
     setIsGenerating(true)
