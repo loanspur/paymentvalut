@@ -44,11 +44,18 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const limit = parseInt(searchParams.get('limit') || '10')
+    const limit = parseInt(searchParams.get('limit') || '50')
+    const page = parseInt(searchParams.get('page') || '1')
     const requestedPartnerId = searchParams.get('partnerId')
+    const startDate = searchParams.get('startDate')
+    const endDate = searchParams.get('endDate')
+    const status = searchParams.get('status')
+    const search = searchParams.get('search')
+    
+    const offset = (page - 1) * limit
 
     // Build query for disbursement requests based on user role and request
-    let disbursementQuery = supabase.from('disbursement_requests').select('*')
+    let disbursementQuery = supabase.from('disbursement_requests').select('*', { count: 'exact' })
     
     if (currentUser.role === 'super_admin') {
       // Super admin can filter by any partner or see all data
@@ -60,10 +67,24 @@ export async function GET(request: NextRequest) {
       disbursementQuery = disbursementQuery.eq('partner_id', currentUser.partner_id)
     }
 
-    // Get recent disbursement requests with all M-Pesa fields
-    const { data: transactions, error } = await disbursementQuery
+    // Apply filters
+    if (startDate) {
+      disbursementQuery = disbursementQuery.gte('created_at', startDate)
+    }
+    if (endDate) {
+      disbursementQuery = disbursementQuery.lte('created_at', endDate)
+    }
+    if (status && status !== 'all') {
+      disbursementQuery = disbursementQuery.eq('status', status)
+    }
+    if (search) {
+      disbursementQuery = disbursementQuery.or(`msisdn.ilike.%${search}%,customer_name.ilike.%${search}%,conversation_id.ilike.%${search}%`)
+    }
+
+    // Get disbursement requests with pagination
+    const { data: transactions, error, count } = await disbursementQuery
       .order('created_at', { ascending: false })
-      .limit(limit)
+      .range(offset, offset + limit - 1)
 
     // Get partners data separately - also filter by user role
     let partnersQuery = supabase.from('partners').select('id, name, short_code, mpesa_shortcode')
@@ -164,9 +185,23 @@ export async function GET(request: NextRequest) {
     }) || []
 
 
+    const totalPages = Math.ceil((count || 0) / limit)
+    const hasNextPage = page < totalPages
+    const hasPrevPage = page > 1
+
     return NextResponse.json({
       success: true,
-      data: formattedTransactions
+      data: formattedTransactions,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalRecords: count || 0,
+        recordsPerPage: limit,
+        hasNextPage,
+        hasPrevPage,
+        startRecord: offset + 1,
+        endRecord: Math.min(offset + limit, count || 0)
+      }
     })
 
   } catch (error) {

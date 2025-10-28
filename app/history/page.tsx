@@ -44,39 +44,120 @@ interface DisbursementRequest {
   balanceUpdatedAtTransaction?: string
 }
 
+interface PaginationInfo {
+  currentPage: number
+  totalPages: number
+  totalRecords: number
+  recordsPerPage: number
+  hasNextPage: boolean
+  hasPrevPage: boolean
+  startRecord: number
+  endRecord: number
+}
+
 export default function HistoryPage() {
   const [disbursements, setDisbursements] = useState<DisbursementRequest[]>([])
+  const [allDisbursements, setAllDisbursements] = useState<DisbursementRequest[]>([]) // Store all data for client-side filtering
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('') // Debounced search term
   const [statusFilter, setStatusFilter] = useState('all')
   const [exportDateRange, setExportDateRange] = useState({
     startDate: '',
     endDate: ''
   })
   const [isExporting, setIsExporting] = useState(false)
+  const [isFiltering, setIsFiltering] = useState(false)
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState<number>(DEFAULT_VALUES.PAGINATION.ITEMS_PER_PAGE)
+  const [itemsPerPage, setItemsPerPage] = useState<number>(50) // Increased default
+  const [pagination, setPagination] = useState<PaginationInfo | null>(null)
+  
+  // Filter state
+  const [filterDateRange, setFilterDateRange] = useState({
+    startDate: '',
+    endDate: ''
+  })
 
+  // Debounce search term to avoid excessive API calls
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm)
+    }, 300) // 300ms delay
+
+    return () => clearTimeout(timer)
+  }, [searchTerm])
+
+  // Load data only when pagination or date filters change (client-side filtering for search/status)
   useEffect(() => {
     loadDisbursements()
     
     // Auto-refresh every 30 seconds
     const interval = setInterval(loadDisbursements, AUTO_REFRESH_INTERVALS.TRANSACTION_HISTORY)
     return () => clearInterval(interval)
-  }, [])
+  }, [currentPage, itemsPerPage, filterDateRange])
+
+  // Client-side filtering when search term or status changes
+  useEffect(() => {
+    setIsFiltering(true)
+    
+    // Small delay to show filtering state for better UX
+    const timer = setTimeout(() => {
+      let filtered = allDisbursements
+
+      // Apply search filter
+      if (searchTerm.trim() !== '') {
+        const searchLower = searchTerm.toLowerCase()
+        filtered = filtered.filter(disbursement => {
+          return (
+            disbursement.customerName?.toLowerCase().includes(searchLower) ||
+            disbursement.msisdn?.includes(searchTerm) ||
+            disbursement.mpesaTransactionId?.toLowerCase().includes(searchLower) ||
+            disbursement.transactionReceipt?.toLowerCase().includes(searchLower) ||
+            disbursement.conversationId?.toLowerCase().includes(searchLower) ||
+            disbursement.partner?.toLowerCase().includes(searchLower)
+          )
+        })
+      }
+
+      // Apply status filter
+      if (statusFilter !== 'all') {
+        filtered = filtered.filter(disbursement => 
+          disbursement.status?.toLowerCase() === statusFilter.toLowerCase()
+        )
+      }
+
+      setDisbursements(filtered)
+      setIsFiltering(false)
+    }, 100) // Brief delay for smooth UX
+
+    return () => clearTimeout(timer)
+  }, [searchTerm, statusFilter, allDisbursements])
 
   const loadDisbursements = async () => {
     try {
-      // Use the same API endpoint as the dashboard for consistency
-      const response = await fetch(`/api/dashboard/recent-transactions?limit=${DEFAULT_VALUES.PAGINATION.MAX_ITEMS_PER_PAGE}`)
+      setLoading(true)
+      
+      // Build query parameters - only use date filters and pagination for server calls
+      const params = new URLSearchParams({
+        limit: itemsPerPage.toString(),
+        page: currentPage.toString(),
+        ...(filterDateRange.startDate && { startDate: filterDateRange.startDate }),
+        ...(filterDateRange.endDate && { endDate: filterDateRange.endDate })
+      })
+      
+      const response = await fetch(`/api/dashboard/recent-transactions?${params}`)
       const data = await response.json()
+      
       if (data.success) {
+        // Store all data for client-side filtering
+        setAllDisbursements(data.data)
         setDisbursements(data.data)
+        setPagination(data.pagination)
       }
     } catch (error) {
-      // Failed to fetch disbursements
+      console.error('Failed to fetch disbursements:', error)
     } finally {
       setLoading(false)
     }
@@ -116,89 +197,13 @@ export default function HistoryPage() {
     }
   }
 
-  const filteredDisbursements = disbursements.filter(disbursement => {
-    const matchesSearch = 
-      disbursement.msisdn.includes(searchTerm) ||
-      disbursement.partner.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      disbursement.shortCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      disbursement.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (disbursement.conversationId && disbursement.conversationId.includes(searchTerm)) ||
-      (disbursement.transactionReceipt && disbursement.transactionReceipt.includes(searchTerm)) ||
-      (disbursement.mpesaTransactionId && disbursement.mpesaTransactionId.includes(searchTerm))
-
-    const matchesStatus = statusFilter === 'all' || disbursement.status.toLowerCase() === statusFilter.toLowerCase()
-
-    return matchesSearch && matchesStatus
-  })
-
-  // Pagination calculations
-  const totalItems = filteredDisbursements.length
-  const totalPages = Math.ceil(totalItems / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const endIndex = startIndex + itemsPerPage
-  const currentItems = filteredDisbursements.slice(startIndex, endIndex)
-
-  // Pagination handlers
-  const goToPage = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page)
-    }
-  }
-
-  const goToFirstPage = () => goToPage(1)
-  const goToLastPage = () => goToPage(totalPages)
-  const goToPreviousPage = () => goToPage(currentPage - 1)
-  const goToNextPage = () => goToPage(currentPage + 1)
-
-  const handleItemsPerPageChange = (newItemsPerPage: number) => {
-    setItemsPerPage(newItemsPerPage)
-    setCurrentPage(1) // Reset to first page when changing items per page
-  }
-
-  // Generate page numbers for pagination
-  const getPageNumbers = () => {
-    const pages = []
-    const maxVisiblePages = 5
-    
-    if (totalPages <= maxVisiblePages) {
-      // Show all pages if total is small
-      for (let i = 1; i <= totalPages; i++) {
-        pages.push(i)
-      }
-    } else {
-      // Show pages around current page
-      const start = Math.max(1, currentPage - 2)
-      const end = Math.min(totalPages, currentPage + 2)
-      
-      if (start > 1) {
-        pages.push(1)
-        if (start > 2) {
-          pages.push('...')
-        }
-      }
-      
-      for (let i = start; i <= end; i++) {
-        pages.push(i)
-      }
-      
-      if (end < totalPages) {
-        if (end < totalPages - 1) {
-          pages.push('...')
-        }
-        pages.push(totalPages)
-      }
-    }
-    
-    return pages
-  }
-
-  // Reset pagination when filters change
+  // Reset pagination when date filters change (client-side filtering doesn't need pagination reset)
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, statusFilter])
+  }, [filterDateRange])
 
   const exportToCSV = () => {
-    if (filteredDisbursements.length === 0) {
+    if (disbursements.length === 0) {
       alert('No data to export')
       return
     }
@@ -227,7 +232,7 @@ export default function HistoryPage() {
       ]
 
       // Prepare CSV data
-      const csvData = filteredDisbursements.map(disbursement => [
+      const csvData = disbursements.map(disbursement => [
         disbursement.id,
         disbursement.mpesaTransactionId || disbursement.transactionReceipt || disbursement.conversationId || 'N/A',
         disbursement.customerName || 'N/A',
@@ -278,7 +283,7 @@ export default function HistoryPage() {
   }
 
   const exportToJSON = () => {
-    if (filteredDisbursements.length === 0) {
+    if (disbursements.length === 0) {
       alert('No data to export')
       return
     }
@@ -290,7 +295,7 @@ export default function HistoryPage() {
       const exportData = {
         exportInfo: {
           exportedAt: new Date().toISOString(),
-          totalRecords: filteredDisbursements.length,
+          totalRecords: disbursements.length,
           dateRange: {
             startDate: exportDateRange.startDate || 'all',
             endDate: exportDateRange.endDate || 'all'
@@ -300,7 +305,7 @@ export default function HistoryPage() {
             statusFilter
           }
         },
-        transactions: filteredDisbursements.map(disbursement => ({
+        transactions: disbursements.map(disbursement => ({
           id: disbursement.id,
           mpesaTransactionId: disbursement.mpesaTransactionId || disbursement.transactionReceipt || disbursement.conversationId || null,
           customerName: disbursement.customerName || null,
@@ -386,189 +391,133 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-6">
-      {/* Combined Search, Filters & Export Section */}
-      <div className="bg-white rounded-lg shadow">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">Search & Export</h3>
-              <p className="text-sm text-gray-500">Filter transactions and export data in various formats</p>
-            </div>
-            <div className="flex items-center text-sm text-gray-500">
-              <Download className="h-4 w-4 mr-1" />
-              {filteredDisbursements.length} records
-            </div>
-          </div>
-        </div>
 
-        <div className="p-6">
-          {/* Search and Filters Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Search
-            </label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+      {/* Enhanced Filtering Section */}
+      <div className="bg-white shadow rounded-lg mb-6">
+        <div className="px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Filter Transactions</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Search */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Search
+                {isFiltering && (
+                  <span className="ml-2 text-xs text-blue-600 flex items-center">
+                    <RefreshCw className="w-3 h-3 animate-spin mr-1" />
+                    Filtering...
+                  </span>
+                )}
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Phone, name, or transaction ID..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            {/* Status Filter */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Status
+              </label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">All Status</option>
+                <option value="completed">Completed</option>
+                <option value="success">Success</option>
+                <option value="pending">Pending</option>
+                <option value="failed">Failed</option>
+                <option value="error">Error</option>
+              </select>
+            </div>
+
+            {/* Start Date */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Start Date
+              </label>
               <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Search transactions..."
+                type="date"
+                value={filterDateRange.startDate}
+                onChange={(e) => setFilterDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* End Date */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                End Date
+              </label>
+              <input
+                type="date"
+                value={filterDateRange.endDate}
+                onChange={(e) => setFilterDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
           </div>
 
-          <div>
+          {/* Quick Date Filters */}
+          <div className="mt-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Status
+              Quick Filters
             </label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">All Status</option>
-              <option value="success">Success</option>
-              <option value="queued">Queued</option>
-              <option value="accepted">Accepted</option>
-              <option value="failed">Failed</option>
-            </select>
-            </div>
-          </div>
-
-          {/* Export Section */}
-          <div className="border-t border-gray-200 pt-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Export Date Range */}
-          <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Export Date Range
-            </label>
-                
-                {/* Quick Date Range Buttons */}
-                <div className="flex flex-wrap gap-2 mb-3">
-                  <button
-                    onClick={() => setQuickDateRange('today')}
-                    className={`px-2 py-1 text-xs rounded-full border transition-colors ${
-                      exportDateRange.startDate === new Date().toISOString().split('T')[0] && exportDateRange.endDate === new Date().toISOString().split('T')[0]
-                        ? 'bg-blue-100 text-blue-700 border-blue-300'
-                        : 'bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100'
-                    }`}
-                  >
-                    Today
-                  </button>
-                  <button
-                    onClick={() => setQuickDateRange('week')}
-                    className="px-2 py-1 text-xs rounded-full border bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100 transition-colors"
-                  >
-                    7 Days
-                  </button>
-                  <button
-                    onClick={() => setQuickDateRange('month')}
-                    className="px-2 py-1 text-xs rounded-full border bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100 transition-colors"
-                  >
-                    30 Days
-                  </button>
-                  <button
-                    onClick={() => setQuickDateRange('quarter')}
-                    className="px-2 py-1 text-xs rounded-full border bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100 transition-colors"
-                  >
-                    90 Days
-                  </button>
-                </div>
-
-                {/* Custom Date Range */}
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      Start Date
-                    </label>
-                    <input
-                      type="date"
-                      value={exportDateRange.startDate}
-                      onChange={(e) => setExportDateRange(prev => ({ ...prev, startDate: e.target.value }))}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      End Date
-                    </label>
-                    <input
-                      type="date"
-                      value={exportDateRange.endDate}
-                      onChange={(e) => setExportDateRange(prev => ({ ...prev, endDate: e.target.value }))}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-          </div>
-
-              {/* Export Buttons */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Export Format
-                </label>
-                
-                <div className="space-y-2">
-                  <button
-                    onClick={exportToCSV}
-                    disabled={isExporting || filteredDisbursements.length === 0}
-                    className="w-full flex items-center justify-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm"
-                  >
-                    {isExporting ? (
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <FileSpreadsheet className="w-4 h-4 mr-2" />
-                    )}
-                    Export CSV
-                  </button>
-                  
-            <button
-                    onClick={exportToJSON}
-                    disabled={isExporting || filteredDisbursements.length === 0}
-                    className="w-full flex items-center justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors text-sm"
-                  >
-                    {isExporting ? (
-                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <FileText className="w-4 h-4 mr-2" />
-                    )}
-                    Export JSON
-            </button>
-                </div>
-              </div>
-
-              {/* Export Info */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Export Info
-                </label>
-                
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <div className="text-xs text-gray-600 space-y-1">
-                    <div className="flex items-center">
-                      <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                      CSV: All transaction details
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-                      JSON: Includes metadata
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full mr-2"></div>
-                      Respects current filters
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full mr-2"></div>
-                      Auto-named files
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setFilterDateRange({ startDate: '', endDate: '' })}
+                className="px-3 py-1 text-sm rounded-full border bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100 transition-colors"
+              >
+                All Time
+              </button>
+              <button
+                onClick={() => {
+                  const today = new Date().toISOString().split('T')[0]
+                  setFilterDateRange({ startDate: today, endDate: today })
+                }}
+                className="px-3 py-1 text-sm rounded-full border bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100 transition-colors"
+              >
+                Today
+              </button>
+              <button
+                onClick={() => {
+                  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                  const today = new Date().toISOString().split('T')[0]
+                  setFilterDateRange({ startDate: weekAgo, endDate: today })
+                }}
+                className="px-3 py-1 text-sm rounded-full border bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100 transition-colors"
+              >
+                Last 7 Days
+              </button>
+              <button
+                onClick={() => {
+                  const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                  const today = new Date().toISOString().split('T')[0]
+                  setFilterDateRange({ startDate: monthAgo, endDate: today })
+                }}
+                className="px-3 py-1 text-sm rounded-full border bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100 transition-colors"
+              >
+                Last 30 Days
+              </button>
+              <button
+                onClick={() => {
+                  const quarterAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                  const today = new Date().toISOString().split('T')[0]
+                  setFilterDateRange({ startDate: quarterAgo, endDate: today })
+                }}
+                className="px-3 py-1 text-sm rounded-full border bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100 transition-colors"
+              >
+                Last 90 Days
+              </button>
             </div>
           </div>
         </div>
@@ -583,7 +532,15 @@ export default function HistoryPage() {
                 Partner Transactions
           </h2>
               <p className="text-sm text-gray-500">
-                Showing {startIndex + 1}-{Math.min(endIndex, totalItems)} of {totalItems} transactions
+                {pagination ? 
+                  `Showing ${disbursements.length} of ${pagination.totalRecords} transactions` :
+                  `Loading...`
+                }
+                {(searchTerm || statusFilter !== 'all') && (
+                  <span className="ml-2 text-blue-600 font-medium">
+                    (filtered)
+                  </span>
+                )}
               </p>
             </div>
             <div className="flex items-center gap-4">
@@ -595,7 +552,10 @@ export default function HistoryPage() {
                 <label className="text-sm text-gray-600">Show:</label>
                 <select
                   value={itemsPerPage}
-                  onChange={(e) => handleItemsPerPageChange(Number(e.target.value))}
+                  onChange={(e) => {
+                    setItemsPerPage(Number(e.target.value))
+                    setCurrentPage(1)
+                  }}
                   className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value={10}>10</option>
@@ -609,7 +569,7 @@ export default function HistoryPage() {
           </div>
         </div>
 
-        {filteredDisbursements.length > 0 ? (
+        {disbursements.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -641,7 +601,7 @@ export default function HistoryPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {currentItems.map((disbursement) => (
+                {disbursements.map((disbursement) => (
                   <tr key={disbursement.id} className="hover:bg-gray-50">
                     <td className="px-3 py-2">
                       <div className="text-xs font-mono text-gray-900 truncate" title={disbursement.mpesaTransactionId || disbursement.transactionReceipt || disbursement.conversationId || 'N/A'}>
@@ -726,21 +686,21 @@ export default function HistoryPage() {
           </div>
         )}
 
-        {/* Pagination Controls */}
-        {filteredDisbursements.length > 0 && totalPages > 1 && (
+        {/* Server-Side Pagination Controls */}
+        {pagination && pagination.totalPages > 1 && (
           <div className="px-6 py-4 border-t border-gray-200">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               {/* Pagination Info */}
               <div className="text-sm text-gray-700">
-                Page {currentPage} of {totalPages} ({totalItems} total transactions)
+                Page {pagination.currentPage} of {pagination.totalPages} ({pagination.totalRecords} total transactions)
               </div>
 
               {/* Pagination Controls */}
               <div className="flex items-center gap-2">
                 {/* First Page */}
                 <button
-                  onClick={goToFirstPage}
-                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(1)}
+                  disabled={!pagination.hasPrevPage}
                   className="p-2 rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   title="First page"
                 >
@@ -749,8 +709,8 @@ export default function HistoryPage() {
 
                 {/* Previous Page */}
                 <button
-                  onClick={goToPreviousPage}
-                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(currentPage - 1)}
+                  disabled={!pagination.hasPrevPage}
                   className="p-2 rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   title="Previous page"
                 >
@@ -759,28 +719,31 @@ export default function HistoryPage() {
 
                 {/* Page Numbers */}
                 <div className="flex items-center gap-1">
-                  {getPageNumbers().map((page, index) => (
-                    <button
-                      key={index}
-                      onClick={() => typeof page === 'number' && goToPage(page)}
-                      disabled={page === '...'}
-                      className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
-                        page === currentPage
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : page === '...'
-                          ? 'border-transparent text-gray-400 cursor-default'
-                          : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  ))}
+                  {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                    const startPage = Math.max(1, pagination.currentPage - 2)
+                    const page = startPage + i
+                    if (page > pagination.totalPages) return null
+                    
+                    return (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`px-3 py-2 text-sm rounded-lg border transition-colors ${
+                          page === pagination.currentPage
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    )
+                  })}
                 </div>
 
                 {/* Next Page */}
                 <button
-                  onClick={goToNextPage}
-                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(currentPage + 1)}
+                  disabled={!pagination.hasNextPage}
                   className="p-2 rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   title="Next page"
                 >
@@ -789,8 +752,8 @@ export default function HistoryPage() {
 
                 {/* Last Page */}
                 <button
-                  onClick={goToLastPage}
-                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(pagination.totalPages)}
+                  disabled={!pagination.hasNextPage}
                   className="p-2 rounded-lg border border-gray-300 text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   title="Last page"
                 >

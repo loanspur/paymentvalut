@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyJWTToken } from '../../../../lib/jwt-utils'
 import crypto from 'crypto'
+import UnifiedWalletService from '@/lib/unified-wallet-service'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -279,16 +280,23 @@ export async function POST(request: NextRequest) {
       if (transactionError) {
         console.error('Error creating wallet transaction:', transactionError)
       } else {
-        // Update wallet balance using RPC function
-        const { error: balanceError } = await supabase
-          .rpc('update_partner_wallet_balance', {
-            p_partner_id: partner_id,
-            p_amount: -smsCost, // Negative amount for deduction
-            p_transaction_type: 'sms_charge'
-          })
+        // Update wallet balance using unified service
+        const balanceResult = await UnifiedWalletService.updateWalletBalance(
+          partner_id,
+          -smsCost, // Negative amount for deduction
+          'sms_charge',
+          {
+            reference: `SMS_${smsNotification.id}`,
+            description: `SMS charge for ${recipient_phone}`,
+            sms_notification_id: smsNotification.id,
+            phone_number: recipient_phone,
+            message_length: message_content.length,
+            sms_cost: smsCost
+          }
+        )
 
-        if (balanceError) {
-          console.error('Error updating wallet balance:', balanceError)
+        if (!balanceResult.success) {
+          console.error('Error updating wallet balance:', balanceResult.error)
         }
 
         // Update SMS notification with wallet transaction ID

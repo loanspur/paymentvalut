@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import UnifiedWalletService from '@/lib/unified-wallet-service'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -115,18 +116,25 @@ export async function POST(request: NextRequest) {
 
     // Update wallet balance if automatic deduction is enabled
     if (chargeConfig.is_automatic) {
-      const { error: updateError } = await supabase
-        .from('partner_wallets')
-        .update({ 
-          current_balance: newBalance,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', wallet.id)
+      const balanceResult = await UnifiedWalletService.updateWalletBalance(
+        partner_id,
+        -chargeAmount, // Negative amount for deduction
+        'charge',
+        {
+          reference: `CHARGE_${chargeTransaction.id}`,
+          description: `${chargeConfig.charge_name} - ${description || 'Automatic charge'}`,
+          charge_transaction_id: chargeTransaction.id,
+          charge_config_id: chargeConfig.id,
+          related_transaction_id,
+          related_transaction_type,
+          automatic: chargeConfig.is_automatic
+        }
+      )
 
-      if (updateError) {
-        console.error('Error updating wallet balance:', updateError)
+      if (!balanceResult.success) {
+        console.error('Error updating wallet balance:', balanceResult.error)
         return NextResponse.json(
-          { success: false, error: 'Failed to update wallet balance' },
+          { success: false, error: balanceResult.error },
           { status: 500 }
         )
       }
@@ -145,30 +153,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create wallet transaction record for the charge
-    const { error: walletTransactionError } = await supabase
-      .from('wallet_transactions')
-      .insert({
-        wallet_id: wallet.id,
-        transaction_type: 'charge',
-        amount: -chargeAmount,
-        reference: `CHARGE_${chargeTransaction.id}`,
-        description: `${chargeConfig.charge_name} - ${description || 'Automatic charge'}`,
-        status: chargeConfig.is_automatic ? 'completed' : 'pending',
-        metadata: {
-          charge_transaction_id: chargeTransaction.id,
-          charge_config_id: chargeConfig.id,
-          related_transaction_id,
-          related_transaction_type,
-          automatic: chargeConfig.is_automatic
-        }
-      })
-
-    if (walletTransactionError) {
-      console.error('Error creating wallet transaction:', walletTransactionError)
-      // Don't fail the request, just log the error
-    }
-
     return NextResponse.json({
       success: true,
       message: `Charge of ${chargeAmount} KES processed successfully`,
@@ -176,7 +160,7 @@ export async function POST(request: NextRequest) {
         charge_transaction: chargeTransaction,
         charge_amount: chargeAmount,
         old_balance: wallet.current_balance,
-        new_balance: newBalance,
+        new_balance: chargeConfig.is_automatic ? wallet.current_balance - chargeAmount : wallet.current_balance,
         automatic: chargeConfig.is_automatic
       }
     })

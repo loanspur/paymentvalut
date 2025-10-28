@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import UnifiedWalletService from '@/lib/unified-wallet-service'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -78,87 +79,35 @@ export async function POST(
       )
     }
 
-    // Update partner wallet balance
+    // Update partner wallet balance using unified service
     try {
-      // Get current wallet balance
-      const { data: wallet, error: walletError } = await supabase
-        .from('partner_wallets')
-        .select('*')
-        .eq('partner_id', partner_id)
-        .single()
-
-      let currentBalance = 0
-      if (walletError && walletError.code !== 'PGRST116') {
-        console.error('Error fetching wallet:', walletError)
-      } else if (wallet) {
-        currentBalance = wallet.balance || 0
-      } else {
-        // Create wallet if it doesn't exist
-        const { data: newWallet, error: createError } = await supabase
-          .from('partner_wallets')
-          .insert({
-            partner_id: partner_id,
-            balance: 0,
-            currency: 'KES',
-            is_active: true
-          })
-          .select()
-          .single()
-
-        if (createError) {
-          console.error('Error creating wallet:', createError)
-        } else {
-          currentBalance = 0
+      const balanceResult = await UnifiedWalletService.updateWalletBalance(
+        partner_id,
+        transaction.transaction_amount,
+        'top_up',
+        {
+          reference: `C2B_${transactionId}`,
+          description: `C2B allocation from ${transaction.msisdn}`,
+          c2b_transaction_id: transactionId,
+          customer_name: transaction.customer_name,
+          phone_number: transaction.msisdn,
+          original_amount: transaction.transaction_amount
         }
-      }
+      )
 
-      // Update wallet balance
-      const newBalance = currentBalance + transaction.transaction_amount
-      const { error: balanceError } = await supabase
-        .from('partner_wallets')
-        .upsert({
-          partner_id: partner_id,
-          balance: newBalance,
-          currency: 'KES',
-          is_active: true,
-          updated_at: new Date().toISOString()
-        })
-
-      if (balanceError) {
-        console.error('Error updating wallet balance:', balanceError)
-      } else {
-        console.log(`Wallet balance updated for partner ${partner.name}: ${currentBalance} -> ${newBalance}`)
-      }
-
-      // Create wallet transaction record
-      const { data: walletTransaction, error: walletTransactionError } = await supabase
-        .from('wallet_transactions')
-        .insert({
-          partner_id: partner_id,
-          transaction_type: 'top_up',
-          amount: transaction.transaction_amount,
-          currency: 'KES',
-          status: 'completed',
-          reference: transaction.transaction_id,
-          description: `Wallet top-up via NCBA Paybill - ${transaction.bill_reference_number}`,
-          metadata: {
-            c2b_transaction_id: transaction.id,
-            transaction_type: transaction.transaction_type,
-            business_short_code: transaction.business_short_code,
-            bill_reference: transaction.bill_reference_number,
-            customer_phone: transaction.customer_phone,
-            customer_name: transaction.customer_name,
-            source: 'ncba_paybill_allocation'
-          }
-        })
-        .select()
-        .single()
-
-      if (walletTransactionError) {
-        console.error('Error creating wallet transaction:', walletTransactionError)
+      if (!balanceResult.success) {
+        console.error('Error updating wallet balance:', balanceResult.error)
+        return NextResponse.json(
+          { success: false, error: balanceResult.error },
+          { status: 500 }
+        )
       }
     } catch (walletError) {
       console.error('Error processing wallet update:', walletError)
+      return NextResponse.json(
+        { success: false, error: 'Failed to update wallet balance' },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({

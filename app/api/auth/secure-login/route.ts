@@ -126,6 +126,7 @@ export async function POST(request: NextRequest) {
       .eq('setting_key', 'login_otp_enabled')
       .single()
 
+    // Default to false if OTP settings are not configured
     const otpEnabled = otpSettings?.setting_value === 'true'
     const requiresEmailVerification = !user.email_verified
     const requiresPhoneVerification = user.email_verified && !user.phone_verified

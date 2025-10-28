@@ -1,3 +1,9 @@
+/**
+ * DEPRECATED: This wallet service is being replaced by UnifiedWalletService
+ * Please use lib/unified-wallet-service.ts for all new wallet operations
+ * This file is kept for backward compatibility with existing edge functions
+ */
+
 // Wallet Management Service
 // This module handles wallet operations, balance tracking, and transaction management
 // Date: December 2024

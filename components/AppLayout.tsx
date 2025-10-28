@@ -13,7 +13,7 @@ interface AppLayoutProps {
 }
 
 export default function AppLayout({ children }: AppLayoutProps) {
-  const { user, logout } = useAuth()
+  const { user, logout, isLoading } = useAuth()
   const pathname = usePathname()
 
   // Prevent auto-scroll conflicts with fixed elements
@@ -21,6 +21,61 @@ export default function AppLayout({ children }: AppLayoutProps) {
   // Public routes that don't need the protected layout
   const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup', '/request-password-reset', '/reset-password']
   const isPublicRoute = publicRoutes.includes(pathname)
+
+  // Show loading state for protected routes while auth is loading
+  if (!isPublicRoute && isLoading) {
+    return (
+      <ToastProvider>
+        <div className="min-h-screen bg-gray-50 flex">
+          {/* Sidebar skeleton */}
+          <div className="w-64 bg-white border-r border-gray-200 shadow-lg">
+            <div className="flex items-center justify-between px-4 py-4 border-b border-gray-200">
+              <div className="flex items-center">
+                <div className="w-8 h-8 bg-gray-200 rounded-lg animate-pulse"></div>
+                <div className="ml-3">
+                  <div className="h-5 w-32 bg-gray-200 rounded animate-pulse"></div>
+                  <div className="h-3 w-24 bg-gray-200 rounded animate-pulse mt-1"></div>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 space-y-3">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="h-10 bg-gray-200 rounded animate-pulse"></div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Main content area skeleton */}
+          <div className="flex-1 flex flex-col">
+            {/* Header skeleton */}
+            <header className="sticky top-0 bg-white border-b border-gray-200 px-3 py-3 sm:px-4 sm:py-4 lg:px-6 shadow-sm z-20">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className="h-6 w-48 bg-gray-200 rounded animate-pulse"></div>
+                  <div className="h-4 w-32 bg-gray-200 rounded animate-pulse mt-1"></div>
+                </div>
+                <div className="flex items-center space-x-2 sm:space-x-4 ml-4">
+                  <div className="w-8 h-8 bg-gray-200 rounded-lg animate-pulse"></div>
+                  <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse"></div>
+                </div>
+              </div>
+            </header>
+
+            {/* Content skeleton */}
+            <main className="flex-1 p-3 sm:p-4 lg:p-6">
+              <div className="w-full">
+                <div className="space-y-4">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="h-32 bg-gray-200 rounded-lg animate-pulse"></div>
+                  ))}
+                </div>
+              </div>
+            </main>
+          </div>
+        </div>
+      </ToastProvider>
+    )
+  }
 
   return (
     <ToastProvider>
@@ -54,10 +109,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
                 <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
               </button>
 
-              {/* Profile Dropdown */}
-              {user && (
-                <ProfileDropdown />
-              )}
+              {/* Profile Dropdown - Always render, but show skeleton while loading */}
+              {isLoading ? (
+                <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse transition-opacity duration-200"></div>
+              ) : user ? (
+                <div className="transition-opacity duration-200">
+                  <ProfileDropdown />
+                </div>
+              ) : null}
             </div>
           </div>
         </header>

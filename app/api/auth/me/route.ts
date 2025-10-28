@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
       .eq('setting_key', 'login_otp_enabled')
       .single()
 
+    // Default to false if OTP settings are not configured
     const otpEnabled = otpSettings?.setting_value === 'true'
     
     // If OTP is enabled but not validated, deny access

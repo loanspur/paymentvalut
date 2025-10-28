@@ -18,38 +18,36 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Call the balance-monitor Edge Function for real-time B2C balance monitoring
-    const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/balance-monitor`, {
+    // Trigger the balance-monitor Edge Function asynchronously (fire-and-forget)
+    // This avoids timeout issues with cron-job.org's 30s limit
+    fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/balance-monitor`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
       },
       body: JSON.stringify({ force_check: true })
+    }).then(async (response) => {
+      const result = await response.json()
+      if (response.ok) {
+        console.log('✅ [Cron] Balance monitoring triggered successfully')
+        console.log(`   Partners to be checked: ${result.results?.length || 0}`)
+      } else {
+        console.error('❌ [Cron] Balance monitoring trigger failed:', result.error)
+      }
+    }).catch((error) => {
+      console.error('❌ [Cron] Error triggering balance monitoring:', error)
     })
 
-    const result = await response.json()
+    // Return immediately to avoid cron-job.org timeout
+    console.log('🔄 [Cron] Balance monitoring triggered (running in background)')
     
-    if (response.ok) {
-      console.log('✅ [Cron] Balance monitoring completed successfully')
-      console.log(`   Partners checked: ${result.results?.length || 0}`)
-      console.log(`   Monitoring configs: ${result.configs_processed || 0}`)
-      
-      return NextResponse.json({
-        success: true,
-        message: 'Balance monitoring completed',
-        timestamp: new Date().toISOString(),
-        result
-      })
-    } else {
-      console.error('❌ [Cron] Balance monitoring failed:', result.error)
-      return NextResponse.json({
-        success: false,
-        error: result.error,
-        details: result.details,
-        timestamp: new Date().toISOString()
-      }, { status: 500 })
-    }
+    return NextResponse.json({
+      success: true,
+      message: 'Balance monitoring triggered successfully',
+      timestamp: new Date().toISOString(),
+      note: 'Balance check is running in background. Check Supabase logs for detailed results.'
+    })
 
   } catch (error) {
     console.error('❌ [Cron] Critical error in balance monitoring:', error)

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import UnifiedWalletService from '@/lib/unified-wallet-service'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -89,18 +90,21 @@ export async function POST(request: NextRequest) {
       if (transactionError) {
         console.error('Error updating wallet transaction:', transactionError)
       } else {
-        // Update wallet balance using RPC function
-        const { error: balanceError } = await supabase
-          .rpc('update_partner_wallet_balance', {
-            p_partner_id: stkPushLog.partner_id,
-            p_amount: stkPushLog.amount,
-            p_transaction_type: 'top_up'
-          })
+        // Update wallet balance using unified service
+        const balanceResult = await UnifiedWalletService.updateWalletBalance(
+          stkPushLog.partner_id,
+          stkPushLog.amount,
+          'top_up',
+          {
+            reference: updateData.ncb_receipt_number,
+            ncb_receipt_number: updateData.ncb_receipt_number,
+            ncb_transaction_date: updateData.ncb_transaction_date,
+            completed_at: new Date().toISOString()
+          }
+        )
 
-        if (balanceError) {
-          console.error('Error updating wallet balance:', balanceError)
-        } else {
-          console.log('Wallet balance updated successfully for partner:', stkPushLog.partner_id)
+        if (!balanceResult.success) {
+          console.error('Error updating wallet balance:', balanceResult.error)
         }
       }
     } else {
