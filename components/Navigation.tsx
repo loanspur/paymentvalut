@@ -128,6 +128,7 @@ export default function Navigation({ className = '' }: NavigationProps) {
             <Link
               key={item.name}
               href={item.href}
+              prefetch={true}
               className={`group flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                 isActive(item.href)
                   ? 'bg-blue-100 text-blue-700'
@@ -162,6 +163,7 @@ export default function Navigation({ className = '' }: NavigationProps) {
                 <Link
                   key={item.name}
                   href={item.href}
+                  prefetch={true}
                   onClick={() => setIsMobileMenuOpen(false)}
                   className={`group flex items-center px-3 py-2 rounded-md text-base font-medium transition-colors ${
                     isActive(item.href)
@@ -293,6 +295,7 @@ export function SidebarNavigation({ className = '' }: NavigationProps) {
             <Link
               key={item.name}
               href={item.href}
+              prefetch={true}
               className={`group flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                 isActive(item.href)
                   ? 'bg-blue-100 text-blue-700'

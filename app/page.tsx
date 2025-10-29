@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { 
   Send, 
   History, 
@@ -18,23 +18,38 @@ import {
   Clock,
   CheckCircle
 } from 'lucide-react'
-import { 
-  LineChart as RechartsLineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  BarChart as RechartsBarChart,
-  Bar,
-  PieChart as RechartsPieChart,
-  Pie,
-  Cell,
-  Legend
-} from 'recharts'
 import { format, subDays, startOfDay, endOfDay } from 'date-fns'
 import { AUTO_REFRESH_INTERVALS, DEFAULT_VALUES } from '../lib/constants'
+import {
+  DynamicBarChart,
+  DynamicLineChart,
+  DynamicPieChart,
+  DynamicBar,
+  DynamicLine,
+  DynamicPie,
+  DynamicCell,
+  DynamicXAxis,
+  DynamicYAxis,
+  DynamicCartesianGrid,
+  DynamicTooltip,
+  DynamicResponsiveContainer,
+  DynamicLegend
+} from '../components/charts/DynamicChart'
+
+// Use aliases for cleaner code
+const RechartsBarChart = DynamicBarChart
+const RechartsLineChart = DynamicLineChart
+const RechartsPieChart = DynamicPieChart
+const Bar = DynamicBar
+const Line = DynamicLine
+const Pie = DynamicPie
+const Cell = DynamicCell
+const XAxis = DynamicXAxis
+const YAxis = DynamicYAxis
+const CartesianGrid = DynamicCartesianGrid
+const Tooltip = DynamicTooltip
+const ResponsiveContainer = DynamicResponsiveContainer
+const Legend = DynamicLegend
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('overview')
@@ -167,34 +182,30 @@ export default function Dashboard() {
 
   const loadDashboardData = async () => {
     try {
-      // Fetch dashboard statistics
-      const statsUrl = `/api/dashboard/stats?partnerId=${filters.partnerId}&dateRange=${filters.dateRange}`
-      const statsResponse = await fetch(statsUrl)
-      if (statsResponse.ok) {
-        const statsData = await statsResponse.json()
-        if (statsData.success) {
-          setStats(statsData.data)
-        }
+      // Fetch all dashboard data in parallel for better performance
+      const [statsResponse, transactionsResponse, partnersResponse] = await Promise.all([
+        fetch(`/api/dashboard/stats?partnerId=${filters.partnerId}&dateRange=${filters.dateRange}`),
+        fetch(`/api/dashboard/recent-transactions?limit=10&partnerId=${filters.partnerId}`),
+        fetch(`/api/dashboard/partner-stats?partnerId=${filters.partnerId}`)
+      ])
+
+      // Process responses in parallel
+      const [statsData, transactionsData, partnersData] = await Promise.all([
+        statsResponse.ok ? statsResponse.json() : Promise.resolve({ success: false }),
+        transactionsResponse.ok ? transactionsResponse.json() : Promise.resolve({ success: false }),
+        partnersResponse.ok ? partnersResponse.json() : Promise.resolve({ success: false })
+      ])
+
+      if (statsData.success) {
+        setStats(statsData.data)
       }
 
-      // Fetch recent transactions
-      const transactionsUrl = `/api/dashboard/recent-transactions?limit=10&partnerId=${filters.partnerId}`
-      const transactionsResponse = await fetch(transactionsUrl)
-      if (transactionsResponse.ok) {
-        const transactionsData = await transactionsResponse.json()
-        if (transactionsData.success) {
-          setRecentTransactions(transactionsData.data)
-        }
+      if (transactionsData.success) {
+        setRecentTransactions(transactionsData.data)
       }
 
-      // Fetch partner statistics
-      const partnersUrl = `/api/dashboard/partner-stats?partnerId=${filters.partnerId}`
-      const partnersResponse = await fetch(partnersUrl)
-      if (partnersResponse.ok) {
-        const partnersData = await partnersResponse.json()
-        if (partnersData.success) {
-          setPartnerStats(partnersData.data)
-        }
+      if (partnersData.success) {
+        setPartnerStats(partnersData.data)
       }
 
       // Fetch chart data
@@ -474,21 +485,23 @@ export default function Dashboard() {
                   )}
                 </h3>
                 {chartData.dailyTransactions.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={250}>
-                    <RechartsLineChart data={chartData.dailyTransactions}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" />
-                      <YAxis />
-                      <Tooltip 
-                        formatter={(value, name) => [
-                          name === 'transactions' ? value : `KES ${value.toLocaleString()}`,
-                          name === 'transactions' ? 'Transactions' : 'Amount'
-                        ]}
-                      />
-                      <Line type="monotone" dataKey="transactions" stroke="#3B82F6" strokeWidth={2} />
-                      <Line type="monotone" dataKey="amount" stroke="#10B981" strokeWidth={2} />
-                    </RechartsLineChart>
-                  </ResponsiveContainer>
+                  <Suspense fallback={<div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <RechartsLineChart data={chartData.dailyTransactions}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" />
+                        <YAxis />
+                        <Tooltip 
+                          formatter={(value, name) => [
+                            name === 'transactions' ? value : `KES ${value.toLocaleString()}`,
+                            name === 'transactions' ? 'Transactions' : 'Amount'
+                          ]}
+                        />
+                        <Line type="monotone" dataKey="transactions" stroke="#3B82F6" strokeWidth={2} />
+                        <Line type="monotone" dataKey="amount" stroke="#10B981" strokeWidth={2} />
+                      </RechartsLineChart>
+                    </ResponsiveContainer>
+                  </Suspense>
                 ) : (
                   <div className="flex items-center justify-center h-64 text-gray-500">
                     <div className="text-center">
@@ -512,25 +525,27 @@ export default function Dashboard() {
                     )}
                   </h3>
                   {chartData.statusDistribution.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={200}>
-                      <RechartsPieChart>
-                        <Pie
-                          data={chartData.statusDistribution}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          label={({ name, percent }) => `${name} ${(Number(percent) * 100).toFixed(0)}%`}
-                          outerRadius={80}
-                          fill="#8884d8"
-                          dataKey="value"
-                        >
-                          {chartData.statusDistribution.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                      </RechartsPieChart>
-                    </ResponsiveContainer>
+                    <Suspense fallback={<div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <RechartsPieChart>
+                          <Pie
+                            data={chartData.statusDistribution}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={false}
+                            label={({ name, percent }) => `${name} ${(Number(percent) * 100).toFixed(0)}%`}
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="value"
+                          >
+                            {chartData.statusDistribution.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </RechartsPieChart>
+                      </ResponsiveContainer>
+                    </Suspense>
                   ) : (
                     <div className="flex items-center justify-center h-64 text-gray-500">
                       <div className="text-center">
@@ -592,15 +607,17 @@ export default function Dashboard() {
                     </span>
                   )}
                 </h3>
-                <ResponsiveContainer width="100%" height={400}>
-                  <RechartsBarChart data={chartData.dailyTransactions}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip formatter={(value) => [value, 'Transactions']} />
-                    <Bar dataKey="transactions" fill="#3B82F6" />
-                  </RechartsBarChart>
-                </ResponsiveContainer>
+                <Suspense fallback={<div className="flex items-center justify-center h-96 bg-gray-50 rounded-lg"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
+                  <ResponsiveContainer width="100%" height={400}>
+                    <RechartsBarChart data={chartData.dailyTransactions}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip formatter={(value) => [value, 'Transactions']} />
+                      <Bar dataKey="transactions" fill="#3B82F6" />
+                    </RechartsBarChart>
+                  </ResponsiveContainer>
+                </Suspense>
               </div>
 
               {/* Full Transactions Table */}
@@ -684,35 +701,37 @@ export default function Dashboard() {
                     </div>
                   </div>
                   {chartData.partnerPerformance.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                      <RechartsBarChart data={chartData.partnerPerformance} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis 
-                          dataKey="name" 
-                          tick={{ fontSize: 12 }}
-                          angle={-45}
-                          textAnchor="end"
-                          height={80}
-                        />
-                        <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 12 }} />
-                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
-                        <Tooltip 
-                          formatter={(value, name) => [
-                            name === 'totalTransactions' ? value : `${value}%`,
-                            name === 'totalTransactions' ? 'Transactions' : 'Success Rate'
-                          ]}
-                          labelStyle={{ color: '#374151' }}
-                          contentStyle={{ 
-                            backgroundColor: '#fff', 
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '8px',
-                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                          }}
-                        />
-                        <Bar yAxisId="left" dataKey="totalTransactions" fill="#3B82F6" radius={[2, 2, 0, 0]} />
-                        <Bar yAxisId="right" dataKey="successRate" fill="#10B981" radius={[2, 2, 0, 0]} />
-                  </RechartsBarChart>
-                </ResponsiveContainer>
+                    <Suspense fallback={<div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <RechartsBarChart data={chartData.partnerPerformance} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                          <XAxis 
+                            dataKey="name" 
+                            tick={{ fontSize: 12 }}
+                            angle={-45}
+                            textAnchor="end"
+                            height={80}
+                          />
+                          <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 12 }} />
+                          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
+                          <Tooltip 
+                            formatter={(value, name) => [
+                              name === 'totalTransactions' ? value : `${value}%`,
+                              name === 'totalTransactions' ? 'Transactions' : 'Success Rate'
+                            ]}
+                            labelStyle={{ color: '#374151' }}
+                            contentStyle={{ 
+                              backgroundColor: '#fff', 
+                              border: '1px solid #e5e7eb',
+                              borderRadius: '8px',
+                              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                            }}
+                          />
+                          <Bar yAxisId="left" dataKey="totalTransactions" fill="#3B82F6" radius={[2, 2, 0, 0]} />
+                          <Bar yAxisId="right" dataKey="successRate" fill="#10B981" radius={[2, 2, 0, 0]} />
+                        </RechartsBarChart>
+                      </ResponsiveContainer>
+                    </Suspense>
                   ) : (
                     <div className="flex items-center justify-center h-64 text-gray-500">
                       <div className="text-center">
@@ -771,49 +790,51 @@ export default function Dashboard() {
               <div className="bg-white rounded-lg p-6 shadow-sm border border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900 mb-6">Transaction Volume Over Time</h3>
                 {chartData.partnerPerformance.length > 0 && chartData.partnerPerformance[0]?.dailyPerformance?.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={350}>
-                    <RechartsLineChart data={chartData.partnerPerformance[0].dailyPerformance} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis 
-                        dataKey="date" 
-                        tick={{ fontSize: 12 }}
-                        tickLine={{ stroke: '#d1d5db' }}
-                      />
-                      <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 12 }} />
-                      <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
-                      <Tooltip 
-                        formatter={(value, name) => [
-                          name === 'transactions' ? value : `KES ${Number(value).toLocaleString()}`,
-                          name === 'transactions' ? 'Transactions' : 'Amount'
-                        ]}
-                        labelStyle={{ color: '#374151' }}
-                        contentStyle={{ 
-                          backgroundColor: '#fff', 
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '8px',
-                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-                        }}
-                      />
-                      <Line 
-                        yAxisId="left" 
-                        type="monotone" 
-                        dataKey="transactions" 
-                        stroke="#3B82F6" 
-                        strokeWidth={3}
-                        dot={{ fill: '#3B82F6', strokeWidth: 2, r: 4 }}
-                        activeDot={{ r: 6, stroke: '#3B82F6', strokeWidth: 2 }}
-                      />
-                      <Line 
-                        yAxisId="right" 
-                        type="monotone" 
-                        dataKey="amount" 
-                        stroke="#10B981" 
-                        strokeWidth={3}
-                        dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
-                        activeDot={{ r: 6, stroke: '#10B981', strokeWidth: 2 }}
-                      />
-                    </RechartsLineChart>
-                  </ResponsiveContainer>
+                  <Suspense fallback={<div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>}>
+                    <ResponsiveContainer width="100%" height={350}>
+                      <RechartsLineChart data={chartData.partnerPerformance[0].dailyPerformance} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis 
+                          dataKey="date" 
+                          tick={{ fontSize: 12 }}
+                          tickLine={{ stroke: '#d1d5db' }}
+                        />
+                        <YAxis yAxisId="left" orientation="left" tick={{ fontSize: 12 }} />
+                        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
+                        <Tooltip 
+                          formatter={(value, name) => [
+                            name === 'transactions' ? value : `KES ${Number(value).toLocaleString()}`,
+                            name === 'transactions' ? 'Transactions' : 'Amount'
+                          ]}
+                          labelStyle={{ color: '#374151' }}
+                          contentStyle={{ 
+                            backgroundColor: '#fff', 
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                          }}
+                        />
+                        <Line 
+                          yAxisId="left" 
+                          type="monotone" 
+                          dataKey="transactions" 
+                          stroke="#3B82F6" 
+                          strokeWidth={3}
+                          dot={{ fill: '#3B82F6', strokeWidth: 2, r: 4 }}
+                          activeDot={{ r: 6, stroke: '#3B82F6', strokeWidth: 2 }}
+                        />
+                        <Line 
+                          yAxisId="right" 
+                          type="monotone" 
+                          dataKey="amount" 
+                          stroke="#10B981" 
+                          strokeWidth={3}
+                          dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
+                          activeDot={{ r: 6, stroke: '#10B981', strokeWidth: 2 }}
+                        />
+                      </RechartsLineChart>
+                    </ResponsiveContainer>
+                  </Suspense>
                 ) : (
                   <div className="flex items-center justify-center h-64 text-gray-500">
                     <div className="text-center">

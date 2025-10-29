@@ -7,6 +7,62 @@ const nextConfig = {
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_APP_DOMAIN: process.env.NEXT_PUBLIC_APP_DOMAIN,
   },
+  // Performance optimizations
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'recharts', 'date-fns'],
+  },
+  // Compiler optimizations
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production' ? {
+      exclude: ['error', 'warn'],
+    } : false,
+  },
+  // Webpack optimizations
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      // Optimize bundle splitting
+      config.optimization = {
+        ...config.optimization,
+        splitChunks: {
+          chunks: 'all',
+          cacheGroups: {
+            default: false,
+            vendors: false,
+            // Vendor chunk for shared libraries
+            vendor: {
+              name: 'vendor',
+              chunks: 'all',
+              test: /node_modules/,
+              priority: 20,
+            },
+            // Separate chunk for recharts (large library)
+            recharts: {
+              name: 'recharts',
+              test: /[\\/]node_modules[\\/](recharts)[\\/]/,
+              chunks: 'all',
+              priority: 30,
+            },
+            // Separate chunk for lucide-react icons
+            lucide: {
+              name: 'lucide',
+              test: /[\\/]node_modules[\\/](lucide-react)[\\/]/,
+              chunks: 'all',
+              priority: 25,
+            },
+            // Common chunk for shared code
+            common: {
+              name: 'common',
+              minChunks: 2,
+              chunks: 'all',
+              priority: 10,
+              reuseExistingChunk: true,
+            },
+          },
+        },
+      }
+    }
+    return config
+  },
   // Redirects for custom domain
   async redirects() {
     return [

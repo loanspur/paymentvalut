@@ -252,6 +252,7 @@ export default function Sidebar({ className = '' }: SidebarProps) {
     return (
       <Link
         href={item.href}
+        prefetch={true}
         className={`
           group flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
           ${level > 0 ? 'ml-4' : ''}
