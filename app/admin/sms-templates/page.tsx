@@ -470,14 +470,23 @@ export default function SMSTemplatesPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Template Content *
                 </label>
-                <textarea
-                  value={formData.template_content}
-                  onChange={(e) => setFormData({ ...formData, template_content: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  rows={6}
-                  placeholder="Enter SMS template content. Use {variable_name} for dynamic content."
-                  required
-                />
+                <div className="relative">
+                  <textarea
+                    value={formData.template_content}
+                    onChange={(e) => setFormData({ ...formData, template_content: e.target.value })}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={6}
+                    placeholder="Enter SMS template content. Use {variable_name} for dynamic content."
+                    required
+                  />
+                  <div className="absolute bottom-2 right-2 flex items-center gap-2 text-xs text-gray-500 bg-white px-2 py-1 rounded">
+                    <span>{formData.template_content.length} characters</span>
+                    <span className="text-gray-400">|</span>
+                    <span className="font-medium text-gray-700">
+                      {Math.ceil(formData.template_content.length / 160)} SMS
+                    </span>
+                  </div>
+                </div>
                 <div className="mt-2">
                   <p className="text-sm text-gray-600">
                     <strong>Available variables:</strong> {extractVariables(formData.template_content).join(', ') || 'None detected'}

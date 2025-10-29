@@ -149,6 +149,21 @@ export default function PartnerChargesPage() {
       const response = await fetch(`/api/admin/partner-charges?${params}`)
       if (response.ok) {
         const data = await response.json()
+        
+        // Debug: Log SMS charge statistics for Kulman Group
+        const kulmanSmsCharge = (data.data || []).find((c: PartnerCharge) => 
+          c.charge_type === 'sms_charge' && 
+          c.partner_id === '550e8400-e29b-41d4-a716-446655440000'
+        )
+        if (kulmanSmsCharge) {
+          console.log('📊 Frontend received Kulman SMS charge statistics:', {
+            charge_name: kulmanSmsCharge.charge_name,
+            total_transactions: kulmanSmsCharge.total_transactions,
+            total_amount_collected: kulmanSmsCharge.total_amount_collected,
+            completed_transactions: kulmanSmsCharge.completed_transactions
+          })
+        }
+        
         setCharges(data.data || [])
         if (showToast) {
           showSuccess('Data Refreshed', `Loaded ${data.data?.length || 0} charge configurations`)
@@ -632,10 +647,92 @@ export default function PartnerChargesPage() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <div>Total: {formatAmount(charge.total_amount_collected || 0)}</div>
-                    <div>Transactions: {charge.total_transactions || 0}</div>
-                    <div>Today: {charge.today_transactions || 0} ({formatAmount(charge.today_amount || 0)})</div>
+                  <td className="px-6 py-4">
+                    <div className="space-y-2 min-w-[200px]">
+                      {/* Total Amount Collected */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500">Total Collected:</span>
+                        <span className="text-sm font-semibold text-gray-900">
+                          {formatAmount(charge.total_amount_collected || 0)}
+                        </span>
+                      </div>
+                      
+                      {/* Total Transactions */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500">Total Txns:</span>
+                        <span className="text-sm font-medium text-gray-900">
+                          {charge.total_transactions || 0}
+                        </span>
+                      </div>
+                      
+                      {/* Transaction Breakdown */}
+                      {(charge.total_transactions || 0) > 0 && (
+                        <div className="pt-1 border-t border-gray-200 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-500 flex items-center">
+                              <CheckCircle className="w-3 h-3 text-green-600 mr-1" />
+                              Completed:
+                            </span>
+                            <span className="text-xs font-medium text-green-600">
+                              {charge.completed_transactions || 0}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-500 flex items-center">
+                              <Clock className="w-3 h-3 text-yellow-600 mr-1" />
+                              Pending:
+                            </span>
+                            <span className="text-xs font-medium text-yellow-600">
+                              {charge.pending_transactions || 0}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-500 flex items-center">
+                              <AlertCircle className="w-3 h-3 text-red-600 mr-1" />
+                              Failed:
+                            </span>
+                            <span className="text-xs font-medium text-red-600">
+                              {charge.failed_transactions || 0}
+                            </span>
+                          </div>
+                          
+                          {/* Success Rate */}
+                          {(charge.completed_transactions || 0) > 0 && (
+                            <div className="flex items-center justify-between pt-1 border-t border-gray-100">
+                              <span className="text-xs text-gray-500">Success Rate:</span>
+                              <span className="text-xs font-semibold text-gray-900">
+                                {Math.round(((charge.completed_transactions || 0) / (charge.total_transactions || 1)) * 100)}%
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Today's Statistics */}
+                      {(charge.today_transactions || 0) > 0 && (
+                        <div className="pt-1 border-t border-gray-200">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-500">Today:</span>
+                            <span className="text-xs font-medium text-blue-600">
+                              {charge.today_transactions || 0} txns
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-500">Today Amount:</span>
+                            <span className="text-xs font-semibold text-blue-600">
+                              {formatAmount(charge.today_amount || 0)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* No Data State */}
+                      {(charge.total_transactions || 0) === 0 && (
+                        <div className="text-xs text-gray-400 italic">
+                          No transactions yet
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center space-x-2">

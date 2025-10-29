@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyJWTToken } from '../../../../../../../lib/jwt-utils'
+import { calculateSMSCount, calculateSMSCost } from '@/lib/sms-utils'
 import crypto from 'crypto'
 
 // Decryption function for sensitive data
@@ -219,7 +220,10 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
 
         if (smsResponse.success) {
           deliveredCount++
-          totalCost += smsSettings.sms_charge_per_message || 1
+          // Calculate SMS cost based on actual message length (160 chars per SMS)
+          const smsCount = calculateSMSCount(processedMessage)
+          const smsCost = calculateSMSCost(processedMessage, smsSettings.sms_charge_per_message || 1)
+          totalCost += smsCost
 
           // Create SMS notification record
           await supabase
@@ -232,7 +236,7 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
               status: 'sent',
               damza_reference: smsResponse.reference,
               damza_sender_id: smsSettings.damza_sender_id,
-              sms_cost: smsSettings.sms_charge_per_message || 1,
+              sms_cost: smsCost,
               bulk_campaign_id: campaign.id, // Link to campaign
               sent_at: new Date().toISOString() // Add sent_at timestamp
             })
@@ -305,6 +309,29 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
         return
       }
 
+      // Get SMS charge config for this partner (single source of truth)
+      const { data: smsChargeConfig, error: chargeConfigError } = await supabase
+        .from('partner_charges_config')
+        .select('id')
+        .eq('partner_id', campaign.partner_id)
+        .eq('charge_type', 'sms_charge')
+        .eq('is_active', true)
+        .single()
+
+      // Handle case where charge config doesn't exist
+      let chargeConfigId = null
+      if (chargeConfigError) {
+        if (chargeConfigError.code === 'PGRST116') {
+          // No rows returned - charge config doesn't exist
+          console.warn(`⚠️ SMS charge config not found for partner ${campaign.partner_id}. Transaction will be created without charge_config_id.`)
+        } else {
+          console.error('❌ Error fetching SMS charge config:', chargeConfigError)
+        }
+      } else if (smsChargeConfig) {
+        chargeConfigId = smsChargeConfig.id
+        console.log(`✅ Found SMS charge config ID: ${chargeConfigId} for partner ${campaign.partner_id}`)
+      }
+
       await supabase
         .from('partner_wallets')
         .update({
@@ -313,6 +340,7 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
         .eq('partner_id', campaign.partner_id)
 
       // Create wallet transaction record
+      // Include charge_config_id in metadata for single source of truth
       await supabase
         .from('wallet_transactions')
         .insert({
@@ -321,7 +349,14 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
           amount: -totalCost,
           description: `SMS Campaign: ${campaign.campaign_name}`,
           reference: `SMS_CAMPAIGN_${campaign.id}`,
-          status: 'completed'
+          status: 'completed',
+          metadata: {
+            charge_config_id: chargeConfigId, // Single source of truth
+            bulk_campaign_id: campaign.id,
+            total_cost: totalCost,
+            sent_count: sentCount,
+            delivered_count: deliveredCount
+          }
         })
     }
 

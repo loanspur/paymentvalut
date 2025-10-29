@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { calculateSMSCount, calculateSMSCost as calculateSMSCostUtil } from '@/lib/sms-utils'
 import { verifyJWTToken } from '../../../../lib/jwt-utils'
 import crypto from 'crypto'
 import UnifiedWalletService from '@/lib/unified-wallet-service'
@@ -24,18 +25,15 @@ function decryptData(encryptedData: string, passphrase: string): string {
 
 // Calculate SMS cost based on message length
 function calculateSMSCost(message: string, costPerMessage: number): number {
-  // Standard SMS length is 160 characters
-  // Long SMS (over 160 chars) are charged as multiple SMS
-  const smsLength = message.length
-  const smsCount = Math.ceil(smsLength / 160)
-  return smsCount * costPerMessage
+  // Use the utility function for consistent calculation
+  return calculateSMSCostUtil(message, costPerMessage)
 }
 
 // Send SMS via AirTouch API
 async function sendAirTouchSMS(username: string, password: string, to: string, from: string, message: string) {
   try {
     // Check if we're in test mode
-    const isTestMode = !username || username.includes('test') || username === '***encrypted***'
+    const isTestMode = !username || !password || username.includes('test') || password.includes('test') || username === '***encrypted***' || password === '***encrypted***'
     
     if (isTestMode) {
       console.log(`🧪 Test Mode: Simulating SMS send to ${to}`)
@@ -58,8 +56,13 @@ async function sendAirTouchSMS(username: string, password: string, to: string, f
     // Generate unique SMS ID
     const smsId = `SMS_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
-    // AirTouch SMS API integration - Use GET request format
-    const apiUrl = 'http://client.airtouch.co.ke:9012/sms/api/'
+    // AirTouch SMS API integration - Use HTTPS GET request format
+    const apiUrl = 'https://client.airtouch.co.ke:9012/sms/api/'
+    
+    // According to AirTouch API docs:
+    // password = md5 sum from the string "api key" in hexadecimal
+    // Create MD5 hash of the API key as required by AirTouch API
+    const hashedPassword = crypto.createHash('md5').update(password).digest('hex')
     
     // Build GET request URL with parameters
     const params = new URLSearchParams({
@@ -67,13 +70,14 @@ async function sendAirTouchSMS(username: string, password: string, to: string, f
       msisdn: formattedPhone,
       text: message,
       username: username,
-      password: password,
+      password: hashedPassword, // Use MD5 hashed password
       sms_id: smsId
     })
     
     const getUrl = `${apiUrl}?${params.toString()}`
 
     console.log(`📱 Sending SMS to ${formattedPhone} via AirTouch API (GET)`)
+    console.log(`🔐 Using MD5 hashed password (length: ${hashedPassword.length})`)
 
     const response = await fetch(getUrl, {
       method: 'GET',
@@ -82,7 +86,21 @@ async function sendAirTouchSMS(username: string, password: string, to: string, f
       }
     })
 
-    const data = await response.json()
+    // Check if response is JSON
+    let data
+    const contentType = response.headers.get('content-type')
+    if (contentType && contentType.includes('application/json')) {
+      data = await response.json()
+    } else {
+      const text = await response.text()
+      console.error('⚠️ Non-JSON response from AirTouch API:', text)
+      return {
+        success: false,
+        response: `Invalid API response format: ${text.substring(0, 200)}`,
+        status: response.status
+      }
+    }
+
     console.log('AirTouch API Response:', data)
 
     if (response.ok && data.status_code === '1000') {
@@ -92,9 +110,20 @@ async function sendAirTouchSMS(username: string, password: string, to: string, f
         status: response.status
       }
     } else {
+      // Enhanced error handling
+      let errorMessage = data.status_desc || `API Error: ${data.status_code}`
+      
+      if (data.status_code === '1011' || data.status_desc === 'INVALID USER') {
+        errorMessage = 'Invalid AirTouch credentials. Please check username and password.'
+      } else if (data.status_code === '1004' || data.status_desc?.includes('BALANCE')) {
+        errorMessage = 'Insufficient AirTouch account balance.'
+      } else if (data.status_code === '1001' || data.status_desc?.includes('SENDER')) {
+        errorMessage = 'Invalid sender ID. Please check if sender ID is registered with AirTouch.'
+      }
+      
       return {
         success: false,
-        response: data.status_desc || `API Error: ${data.status_code}`,
+        response: errorMessage,
         status: response.status
       }
     }
@@ -182,6 +211,29 @@ export async function POST(request: NextRequest) {
     // Calculate SMS cost
     const smsCost = calculateSMSCost(message_content, smsSettings.sms_charge_per_message)
 
+    // Get SMS charge config for this partner (single source of truth)
+    const { data: smsChargeConfig, error: chargeConfigError } = await supabase
+      .from('partner_charges_config')
+      .select('id')
+      .eq('partner_id', partner_id)
+      .eq('charge_type', 'sms_charge')
+      .eq('is_active', true)
+      .single()
+
+    // Handle case where charge config doesn't exist
+    let chargeConfigId = null
+    if (chargeConfigError) {
+      if (chargeConfigError.code === 'PGRST116') {
+        // No rows returned - charge config doesn't exist
+        console.warn(`⚠️ SMS charge config not found for partner ${partner_id}. Transaction will be created without charge_config_id.`)
+      } else {
+        console.error('❌ Error fetching SMS charge config:', chargeConfigError)
+      }
+    } else if (smsChargeConfig) {
+      chargeConfigId = smsChargeConfig.id
+      console.log(`✅ Found SMS charge config ID: ${chargeConfigId} for partner ${partner_id}`)
+    }
+
     // Check partner wallet balance
     const { data: wallet, error: walletError } = await supabase
       .from('partner_wallets')
@@ -257,6 +309,7 @@ export async function POST(request: NextRequest) {
     // If SMS was sent successfully, deduct cost from wallet
     if (smsResult.success) {
       // Create wallet transaction for SMS charge
+      // Include charge_config_id in metadata for single source of truth
       const { data: walletTransaction, error: transactionError } = await supabase
         .from('wallet_transactions')
         .insert({
@@ -268,6 +321,7 @@ export async function POST(request: NextRequest) {
           description: `SMS charge for ${recipient_phone}`,
           reference: `SMS_${smsNotification.id}`,
           metadata: {
+            charge_config_id: chargeConfigId, // Single source of truth
             sms_notification_id: smsNotification.id,
             recipient_phone: recipient_phone,
             message_type: message_type,
@@ -288,6 +342,7 @@ export async function POST(request: NextRequest) {
           {
             reference: `SMS_${smsNotification.id}`,
             description: `SMS charge for ${recipient_phone}`,
+            charge_config_id: chargeConfigId, // Single source of truth
             sms_notification_id: smsNotification.id,
             phone_number: recipient_phone,
             message_length: message_content.length,

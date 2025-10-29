@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyJWTToken } from '../../../../../lib/jwt-utils'
+import { calculateSMSCost } from '@/lib/sms-utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -130,9 +131,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Calculate total recipients and estimated cost
+    // Cost is calculated based on message length: 160 characters per SMS
     const totalRecipients = recipient_list.length
     const costPerSMS = smsSettings?.sms_charge_per_message || 1 // Use partner's cost or default
-    const estimatedCost = totalRecipients * costPerSMS
+    const costPerMessage = calculateSMSCost(message_content, costPerSMS)
+    const estimatedCost = totalRecipients * costPerMessage
 
     // Get the user ID from the JWT payload
     const userId = payload.userId || payload.sub || payload.id
