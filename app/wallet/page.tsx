@@ -122,6 +122,7 @@ export default function WalletPage() {
   const [showBalance, setShowBalance] = useState(true)
   const [partners, setPartners] = useState<Partner[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [userProfile, setUserProfile] = useState<{ phone_number?: string, email?: string } | null>(null)
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null)
   const [isTopUpLoading, setIsTopUpLoading] = useState(false)
   const [topUpMethod, setTopUpMethod] = useState<'stk_push' | 'manual'>('stk_push')
@@ -170,6 +171,7 @@ export default function WalletPage() {
     loadCurrentUser()
     loadPartners()
     loadChargeStatistics()
+    loadUserProfile()
   }, [pagination.page, filters])
 
   const loadWalletData = async () => {
@@ -198,6 +200,21 @@ export default function WalletPage() {
       }
     } catch (error) {
       console.error('Failed to load current user:', error)
+    }
+  }
+
+  const loadUserProfile = async () => {
+    try {
+      const response = await fetch('/api/profile', { credentials: 'include' })
+      if (response.ok) {
+        const data = await response.json()
+        setUserProfile({
+          phone_number: data?.data?.phone_number || data?.profile?.phone_number,
+          email: data?.data?.email || data?.profile?.email || currentUser?.email
+        })
+      }
+    } catch (error) {
+      console.error('Failed to load user profile:', error)
     }
   }
 
@@ -352,6 +369,20 @@ export default function WalletPage() {
       style: 'currency',
       currency: 'KES'
     }).format(amount)
+  }
+
+  const maskEmail = (email?: string) => {
+    if (!email) return '—'
+    const [name, domain] = email.split('@')
+    if (!domain) return '—'
+    const maskedName = name.length <= 2 ? name[0] + '*' : name[0] + '*'.repeat(Math.max(1, name.length - 2)) + name[name.length - 1]
+    return `${maskedName}@${domain}`
+  }
+
+  const maskPhone = (phone?: string) => {
+    if (!phone) return '—'
+    // Keep country code and last 3 digits
+    return phone.replace(/^(\d{3})(\d+)(\d{3})$/, (_m, a, mid, b) => `${a}${'*'.repeat(mid.length)}${b}`)
   }
 
   const formatDate = (dateString: string) => {
@@ -1287,6 +1318,38 @@ export default function WalletPage() {
           <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
             <div className="mt-3">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Purchase B2C Float</h3>
+              {/* Partner B2C account details and OTP contacts */}
+              <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-900 mb-2">B2C Account Details</h4>
+                <div className="text-sm text-gray-800 space-y-1">
+                  {(() => {
+                    let partnerName = '—'
+                    let shortCode = '—'
+                    if (currentUser?.partner_id) {
+                      const p = partners.find(x => x.id === currentUser.partner_id)
+                      partnerName = p?.name || partnerName
+                      shortCode = p?.short_code || shortCode
+                    }
+                    const paybill = '880100'
+                    const accountNumber = '774451'
+                    return (
+                      <>
+                        <p><strong>Partner:</strong> {partnerName} ({shortCode})</p>
+                        <p><strong>Paybill:</strong> {paybill}</p>
+                        <p><strong>Account Ref:</strong> {accountNumber}#{shortCode}</p>
+                      </>
+                    )
+                  })()}
+                </div>
+                <div className="mt-3">
+                  <h5 className="text-sm font-semibold text-gray-900 mb-1">OTP Delivery</h5>
+                  <p className="text-xs text-gray-700">We will send OTP to your registered contacts for confirmation.</p>
+                  <div className="mt-2 text-sm text-gray-800 space-y-1">
+                    <p><strong>Email:</strong> {maskEmail(userProfile?.email || currentUser?.email)}</p>
+                    <p><strong>Phone:</strong> {maskPhone(userProfile?.phone_number)}</p>
+                  </div>
+                </div>
+              </div>
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Float Amount (KES)

@@ -25,6 +25,19 @@ export default function OTPVerification({ onSuccess, onCancel, userEmail, userPh
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
   const { addToast } = useToast()
 
+  const maskEmail = (email?: string) => {
+    if (!email) return ''
+    const [name, domain] = email.split('@')
+    if (!domain) return email
+    const maskedName = name.length <= 2 ? name[0] + '*' : name[0] + '*'.repeat(Math.max(1, name.length - 2)) + name[name.length - 1]
+    return `${maskedName}@${domain}`
+  }
+
+  const maskPhone = (phone?: string) => {
+    if (!phone) return ''
+    return phone.replace(/^(\d{3})(\d+)(\d{3})$/, (_m, a, mid, b) => `${a}${'*'.repeat(mid.length)}${b}`)
+  }
+
   // Timer countdown
   useEffect(() => {
     if (timeLeft > 0) {
@@ -211,14 +224,14 @@ export default function OTPVerification({ onSuccess, onCancel, userEmail, userPh
               <div className="flex items-center text-sm text-gray-600">
                 <Phone className="h-4 w-4 mr-2" />
                 <span className="font-medium">Phone:</span>
-                <span className="ml-2">{userPhone}</span>
+                <span className="ml-2">{maskPhone(userPhone)}</span>
               </div>
             )}
             {userEmail && (
               <div className="flex items-center text-sm text-gray-600">
                 <Mail className="h-4 w-4 mr-2" />
                 <span className="font-medium">Email:</span>
-                <span className="ml-2">{userEmail}</span>
+                <span className="ml-2">{maskEmail(userEmail)}</span>
               </div>
             )}
           </div>
@@ -309,14 +322,7 @@ export default function OTPVerification({ onSuccess, onCancel, userEmail, userPh
             </div>
           </div>
 
-          {/* Development Info */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mt-6 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-              <p className="text-xs text-yellow-800">
-                <strong>Development Mode:</strong> Check console for OTP code
-              </p>
-            </div>
-          )}
+          {/* No development hints in production/login */}
         </div>
       </div>
     </div>

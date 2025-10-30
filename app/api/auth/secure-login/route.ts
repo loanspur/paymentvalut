@@ -80,7 +80,8 @@ export async function POST(request: NextRequest) {
         email_verified,
         phone_verified_at,
         email_verified_at,
-        partner_id
+        partner_id,
+        two_factor_enabled
       `)
       .eq('email', email)
       .single()
@@ -118,20 +119,11 @@ export async function POST(request: NextRequest) {
       }, { status: 403 })
     }
 
-    // Check if OTP validation is required (only after email and phone verification)
-    // Get OTP settings from system_settings
-    const { data: otpSettings } = await supabase
-      .from('system_settings')
-      .select('setting_value')
-      .eq('setting_key', 'login_otp_enabled')
-      .single()
-
-    // Default to false if OTP settings are not configured
-    const otpEnabled = otpSettings?.setting_value === 'true'
+    // Determine OTP requirement strictly per user 2FA setting
     const requiresEmailVerification = !user.email_verified
     const requiresPhoneVerification = user.email_verified && !user.phone_verified
-    // Only require OTP if email and phone are verified AND OTP is enabled globally
-    const requiresOTP = otpEnabled && user.email_verified && user.phone_verified
+    // Require OTP only if user has enabled 2FA and both contacts are verified
+    const requiresOTP = !!user.two_factor_enabled && user.email_verified && user.phone_verified
 
     // Generate JWT token with expiration using secure utility
     // If OTP is required, create a temporary token that doesn't allow full access
@@ -169,7 +161,8 @@ export async function POST(request: NextRequest) {
         email_verified: user.email_verified,
         phone_verified_at: user.phone_verified_at,
         email_verified_at: user.email_verified_at,
-        partner_id: user.partner_id
+        partner_id: user.partner_id,
+        two_factor_enabled: user.two_factor_enabled
       },
       requires_otp: requiresOTP,
       requires_email_verification: requiresEmailVerification,
