@@ -1,12 +1,12 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from './AuthProvider'
 import { usePathname } from 'next/navigation'
 import Sidebar from './Sidebar'
 import ProfileDropdown from './ProfileDropdown'
 import { ToastProvider } from './ToastSimple'
-import { Bell } from 'lucide-react'
+import { Bell, Wallet } from 'lucide-react'
 
 interface AppLayoutProps {
   children: React.ReactNode
@@ -15,6 +15,7 @@ interface AppLayoutProps {
 export default function AppLayout({ children }: AppLayoutProps) {
   const { user, logout, isLoading } = useAuth()
   const pathname = usePathname()
+  
 
   // Prevent auto-scroll conflicts with fixed elements
 
@@ -103,6 +104,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
             {/* Header actions - mobile responsive */}
             <div className="flex items-center space-x-2 sm:space-x-4 ml-4">
+              {/* Wallet balance display */}
+              <HeaderBalance />
               {/* Notifications */}
               <button className="relative p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                 <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -153,7 +156,7 @@ function getPageTitle(pathname: string): string {
     '/admin-dashboard/audit-trail': 'Audit Trail'
   }
   
-  return titles[pathname] || 'M-Pesa Vault'
+  return titles[pathname] || 'eazzypay'
 }
 
 function getPageDescription(pathname: string): string {
@@ -175,5 +178,57 @@ function getPageDescription(pathname: string): string {
     '/admin-dashboard/audit-trail': 'Monitor system logs, user activities, and audit trail'
   }
   
-  return descriptions[pathname] || 'M-Pesa B2C Disbursement System'
+  return descriptions[pathname] || 'eazzypay B2C Disbursement System'
+}
+
+
+function HeaderBalance() {
+  const { user } = useAuth()
+  const [loading, setLoading] = useState(false)
+  const [amount, setAmount] = useState<number | null>(null)
+  const [label, setLabel] = useState<string>('')
+
+  useEffect(() => {
+    let isMounted = true
+    const fetchBalance = async () => {
+      if (!user) return
+      try {
+        setLoading(true)
+        if (user.role === 'super_admin' || user.role === 'admin') {
+          const res = await fetch('/api/admin/wallets/partners', { credentials: 'include' })
+          const data = await res.json()
+          if (isMounted && data?.success) {
+            const total = Number(data?.summary?.total_balance || 0)
+            setAmount(total)
+            setLabel('Total Balance')
+          }
+        } else {
+          const res = await fetch('/api/wallet/balance', { credentials: 'include' })
+          const data = await res.json()
+          if (isMounted && data?.success) {
+            const bal = Number(data?.wallet?.currentBalance || 0)
+            setAmount(bal)
+            setLabel('Wallet')
+          }
+        }
+      } catch (e) {
+        // swallow
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+    fetchBalance()
+    const id = setInterval(fetchBalance, 60_000)
+    return () => { isMounted = false; clearInterval(id) }
+  }, [user])
+
+  const formatCurrency = (n: number) => new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 2 }).format(n)
+
+  return (
+    <div className="hidden sm:flex items-center px-2 py-1 rounded-lg border border-gray-200 bg-white mr-2">
+      <Wallet className="w-4 h-4 text-blue-600 mr-2" />
+      <span className="text-xs text-gray-500 mr-1">{label}</span>
+      <span className="text-sm font-semibold text-gray-900">{loading || amount === null ? '—' : formatCurrency(amount)}</span>
+    </div>
+  )
 }

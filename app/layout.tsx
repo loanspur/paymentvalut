@@ -6,8 +6,8 @@ import AppLayout from '../components/AppLayout'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: 'M-Pesa B2C Vault',
-  description: 'Secure M-Pesa B2C Disbursement Management System',
+  title: 'eazzypay',
+  description: 'Secure eazzypay B2C Disbursement Management System',
 }
 
 export default function RootLayout({

@@ -124,10 +124,17 @@ export async function GET(request: NextRequest) {
       })
     })
 
-    // Transform data to include partner information and calculated wallet balance after
+    // Transform data to include partner information and wallet balance after
     const transformedData = data?.map((transaction) => {
       const walletInfo = walletMap[transaction.wallet_id]
-      const balanceAfter = walletRunningBalances[`${transaction.wallet_id}_${transaction.id}`] || 0
+      // Prefer balance captured by the unified writer in transaction metadata
+      const metadata = (transaction.metadata || {}) as any
+      const balanceAfterFromMetadata = typeof metadata.wallet_balance_after === 'number' 
+        ? metadata.wallet_balance_after 
+        : (typeof metadata.walletBalanceAfter === 'number' ? metadata.walletBalanceAfter : null)
+      const balanceAfter = balanceAfterFromMetadata !== null && balanceAfterFromMetadata !== undefined
+        ? balanceAfterFromMetadata
+        : (walletRunningBalances[`${transaction.wallet_id}_${transaction.id}`] || 0)
 
       return {
         ...transaction,

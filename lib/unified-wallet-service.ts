@@ -24,7 +24,7 @@ export interface WalletBalanceUpdateResult {
 
 export interface WalletTransactionData {
   walletId: string
-  transactionType: 'top_up' | 'disbursement' | 'b2c_float_purchase' | 'charge' | 'sms_charge' | 'manual_credit'
+  transactionType: 'top_up' | 'disbursement' | 'b2c_float_purchase' | 'charge' | 'sms_charge' | 'manual_credit' | 'manual_debit'
   amount: number
   reference?: string
   description?: string
@@ -148,14 +148,17 @@ export class UnifiedWalletService {
         }
       }
 
-      // Create wallet transaction record
+      // Create wallet transaction record (include resulting balance for easy reads)
       const transactionData: WalletTransactionData = {
         walletId,
         transactionType: transactionType as any,
         amount,
         reference: metadata?.reference,
         description: metadata?.description,
-        metadata
+        metadata: {
+          ...(metadata || {}),
+          wallet_balance_after: newBalance
+        }
       }
 
       const transactionResult = await this.createWalletTransaction(transactionData)

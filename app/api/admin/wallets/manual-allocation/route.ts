@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import UnifiedWalletService from '@/lib/unified-wallet-service'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -45,104 +46,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get or create wallet for the partner
-    let { data: wallet, error: walletError } = await supabase
-      .from('partner_wallets')
-      .select('*')
-      .eq('partner_id', partner_id)
-      .single()
-
-    if (walletError && walletError.code === 'PGRST116') {
-      // Wallet doesn't exist, create it
-      const { data: newWallet, error: createError } = await supabase
-        .from('partner_wallets')
-        .insert({
-          partner_id: partner_id,
-          current_balance: 0,
-          currency: 'KES',
-          low_balance_threshold: 1000,
-          sms_notifications_enabled: true
-        })
-        .select()
-        .single()
-
-      if (createError) {
-        console.error('Error creating wallet:', createError)
-        return NextResponse.json(
-          { success: false, error: 'Failed to create wallet' },
-          { status: 500 }
-        )
-      }
-
-      wallet = newWallet
-    } else if (walletError) {
-      console.error('Error fetching wallet:', walletError)
-      return NextResponse.json(
-        { success: false, error: 'Failed to fetch wallet' },
-        { status: 500 }
-      )
-    }
-
-    // Check if debit operation would result in negative balance
-    const transactionAmount = transaction_type === 'credit' ? amount : -amount
-    const newBalance = wallet.current_balance + transactionAmount
-
-    if (newBalance < 0) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: `Insufficient balance. Current: ${wallet.current_balance} KES, Requested: ${amount} KES` 
-        },
-        { status: 400 }
-      )
-    }
-
-    // Create wallet transaction record
+    // Prepare amount sign and transaction type mapping
+    const isCredit = transaction_type === 'credit'
+    const delta = isCredit ? amount : -amount
+    const unifiedType = isCredit ? 'manual_credit' : 'manual_debit'
     const transactionReference = `MANUAL_${transaction_type.toUpperCase()}_${Date.now()}_${Math.random().toString(36).substr(2, 6).toUpperCase()}`
-    
-    const { data: walletTransaction, error: transactionError } = await supabase
-      .from('wallet_transactions')
-      .insert({
-        wallet_id: wallet.id,
-        transaction_type: `manual_${transaction_type}`,
-        amount: transactionAmount,
+
+    const result = await UnifiedWalletService.updateWalletBalance(
+      partner_id,
+      delta,
+      unifiedType,
+      {
         reference: transactionReference,
         description: `Manual ${transaction_type} - ${description}`,
-        status: 'completed',
-        metadata: {
-          manual_allocation: true,
-          admin_initiated: true,
-          original_amount: amount,
-          transaction_type: transaction_type,
-          description: description,
-          processed_at: new Date().toISOString()
-        }
-      })
-      .select()
-      .single()
+        manual_allocation: true,
+        admin_initiated: true,
+        original_amount: amount,
+        processed_at: new Date().toISOString()
+      }
+    )
 
-    if (transactionError) {
-      console.error('Error creating wallet transaction:', transactionError)
+    if (!result.success) {
       return NextResponse.json(
-        { success: false, error: 'Failed to create transaction record' },
-        { status: 500 }
-      )
-    }
-
-    // Update wallet balance
-    const { error: updateError } = await supabase
-      .from('partner_wallets')
-      .update({ 
-        current_balance: newBalance,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', wallet.id)
-
-    if (updateError) {
-      console.error('Error updating wallet balance:', updateError)
-      return NextResponse.json(
-        { success: false, error: 'Failed to update wallet balance' },
-        { status: 500 }
+        { success: false, error: result.error || 'Failed to update wallet balance' },
+        { status: 400 }
       )
     }
 
@@ -152,9 +79,9 @@ export async function POST(request: NextRequest) {
       partner_name: partner.name,
       transaction_type: transaction_type,
       amount: amount,
-      transaction_amount: transactionAmount,
-      old_balance: wallet.current_balance,
-      new_balance: newBalance,
+      transaction_amount: delta,
+      old_balance: result.previousBalance,
+      new_balance: result.newBalance,
       reference: transactionReference,
       description: description,
       processed_at: new Date().toISOString()
@@ -164,11 +91,10 @@ export async function POST(request: NextRequest) {
       success: true,
       message: `Manual ${transaction_type} of ${amount} KES processed successfully`,
       data: {
-        wallet_transaction: walletTransaction,
-        partner: partner,
-        old_balance: wallet.current_balance,
-        new_balance: newBalance,
-        transaction_reference: transactionReference
+        partner,
+        old_balance: result.previousBalance,
+        new_balance: result.newBalance,
+        transaction_type: unifiedType
       }
     })
 

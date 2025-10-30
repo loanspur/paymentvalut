@@ -282,7 +282,7 @@ export function SidebarNavigation({ className = '' }: NavigationProps) {
       <div className="flex items-center px-6 py-4 border-b border-gray-200">
         <DollarSign className="w-8 h-8 text-blue-600 mr-3" />
         <div>
-          <h1 className="text-lg font-bold text-gray-900">M-Pesa Vault</h1>
+          <h1 className="text-lg font-bold text-gray-900">eazzypay</h1>
           <p className="text-xs text-gray-500">B2C Disbursement</p>
         </div>
       </div>

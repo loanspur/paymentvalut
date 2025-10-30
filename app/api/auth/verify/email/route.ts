@@ -239,7 +239,7 @@ async function sendVerificationEmail({
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; text-align: center;">
-          <h1 style="color: white; margin: 0; font-size: 28px;">Payment Vault</h1>
+          <h1 style="color: white; margin: 0; font-size: 28px;">eazzypay</h1>
           <p style="color: white; margin: 10px 0 0 0; font-size: 16px;">Email Verification</p>
         </div>
         
@@ -247,7 +247,7 @@ async function sendVerificationEmail({
           <h2 style="color: #333; margin: 0 0 20px 0;">Verify Your Email Address</h2>
           
           <p style="color: #666; margin: 20px 0; line-height: 1.6;">
-            Thank you for registering with Payment Vault. To complete your account setup, 
+            Thank you for registering with eazzypay. To complete your account setup, 
             please verify your email address using the code below:
           </p>
           
@@ -277,9 +277,9 @@ async function sendVerificationEmail({
 
     const result = await sendEmail({
       to: email,
-      subject: 'Payment Vault - Email Verification Code',
+      subject: 'eazzypay - Email Verification Code',
       html: emailHtml,
-      text: `Your Payment Vault email verification code is: ${verificationCode}. Valid for 15 minutes.`
+      text: `Your eazzypay email verification code is: ${verificationCode}. Valid for 15 minutes.`
     })
 
     if (result.success) {

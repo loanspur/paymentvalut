@@ -583,6 +583,45 @@ export default function WalletPage() {
             </h2>
           </div>
           <div className="p-6">
+            {/* Summary strip based on single source of truth (last 30 days) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              {/* Total Charges (30 days) */}
+              <div className="rounded-lg p-4 border bg-gradient-to-r from-slate-50 to-slate-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600">Total Charges (30d)</p>
+                    <p className="text-2xl font-bold text-slate-900">{formatAmount(chargeStats.month.totalAmount)}</p>
+                    <p className="text-xs text-slate-500">{chargeStats.month.totalTransactions} transactions</p>
+                  </div>
+                  <DollarSign className="h-8 w-8 text-slate-700" />
+                </div>
+              </div>
+
+              {/* SMS Charges (30 days) */}
+              <div className="rounded-lg p-4 border bg-gradient-to-r from-indigo-50 to-indigo-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-indigo-600">SMS Charges (30d)</p>
+                    <p className="text-2xl font-bold text-indigo-900">{formatAmount((chargeStats.month.chargeTypes['SMS Charges']?.amount || 0))}</p>
+                    <p className="text-xs text-indigo-700">{chargeStats.month.chargeTypes['SMS Charges']?.count || 0} transactions</p>
+                  </div>
+                  <Receipt className="h-8 w-8 text-indigo-600" />
+                </div>
+              </div>
+
+              {/* Float Purchase Fees (30 days) */}
+              <div className="rounded-lg p-4 border bg-gradient-to-r from-amber-50 to-amber-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-amber-600">Float Fees (30d)</p>
+                    <p className="text-2xl font-bold text-amber-900">{formatAmount((chargeStats.month.chargeTypes['Float Purchase Fee']?.amount || 0))}</p>
+                    <p className="text-xs text-amber-700">{chargeStats.month.chargeTypes['Float Purchase Fee']?.count || 0} transactions</p>
+                  </div>
+                  <CreditCard className="h-8 w-8 text-amber-600" />
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {/* Today's Charges */}
               <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4">

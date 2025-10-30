@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
         console.log('📱 Sending SMS OTP to:', user.phone_number)
         
         // Send SMS via AirTouch API
-        const smsMessage = `Your Payment Vault login OTP is: ${otpCode}. Valid for ${expiryMinutes} minutes. Do not share this code.`
+        const smsMessage = `Your eazzypay login OTP is: ${otpCode}. Valid for ${expiryMinutes} minutes. Do not share this code.`
         
         // Determine if the SMS settings are encrypted (from database) or plain text (from environment)
         const isEncrypted = !(user.role === 'super_admin' && process.env.SUPER_ADMIN_SMS_ENABLED === 'true')
@@ -453,7 +453,7 @@ async function sendOTPEmail({
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; text-align: center;">
-          <h1 style="color: white; margin: 0; font-size: 28px;">Payment Vault</h1>
+          <h1 style="color: white; margin: 0; font-size: 28px;">eazzypay</h1>
           <p style="color: white; margin: 10px 0 0 0; font-size: 16px;">Secure Login Verification</p>
         </div>
         
@@ -473,7 +473,7 @@ async function sendOTPEmail({
           <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
             <p style="margin: 0; color: #856404; font-size: 14px;">
               <strong>Security Notice:</strong> Never share this code with anyone. 
-              Payment Vault will never ask for your OTP via phone or email.
+              eazzypay will never ask for your OTP via phone or email.
             </p>
           </div>
           
@@ -486,9 +486,9 @@ async function sendOTPEmail({
 
     const result = await sendEmail({
       to: email,
-      subject: 'Payment Vault - Login Verification Code',
+      subject: 'eazzypay - Login Verification Code',
       html: emailHtml,
-      text: `Your Payment Vault login OTP is: ${otpCode}. Valid for ${expiryMinutes} minutes.`
+      text: `Your eazzypay login OTP is: ${otpCode}. Valid for ${expiryMinutes} minutes.`
     })
 
     if (result.success) {

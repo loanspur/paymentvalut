@@ -407,18 +407,25 @@ async function handleTopupValidation(req: Request) {
       })
       .eq('id', transaction_id)
 
-    // If payment is successful, credit wallet
+    // If payment is successful, credit wallet via unified DB function
     if (queryResponse.status?.toLowerCase() === 'completed') {
-      const wallet = await walletService.getPartnerWallet(transaction.wallet_id)
-      if (wallet) {
-        const newBalance = wallet.currentBalance + parseFloat(transaction.amount)
-        const success = await walletService.updateWalletBalance(
-          wallet.id, 
-          newBalance, 
-          parseFloat(transaction.amount)
-        )
+      // Fetch wallet to get partner_id
+      const { data: walletRow } = await supabaseClient
+        .from('partner_wallets')
+        .select('id, partner_id, current_balance')
+        .eq('id', transaction.wallet_id)
+        .single()
 
-        if (success) {
+      if (walletRow && walletRow.partner_id) {
+        // Use SQL RPC to perform atomic balance update at DB level
+        const { data: rpcResult, error: rpcError } = await supabaseClient
+          .rpc('update_partner_wallet_balance', {
+            p_partner_id: walletRow.partner_id,
+            p_amount: parseFloat(transaction.amount),
+            p_transaction_type: 'top_up'
+          })
+
+        if (!rpcError) {
           // Update transaction status
           await supabaseClient
             .from('wallet_transactions')
@@ -433,7 +440,6 @@ async function handleTopupValidation(req: Request) {
               success: true,
               message: 'Wallet credited successfully',
               transactionId: transaction_id,
-              newBalance: newBalance,
               creditedAmount: parseFloat(transaction.amount)
             }),
             { 

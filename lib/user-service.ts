@@ -536,7 +536,7 @@ export class UserService {
       const emailHtml = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; text-align: center;">
-            <h1 style="color: white; margin: 0; font-size: 28px;">Payment Vault</h1>
+            <h1 style="color: white; margin: 0; font-size: 28px;">eazzypay</h1>
             <p style="color: white; margin: 10px 0 0 0; font-size: 16px;">Welcome to Your New Account</p>
           </div>
           
@@ -544,7 +544,7 @@ export class UserService {
             <h2 style="color: #333; margin: 0 0 20px 0;">Welcome ${firstName}!</h2>
             
             <p style="color: #666; margin: 20px 0; line-height: 1.6;">
-              Your Payment Vault account has been created successfully. You can now access the system using your login credentials.
+              Your eazzypay account has been created successfully. You can now access the system using your login credentials.
             </p>
             
             <div style="background: white; border: 2px solid #667eea; padding: 25px; border-radius: 8px; margin: 25px 0;">
@@ -557,7 +557,7 @@ export class UserService {
             
             <div style="text-align: center; margin: 30px 0;">
               <a href="${loginUrl}" target="_blank" style="background: #667eea; color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
-                Login to Payment Vault
+                Login to eazzypay
               </a>
             </div>
             
@@ -588,7 +588,7 @@ export class UserService {
       const emailText = `
 Welcome ${firstName}!
 
-Your Payment Vault account has been created successfully.
+Your eazzypay account has been created successfully.
 
 Login Credentials:
 - Email: ${email}
@@ -610,7 +610,7 @@ If you have any questions or need assistance, please contact your system adminis
 
       const result = await sendEmail({
         to: email,
-        subject: 'Welcome to Payment Vault - Your Account is Ready',
+        subject: 'Welcome to eazzypay - Your Account is Ready',
         html: emailHtml,
         text: emailText
       })
@@ -652,15 +652,15 @@ If you have any questions or need assistance, please contact your system adminis
       const emailHtml = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; text-align: center;">
-            <h1 style="color: white; margin: 0; font-size: 28px;">Payment Vault</h1>
+            <h1 style="color: white; margin: 0; font-size: 28px;">eazzypay</h1>
             <p style="color: white; margin: 10px 0 0 0; font-size: 16px;">Email Verification</p>
           </div>
           
           <div style="background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px;">
-            <h2 style="color: #333; margin: 0 0 20px 0;">Welcome to Payment Vault!</h2>
+            <h2 style="color: #333; margin: 0 0 20px 0;">Welcome to eazzypay!</h2>
             
             <p style="color: #666; margin: 20px 0; line-height: 1.6;">
-              Thank you for joining Payment Vault. To complete your account setup, please verify your email address.
+              Thank you for joining eazzypay. To complete your account setup, please verify your email address.
             </p>
             
             <div style="background: white; border: 2px dashed #667eea; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
@@ -676,7 +676,7 @@ If you have any questions or need assistance, please contact your system adminis
             <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0;">
               <p style="margin: 0; color: #856404; font-size: 14px;">
                 <strong>Security Notice:</strong> Never share this code with anyone. 
-                Payment Vault will never ask for your verification code via phone or email.
+                eazzypay will never ask for your verification code via phone or email.
               </p>
             </div>
             
@@ -689,9 +689,9 @@ If you have any questions or need assistance, please contact your system adminis
 
       const result = await sendEmail({
         to: email,
-        subject: 'Payment Vault - Email Verification Required',
+        subject: 'eazzypay - Email Verification Required',
         html: emailHtml,
-        text: `Welcome to Payment Vault! Your email verification code is: ${verificationCode}. This code expires in 24 hours.`
+        text: `Welcome to eazzypay! Your email verification code is: ${verificationCode}. This code expires in 24 hours.`
       })
 
       if (result.success) {
@@ -734,7 +734,7 @@ If you have any questions or need assistance, please contact your system adminis
       }
 
       // Send SMS verification
-      const message = `Payment Vault: Your phone verification code is ${verificationCode}. Valid for 24 hours. Do not share this code.`
+      const message = `eazzypay: Your phone verification code is ${verificationCode}. Valid for 24 hours. Do not share this code.`
       
       // Get SMS settings
       const { data: smsSettings } = await supabase

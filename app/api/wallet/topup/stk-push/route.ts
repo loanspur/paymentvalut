@@ -263,6 +263,10 @@ export async function POST(request: NextRequest) {
       notificationPasswordLength: settings.ncba_notification_password?.length || 0
     })
 
+    // Normalize credentials (trim to avoid hidden whitespace causing auth failures)
+    settings.ncba_notification_username = (settings.ncba_notification_username || '').trim()
+    settings.ncba_notification_password = (settings.ncba_notification_password || '').trim()
+
     // Check if NCBA notification credentials are configured (we'll use these for STK Push)
     if (!settings.ncba_notification_username || !settings.ncba_notification_password) {
       return NextResponse.json(
@@ -372,11 +376,18 @@ export async function POST(request: NextRequest) {
       authHeaderPreview: Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64').substring(0, 20) + '...'
     })
 
+    // Build Basic header once; also emit masked preview for troubleshooting
+    const basicHeader = `Basic ${Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64')}`
+    console.log('🔍 [DEBUG] NCBA Auth Header Preview:', {
+      prefix: basicHeader.substring(0, 16) + '...',
+      length: basicHeader.length
+    })
+
     const authResponse = await fetch('https://c2bapis.ncbagroup.com/payments/api/v1/auth/token', {
       method: 'GET',
       headers: {
-        'Authorization': `Basic ${Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64')}`,
-        'Content-Type': 'application/json'
+        'Authorization': basicHeader
+        // NCBA spec does not require Content-Type for GET token
       }
     })
 
@@ -441,6 +452,14 @@ export async function POST(request: NextRequest) {
       network: stkPushRequest.Network,
       transactionType: stkPushRequest.TransactionType
     })
+
+    // Log full JSON (masked phone/account) for audit
+    const maskedPayload = {
+      ...stkPushRequest,
+      TelephoneNo: stkPushRequest.TelephoneNo?.replace(/^(\d{5})\d+(\d{3})$/, '$1******$2'),
+      AccountNo: stkPushRequest.AccountNo?.replace(/^(......).+$/, '$1********')
+    }
+    console.log('🔍 [DEBUG] NCBA STK Push Payload JSON:', maskedPayload)
 
     const stkPushResponse = await fetch('https://c2bapis.ncbagroup.com/payments/api/v1/stk-push/initiate', {
       method: 'POST',

@@ -29,6 +29,7 @@ import {
   MessageSquare,
   ClipboardList
 } from 'lucide-react'
+import Image from 'next/image'
 
 interface SidebarProps {
   className?: string
@@ -49,6 +50,7 @@ interface NavigationGroup {
 }
 
 export default function Sidebar({ className = '' }: SidebarProps) {
+  const [logoError, setLogoError] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<string[]>(['core', 'management'])
@@ -330,13 +332,22 @@ export default function Sidebar({ className = '' }: SidebarProps) {
           <div className="flex items-center justify-between px-4 py-4 border-b border-gray-200">
             {!isCollapsed && (
               <div className="flex items-center">
-                <div className="flex items-center justify-center w-8 h-8 bg-blue-600 rounded-lg">
-                  <DollarSign className="w-5 h-5 text-white" />
-                </div>
-                <div className="ml-3">
-                  <h1 className="text-lg font-bold text-gray-900">M-Pesa Vault</h1>
-                  <p className="text-xs text-gray-500">B2C Disbursement</p>
-                </div>
+                {logoError ? (
+                  <div className="ml-1">
+                    <h1 className="text-lg font-bold text-gray-900">eazzypay</h1>
+                    <p className="text-xs text-gray-500">B2C Disbursement</p>
+                  </div>
+                ) : (
+                  <Image
+                    src="/eazzypay-logo.png"
+                    alt="EazzyPay Logo"
+                    width={140}
+                    height={36}
+                    className="h-9 w-auto"
+                    priority
+                    onError={() => setLogoError(true)}
+                  />
+                )}
               </div>
             )}
             
