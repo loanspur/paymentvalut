@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { formatDate, formatDateOnly } from '../../lib/utils'
 import { 
   Wallet, 
@@ -126,6 +126,13 @@ export default function WalletPage() {
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null)
   const [isTopUpLoading, setIsTopUpLoading] = useState(false)
   const [topUpMethod, setTopUpMethod] = useState<'stk_push' | 'manual'>('stk_push')
+  const [stkAwaiting, setStkAwaiting] = useState(false)
+  const [stkCompleted, setStkCompleted] = useState(false)
+  const [stkWalletTransactionId, setStkWalletTransactionId] = useState<string | null>(null)
+  const [stkPushTransactionId, setStkPushTransactionId] = useState<string | null>(null)
+  const pollingRef = useRef<NodeJS.Timeout | null>(null)
+
+  const completionToastShownRef = useRef(false)
   
   const { addToast } = useToast()
   
@@ -173,6 +180,53 @@ export default function WalletPage() {
     loadChargeStatistics()
     loadUserProfile()
   }, [pagination.page, filters])
+
+  // Poll for STK completion without causing flicker
+  useEffect(() => {
+    if (stkAwaiting && stkWalletTransactionId) {
+      // Clear any existing polling interval
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current)
+      }
+      let attempts = 0
+      const maxAttempts = 45 // ~90s at 2s interval
+      pollingRef.current = setInterval(async () => {
+        attempts += 1
+        try {
+          // Refresh transactions list
+          await loadTransactions()
+          // Check latest state for the transaction
+          const tx = transactions.find(t => t.id === stkWalletTransactionId)
+          if (tx && tx.status === 'completed') {
+            if (pollingRef.current) clearInterval(pollingRef.current)
+            pollingRef.current = null
+            setStkCompleted(true)
+            if (!completionToastShownRef.current) {
+              completionToastShownRef.current = true
+              addToast({
+                type: 'success',
+                title: 'Top-up Completed',
+                message: 'Your wallet has been credited successfully',
+                duration: 6000
+              })
+            }
+          }
+        } catch {
+          // ignore transient errors
+        }
+        if (attempts >= maxAttempts) {
+          if (pollingRef.current) clearInterval(pollingRef.current)
+          pollingRef.current = null
+        }
+      }, 2000)
+    }
+    return () => {
+      if (pollingRef.current && (!stkAwaiting || !stkWalletTransactionId)) {
+        clearInterval(pollingRef.current)
+        pollingRef.current = null
+      }
+    }
+  }, [stkAwaiting, stkWalletTransactionId, transactions])
 
   const loadWalletData = async () => {
     try {
@@ -304,13 +358,15 @@ export default function WalletPage() {
         addToast({
           type: 'success',
           title: 'STK Push Initiated',
-          message: 'Check your phone to complete the payment',
+          message: 'Enter your M-Pesa PIN to complete the payment',
           duration: 8000
         })
-        setShowTopUpModal(false)
-        setTopUpData({ amount: 0, phone_number: '' })
-        setSelectedPartner(null)
-        loadWalletData()
+        // Persist modal and show waiting state until completion
+        setStkAwaiting(true)
+        setStkCompleted(false)
+        setStkWalletTransactionId(result?.data?.wallet_transaction?.id || null)
+        setStkPushTransactionId(result?.data?.transaction_id || null)
+        // Polling is managed by useEffect below
       } else {
         const error = await response.json()
         addToast({
@@ -321,7 +377,6 @@ export default function WalletPage() {
         })
       }
     } catch (error) {
-      console.error('Top-up error:', error)
       addToast({
         type: 'error',
         title: 'Network Error',
@@ -359,7 +414,6 @@ export default function WalletPage() {
         alert(`Float purchase failed: ${error.error}`)
       }
     } catch (error) {
-      console.error('Float purchase error:', error)
       alert('Float purchase failed. Please try again.')
     }
   }
@@ -1029,7 +1083,49 @@ export default function WalletPage() {
           <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
             <div className="mt-3">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Top Up Wallet</h3>
-              
+
+              {/* Waiting for STK confirmation */}
+              {stkAwaiting ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center">
+                      <RefreshCw className="w-5 h-5 mr-2 animate-spin text-blue-600" />
+                      <p className="text-sm text-blue-800">
+                        {stkCompleted
+                          ? 'Payment completed. Your wallet should update shortly.'
+                          : 'Waiting for STK push confirmation. Please complete the prompt on your phone.'}
+                      </p>
+                    </div>
+                    {!stkCompleted && (
+                      <p className="text-xs text-blue-700 mt-2">Do not close this window until the payment is confirmed.</p>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => {
+                        setShowTopUpModal(false)
+                        setTopUpData({ amount: 0, phone_number: '' })
+                        setSelectedPartner(null)
+                        setTopUpMethod('stk_push')
+                        setStkAwaiting(false)
+                        setStkCompleted(false)
+                        setStkWalletTransactionId(null)
+                        setStkPushTransactionId(null)
+                        completionToastShownRef.current = false
+                        if (pollingRef.current) {
+                          clearInterval(pollingRef.current)
+                          pollingRef.current = null
+                        }
+                      }}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      OK
+                    </button>
+                  </div>
+                </div>
+              ) : (
+              <>
               {/* Payment Method Selection */}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-gray-700 mb-3">
@@ -1258,10 +1354,19 @@ export default function WalletPage() {
               <div className="flex justify-end space-x-3">
                 <button
                   onClick={() => {
+                    if (pollingRef.current) {
+                      clearInterval(pollingRef.current)
+                      pollingRef.current = null
+                    }
                     setShowTopUpModal(false)
                     setTopUpData({ amount: 0, phone_number: '' })
                     setSelectedPartner(null)
                     setTopUpMethod('stk_push')
+                    setStkAwaiting(false)
+                    setStkCompleted(false)
+                    setStkWalletTransactionId(null)
+                    setStkPushTransactionId(null)
+                    completionToastShownRef.current = false
                   }}
                   className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
                 >
@@ -1307,6 +1412,8 @@ export default function WalletPage() {
                   </button>
                 )}
               </div>
+              </>
+              )}
             </div>
           </div>
         </div>

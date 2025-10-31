@@ -3,7 +3,19 @@ import { loadNcbaOpenBankingSettings } from '../../../../../lib/ncba-settings'
 
 export async function POST(request: NextRequest) {
   try {
-    const { amount, customerRef, extra } = await request.json()
+    const { 
+      amount, 
+      customerRef, 
+      mobileNumber,
+      agentName,
+      payBillTillNo,
+      paymentDescription,
+      paymentType,
+      toAccountName,
+      dealReference,
+      transactionDate,
+      extra 
+    } = await request.json()
     if (!amount) {
       return NextResponse.json({ success: false, error: 'amount is required' }, { status: 400 })
     }
@@ -14,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
     const s = settingsResult.data
 
-    // Obtain token first
+    // Obtain token first - NCBA uses userID not username
     const tokenUrl = new URL(s.tokenPath, s.baseUrl).toString()
     const tokenRes = await fetch(tokenUrl, {
       method: 'POST',
@@ -22,7 +34,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/json',
         'Ocp-Apim-Subscription-Key': s.subscriptionKey
       },
-      body: JSON.stringify({ username: s.username, password: s.password })
+      body: JSON.stringify({ userID: s.username, password: s.password })
     })
     const tokenText = await tokenRes.text()
     if (!tokenRes.ok) {
@@ -35,13 +47,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, stage: 'token', error: 'No access token in response' }, { status: 500 })
     }
 
-    // Build float purchase payload (align field names to guide; allow pass-through extras)
-    const payload: Record<string, any> = {
-      reqAmount: String(amount),
-      reqCustomerRef: customerRef || 'FLOAT_PURCHASE',
-      reqDebitAccountNo: s.debitAccountNumber,
-      reqDebitAccountCurrency: s.debitAccountCurrency,
-      reqCountry: s.country,
+    // Build float purchase payload matching NCBA Postman collection requirements
+    const now = new Date()
+    const txnDate = transactionDate || now.toISOString().split('T')[0].replace(/-/g, '') // YYYYMMDD format
+    const txnRef = `FLOAT_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+    
+    const payload: Record<string, string> = {
+      reqAgentName: agentName || 'Payment Vault Agent',
+      reqCreditAmount: String(amount),
+      reqCustomerReference: customerRef || 'FLOAT_PURCHASE',
+      reqDealReference: dealReference || txnRef,
+      reqDebitAccountNumber: s.debitAccountNumber,
+      reqDebitAcCurrency: s.debitAccountCurrency,
+      reqDebitAmount: String(amount),
+      reqMobileNumber: mobileNumber || '',
+      reqPayBillTillNo: payBillTillNo || '',
+      reqPaymentDescription: paymentDescription || 'B2C Float Purchase',
+      reqPaymentType: paymentType || 'FloatPurchase',
+      reqToAccountName: toAccountName || 'B2C Float Account',
+      reqTransactionReferenceNo: txnRef,
+      reqTxnDate: txnDate,
+      senderCountry: s.country,
       ...(extra || {})
     }
 

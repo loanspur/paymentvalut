@@ -154,9 +154,14 @@ export default function AuthProvider({ children }: AuthProviderProps) {
       
       console.log('📡 Logout API response:', response.status, response.ok)
       
-      // Use window.location.href instead of router.push to ensure complete navigation
+      // Professional redirect: use replace to avoid back button returning to protected page
       if (typeof window !== 'undefined') {
-        window.location.href = '/secure-login'
+        try {
+          // Hint to other tabs
+          sessionStorage.setItem('logout_in_progress', '1')
+        } catch {}
+        // Use replace for cleaner UX
+        window.location.replace('/secure-login')
         console.log('🔄 Redirected to login page')
       }
       

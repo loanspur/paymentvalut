@@ -156,7 +156,7 @@ function getPageTitle(pathname: string): string {
     '/admin-dashboard/audit-trail': 'Audit Trail'
   }
   
-  return titles[pathname] || 'eazzypay'
+  return titles[pathname] || 'EazzyPay'
 }
 
 function getPageDescription(pathname: string): string {
@@ -178,7 +178,7 @@ function getPageDescription(pathname: string): string {
     '/admin-dashboard/audit-trail': 'Monitor system logs, user activities, and audit trail'
   }
   
-  return descriptions[pathname] || 'eazzypay B2C Disbursement System'
+  return descriptions[pathname] || 'EazzyPay B2C Disbursement System'
 }
 
 

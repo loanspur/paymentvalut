@@ -61,24 +61,10 @@ export async function POST(request: NextRequest) {
       .eq('id', payload.userId)
       .single()
 
-    console.log('🔍 [DEBUG] Current user lookup:', {
-      userId: payload.userId,
-      userError: userError,
-      currentUser: currentUser ? {
-        id: currentUser.id,
-        email: currentUser.email,
-        role: currentUser.role,
-        partner_id: currentUser.partner_id,
-        is_active: currentUser.is_active
-      } : null
-    })
+    
 
     if (userError || !currentUser || !currentUser.is_active) {
-      console.error('❌ User validation failed:', {
-        userError,
-        currentUser,
-        userId: payload.userId
-      })
+      
       return NextResponse.json(
         { success: false, error: 'User not found or inactive' },
         { status: 401 }
@@ -91,18 +77,13 @@ export async function POST(request: NextRequest) {
     if (currentUser.role === 'super_admin' && partner_id) {
       // Super admin can specify any partner
       targetPartnerId = partner_id
-      console.log('🔍 [DEBUG] Super admin selected partner:', targetPartnerId)
+      
     } else if (currentUser.partner_id) {
       // Regular users use their assigned partner
       targetPartnerId = currentUser.partner_id
-      console.log('🔍 [DEBUG] Regular user using assigned partner:', targetPartnerId)
+      
     } else {
-      console.error('❌ User has no partner_id:', {
-        userId: currentUser.id,
-        email: currentUser.email,
-        role: currentUser.role,
-        partner_id: currentUser.partner_id
-      })
+      
       return NextResponse.json(
         { success: false, error: 'User is not assigned to any partner. Please contact administrator to assign you to a partner.' },
         { status: 400 }
@@ -116,23 +97,10 @@ export async function POST(request: NextRequest) {
       .eq('id', targetPartnerId)
       .single()
 
-    console.log('🔍 [DEBUG] Partner lookup:', {
-      partnerId: targetPartnerId,
-      partnerError: partnerError,
-      partner: partner ? {
-        id: partner.id,
-        name: partner.name,
-        short_code: partner.short_code,
-        is_active: partner.is_active
-      } : null
-    })
+    
 
     if (partnerError || !partner) {
-      console.error('❌ Partner lookup failed:', {
-        partnerError,
-        partner,
-        partnerId: targetPartnerId
-      })
+      
       return NextResponse.json(
         { success: false, error: 'Partner not found in database' },
         { status: 404 }
@@ -140,11 +108,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!partner.is_active) {
-      console.error('❌ Partner is inactive:', {
-        partnerId: partner.id,
-        partnerName: partner.name,
-        is_active: partner.is_active
-      })
+      
       return NextResponse.json(
         { success: false, error: 'Partner account is inactive. Please contact administrator.' },
         { status: 400 }
@@ -164,7 +128,7 @@ export async function POST(request: NextRequest) {
       ])
 
     if (settingsError) {
-      console.error('Error fetching NCBA settings:', settingsError)
+      
       return NextResponse.json(
         { success: false, error: 'Failed to fetch NCBA system settings' },
         { status: 500 }
@@ -198,7 +162,7 @@ export async function POST(request: NextRequest) {
                   decrypted += decipher.final('utf8')
                   return decrypted
                 } catch (error) {
-                  console.log(`   Method 1 failed for ${setting.setting_key}, trying method 2...`)
+          
                 }
               }
               
@@ -216,7 +180,7 @@ export async function POST(request: NextRequest) {
                     return decrypted
                   }
                 } catch (error) {
-                  console.log(`   Method 2 failed for ${setting.setting_key}, trying method 3...`)
+                  
                 }
               }
               
@@ -228,26 +192,23 @@ export async function POST(request: NextRequest) {
                   return decoded
                 }
               } catch (error) {
-                console.log(`   Method 3 failed for ${setting.setting_key}`)
+                
               }
               
               // If all methods fail, return the original data
-              console.log(`   All decryption methods failed for ${setting.setting_key}, returning original`)
+              
               return encryptedData
               
             } catch (error) {
-              console.error(`   Decryption error for ${setting.setting_key}:`, error.message)
+              
               return encryptedData // Return original if decryption fails
             }
           }
           
           value = await decryptData(value, passphrase)
-          console.log(`🔓 Decrypted ${setting.setting_key}: ${value ? 'SUCCESS' : 'FAILED'}`)
-          if (setting.setting_key === 'ncba_notification_username' || setting.setting_key === 'ncba_notification_password') {
-            console.log(`🔍 [DEBUG] Decrypted ${setting.setting_key}:`, value ? value.substring(0, 3) + '...' : 'FAILED')
-          }
+          
         } catch (error) {
-          console.error(`❌ Failed to decrypt ${setting.setting_key}:`, error)
+          
         }
       }
       
@@ -255,13 +216,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Debug: Log global NCBA STK Push credentials status
-    console.log('🔍 [DEBUG] NCBA Notification Credentials Status:', {
-      hasNotificationUsername: !!settings.ncba_notification_username,
-      hasNotificationPassword: !!settings.ncba_notification_password,
-      hasBusinessShortCode: !!settings.ncba_business_short_code,
-      notificationUsernameLength: settings.ncba_notification_username?.length || 0,
-      notificationPasswordLength: settings.ncba_notification_password?.length || 0
-    })
+    
 
     // Normalize credentials (trim to avoid hidden whitespace causing auth failures)
     settings.ncba_notification_username = (settings.ncba_notification_username || '').trim()
@@ -297,7 +252,7 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (createError) {
-        console.error('Error creating wallet:', createError)
+      
         return NextResponse.json(
           { success: false, error: 'Failed to create wallet' },
           { status: 500 }
@@ -306,7 +261,7 @@ export async function POST(request: NextRequest) {
 
       wallet = newWallet
     } else if (walletError) {
-      console.error('Error fetching wallet:', walletError)
+      
       return NextResponse.json(
         { success: false, error: 'Failed to fetch wallet' },
         { status: 500 }
@@ -334,7 +289,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (transactionError) {
-      console.error('Error creating wallet transaction:', transactionError)
+      
       return NextResponse.json(
         { success: false, error: 'Failed to create transaction record' },
         { status: 500 }
@@ -360,55 +315,30 @@ export async function POST(request: NextRequest) {
     }
 
     // Get NCBA access token using notification credentials
-    console.log('🔍 [DEBUG] NCBA Authentication attempt:', {
-      notificationUsername: settings.ncba_notification_username ? 'SET' : 'NOT SET',
-      notificationPassword: settings.ncba_notification_password ? 'SET' : 'NOT SET',
-      paybillNumber: paybill_number
-    })
+    
 
     // Debug: Log authentication attempt details
-    console.log('🔍 [DEBUG] NCBA Authentication Attempt:', {
-      authUrl: 'https://c2bapis.ncbagroup.com/payments/api/v1/auth/token',
-      notificationUsername: settings.ncba_notification_username,
-      notificationPasswordLength: settings.ncba_notification_password?.length || 0,
-      notificationPasswordPreview: settings.ncba_notification_password ? settings.ncba_notification_password.substring(0, 3) + '...' : 'NOT SET',
-      authHeaderLength: Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64').length,
-      authHeaderPreview: Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64').substring(0, 20) + '...'
-    })
+    
 
     // Build Basic header once; also emit masked preview for troubleshooting
     const basicHeader = `Basic ${Buffer.from(`${settings.ncba_notification_username}:${settings.ncba_notification_password}`).toString('base64')}`
-    console.log('🔍 [DEBUG] NCBA Auth Header Preview:', {
-      prefix: basicHeader.substring(0, 16) + '...',
-      length: basicHeader.length
-    })
+    
 
     const authResponse = await fetch('https://c2bapis.ncbagroup.com/payments/api/v1/auth/token', {
       method: 'GET',
       headers: {
         'Authorization': basicHeader
-        // NCBA spec does not require Content-Type for GET token
       }
     })
 
-    console.log('🔍 [DEBUG] NCBA Auth Response:', {
-      status: authResponse.status,
-      statusText: authResponse.statusText,
-      ok: authResponse.ok
-    })
+    
 
-    // Log the actual response content for debugging
+    // Read body once and optionally parse JSON
     const responseText = await authResponse.text()
-    console.log('🔍 [DEBUG] NCBA Auth Response Content:', responseText)
+    
 
     if (!authResponse.ok) {
-      console.error('❌ NCBA Auth Error:', {
-        status: authResponse.status,
-        statusText: authResponse.statusText,
-        errorText: responseText,
-        notificationUsername: settings.ncba_notification_username,
-        notificationPasswordLength: settings.ncba_notification_password?.length || 0
-      })
+      
       
       let errorMessage = 'Failed to authenticate with NCBA'
       if (authResponse.status === 400) {
@@ -427,16 +357,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const authData = await authResponse.json()
-    console.log('✅ NCBA Auth Success:', {
-      hasAccessToken: !!authData.access_token,
-      tokenLength: authData.access_token ? authData.access_token.length : 0
-    })
+    let authData: any
+    try {
+      authData = responseText ? JSON.parse(responseText) : {}
+    } catch {
+      authData = {}
+    }
+    
     
     const access_token = authData.access_token
 
     if (!access_token) {
-      console.error('❌ No access token received from NCBA')
+      
       return NextResponse.json(
         { success: false, error: 'NCBA authentication failed: No access token received' },
         { status: 500 }
@@ -444,14 +376,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Initiate STK Push using NCBA API
-    console.log('🔍 [DEBUG] NCBA STK Push Request:', {
-      telephoneNo: stkPushRequest.TelephoneNo,
-      amount: stkPushRequest.Amount,
-      payBillNo: stkPushRequest.PayBillNo,
-      accountNo: stkPushRequest.AccountNo,
-      network: stkPushRequest.Network,
-      transactionType: stkPushRequest.TransactionType
-    })
+    
 
     // Log full JSON (masked phone/account) for audit
     const maskedPayload = {
@@ -459,7 +384,7 @@ export async function POST(request: NextRequest) {
       TelephoneNo: stkPushRequest.TelephoneNo?.replace(/^(\d{5})\d+(\d{3})$/, '$1******$2'),
       AccountNo: stkPushRequest.AccountNo?.replace(/^(......).+$/, '$1********')
     }
-    console.log('🔍 [DEBUG] NCBA STK Push Payload JSON:', maskedPayload)
+    
 
     const stkPushResponse = await fetch('https://c2bapis.ncbagroup.com/payments/api/v1/stk-push/initiate', {
       method: 'POST',
@@ -470,26 +395,30 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(stkPushRequest)
     })
 
-    const stkPushData = await stkPushResponse.json()
+    // Read body once and try to parse JSON safely
+    const stkPushText = await stkPushResponse.text()
+    let stkPushData: any = {}
+    try {
+      stkPushData = stkPushText ? JSON.parse(stkPushText) : {}
+    } catch {
+      // Non-JSON body (e.g., HTML error page)
+      stkPushData = { raw: stkPushText }
+    }
+
     
-    console.log('🔍 [DEBUG] STK Push Response:', {
-      status: stkPushResponse.status,
-      ok: stkPushResponse.ok,
-      responseData: stkPushData
-    })
 
     if (!stkPushResponse.ok) {
-      console.error('❌ NCBA STK Push Error:', stkPushData)
       
       let errorMessage = 'STK Push failed'
-      if (stkPushData.message) {
+      if (typeof stkPushData === 'object' && stkPushData && stkPushData.message) {
         errorMessage = `STK Push failed: ${stkPushData.message}`
       } else if (stkPushResponse.status === 401) {
         errorMessage = 'STK Push failed: Authentication expired. Please try again.'
       } else if (stkPushResponse.status >= 500) {
         errorMessage = 'STK Push failed: NCBA service temporarily unavailable.'
+      } else if (typeof stkPushData?.raw === 'string') {
+        errorMessage = `STK Push failed: ${stkPushData.raw.slice(0, 120)}`
       }
-      
       return NextResponse.json(
         { success: false, error: errorMessage },
         { status: 500 }
@@ -498,7 +427,7 @@ export async function POST(request: NextRequest) {
 
     // Check NCBA response status (NCBA uses StatusCode field)
     if (stkPushData.StatusCode !== "0" && stkPushData.StatusCode !== 0) {
-      console.error('❌ NCBA STK Push Failed:', stkPushData)
+      
       return NextResponse.json(
         { success: false, error: `STK Push failed: ${stkPushData.StatusDescription || 'Unknown error'}` },
         { status: 500 }
@@ -522,19 +451,9 @@ export async function POST(request: NextRequest) {
       .select()
       .single()
 
-    if (stkPushError) {
-      console.error('Error creating STK Push log:', stkPushError)
-      // Don't fail the request, just log the error
-    }
+    
 
-    console.log('NCBA STK Push initiated successfully:', {
-      phone_number,
-      amount,
-      transaction_id: stkPushData.TransactionID,
-      reference_id: stkPushData.ReferenceID,
-      wallet_transaction_id: walletTransaction.id,
-      partner_id: partner.id
-    })
+    
 
     return NextResponse.json({
       success: true,
@@ -548,7 +467,6 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('STK Push Top-up Error:', error)
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }

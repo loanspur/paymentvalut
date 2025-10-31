@@ -65,12 +65,10 @@ export class NCBAClient {
 
     try {
       const authString = btoa(`${this.config.username}:${this.config.password}`);
-      
       const response = await fetch(`${this.config.baseUrl}/payments/api/v1/auth/token`, {
         method: 'GET',
         headers: {
-          'Authorization': `Basic ${authString}`,
-          'Content-Type': 'application/json'
+          'Authorization': `Basic ${authString}`
         }
       });
 

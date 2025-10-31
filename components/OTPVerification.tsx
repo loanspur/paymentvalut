@@ -46,8 +46,21 @@ export default function OTPVerification({ onSuccess, onCancel, userEmail, userPh
     }
   }, [timeLeft])
 
-  // Remove auto-generation of OTP to prevent unwanted emails
-  // Users will manually trigger OTP generation via the "Send OTP" button
+  // Auto-generate OTP once on entering the OTP step so users don't have to click
+  useEffect(() => {
+    let mounted = true
+    const triggerOnce = async () => {
+      if (!otpSent && timeLeft === 0 && !isGenerating) {
+        await generateOTP()
+      }
+    }
+    if (mounted) {
+      triggerOnce()
+    }
+    return () => { mounted = false }
+  // Intentionally depend only on first render and key state flags
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const generateOTP = async () => {
     setIsGenerating(true)

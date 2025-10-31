@@ -15,7 +15,9 @@ import {
   Eye,
   EyeOff,
   Copy,
-  Check
+  Check,
+  Server,
+  Cloud
 } from 'lucide-react'
 
 interface SystemStatus {
@@ -55,15 +57,49 @@ export default function SettingsPage() {
   const [showPasswords, setShowPasswords] = useState({
     username: false,
     password: false,
-    secret_key: false
+    secret_key: false,
+    uat_username: false,
+    uat_password: false,
+    uat_subscription_key: false,
+    prod_username: false,
+    prod_password: false,
+    prod_subscription_key: false
   })
 
   const [copiedField, setCopiedField] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'paybill' | 'uat' | 'prod'>('paybill')
+
+  const [uatSettings, setUatSettings] = useState({
+    ncba_ob_uat_base_url: 'https://apidev.ncbagroup.com/openbankingapigateway/dev',
+    ncba_ob_token_path: '/api/v1/Auth/generate-token',
+    ncba_ob_float_purchase_path: '/api/v1/FloatPurchase/floatpurchase',
+    ncba_ob_subscription_key: '',
+    ncba_ob_username: '',
+    ncba_ob_password: '',
+    ncba_ob_debit_account_number: '',
+    ncba_ob_debit_account_currency: 'KES',
+    ncba_ob_country: 'Kenya'
+  })
+
+  const [prodSettings, setProdSettings] = useState({
+    ncba_ob_prod_base_url: '',
+    ncba_ob_token_path: '/api/v1/Auth/generate-token',
+    ncba_ob_float_purchase_path: '/api/v1/FloatPurchase/floatpurchase',
+    ncba_ob_subscription_key: '',
+    ncba_ob_username: '',
+    ncba_ob_password: '',
+    ncba_ob_debit_account_number: '',
+    ncba_ob_debit_account_currency: 'KES',
+    ncba_ob_country: 'Kenya'
+  })
+
+  const [obEnvironment, setObEnvironment] = useState<'uat' | 'prod'>('uat')
 
   useEffect(() => {
     loadSystemStatus()
     loadSettings()
     loadNcbaSettings()
+    loadObSettings()
   }, [])
 
   const loadSystemStatus = async () => {
@@ -119,6 +155,51 @@ export default function SettingsPage() {
     }
   }
 
+  const loadObSettings = async () => {
+    try {
+      const response = await fetch('/api/system/settings?category=ncba_ob')
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          const settings = data.data
+          
+          // Load environment setting
+          if (settings.ncba_ob_environment?.value) {
+            setObEnvironment(settings.ncba_ob_environment.value as 'uat' | 'prod')
+          }
+
+          // Load UAT settings
+          setUatSettings({
+            ncba_ob_uat_base_url: settings.ncba_ob_uat_base_url?.value || 'https://apidev.ncbagroup.com/openbankingapigateway/dev',
+            ncba_ob_token_path: settings.ncba_ob_token_path?.value || '/api/v1/Auth/generate-token',
+            ncba_ob_float_purchase_path: settings.ncba_ob_float_purchase_path?.value || '/api/v1/FloatPurchase/floatpurchase',
+            ncba_ob_subscription_key: settings.ncba_ob_subscription_key?.value || '',
+            ncba_ob_username: settings.ncba_ob_username?.value || '',
+            ncba_ob_password: settings.ncba_ob_password?.value || '',
+            ncba_ob_debit_account_number: settings.ncba_ob_debit_account_number?.value || '',
+            ncba_ob_debit_account_currency: settings.ncba_ob_debit_account_currency?.value || 'KES',
+            ncba_ob_country: settings.ncba_ob_country?.value || 'Kenya'
+          })
+
+          // Load Production settings
+          setProdSettings({
+            ncba_ob_prod_base_url: settings.ncba_ob_prod_base_url?.value || '',
+            ncba_ob_token_path: settings.ncba_ob_token_path?.value || '/api/v1/Auth/generate-token',
+            ncba_ob_float_purchase_path: settings.ncba_ob_float_purchase_path?.value || '/api/v1/FloatPurchase/floatpurchase',
+            ncba_ob_subscription_key: settings.ncba_ob_prod_subscription_key?.value || '',
+            ncba_ob_username: settings.ncba_ob_prod_username?.value || '',
+            ncba_ob_password: settings.ncba_ob_prod_password?.value || '',
+            ncba_ob_debit_account_number: settings.ncba_ob_prod_debit_account_number?.value || '',
+            ncba_ob_debit_account_currency: settings.ncba_ob_debit_account_currency?.value || 'KES',
+            ncba_ob_country: settings.ncba_ob_country?.value || 'Kenya'
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load OB settings:', error)
+    }
+  }
+
   const saveSettings = () => {
     localStorage.setItem('mpesa_vault_settings', JSON.stringify(settings))
     alert('Settings saved successfully!')
@@ -139,7 +220,7 @@ export default function SettingsPage() {
       if (response.ok) {
         const data = await response.json()
         if (data.success) {
-          alert('NCBA settings saved successfully!')
+          alert('NCBA Paybill settings saved successfully!')
         } else {
           alert('Failed to save NCBA settings: ' + (data.error || 'Unknown error'))
         }
@@ -152,12 +233,110 @@ export default function SettingsPage() {
     }
   }
 
+  const saveObSettings = async (env: 'uat' | 'prod') => {
+    try {
+      const prefix = env === 'uat' ? 'ncba_ob_' : 'ncba_ob_prod_'
+      
+      const settings: Record<string, string> = {}
+      
+      if (env === 'uat') {
+        // UAT settings
+        settings['ncba_ob_uat_base_url'] = uatSettings.ncba_ob_uat_base_url
+        settings['ncba_ob_token_path'] = uatSettings.ncba_ob_token_path
+        settings['ncba_ob_float_purchase_path'] = uatSettings.ncba_ob_float_purchase_path
+        settings['ncba_ob_subscription_key'] = uatSettings.ncba_ob_subscription_key
+        settings['ncba_ob_username'] = uatSettings.ncba_ob_username
+        settings['ncba_ob_password'] = uatSettings.ncba_ob_password
+        settings['ncba_ob_debit_account_number'] = uatSettings.ncba_ob_debit_account_number
+        settings['ncba_ob_debit_account_currency'] = uatSettings.ncba_ob_debit_account_currency
+        settings['ncba_ob_country'] = uatSettings.ncba_ob_country
+      } else {
+        // Production settings
+        settings['ncba_ob_prod_base_url'] = prodSettings.ncba_ob_prod_base_url
+        settings['ncba_ob_prod_token_path'] = prodSettings.ncba_ob_token_path
+        settings['ncba_ob_prod_float_purchase_path'] = prodSettings.ncba_ob_float_purchase_path
+        settings['ncba_ob_prod_subscription_key'] = prodSettings.ncba_ob_subscription_key
+        settings['ncba_ob_prod_username'] = prodSettings.ncba_ob_username
+        settings['ncba_ob_prod_password'] = prodSettings.ncba_ob_password
+        settings['ncba_ob_prod_debit_account_number'] = prodSettings.ncba_ob_debit_account_number
+        settings['ncba_ob_prod_debit_account_currency'] = prodSettings.ncba_ob_debit_account_currency
+        settings['ncba_ob_prod_country'] = prodSettings.ncba_ob_country
+      }
+
+      // Also save environment setting
+      settings['ncba_ob_environment'] = obEnvironment
+
+      const response = await fetch('/api/system/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          settings
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          alert(`NCBA ${env.toUpperCase()} settings saved successfully!`)
+        } else {
+          alert(`Failed to save ${env.toUpperCase()} settings: ` + (data.error || 'Unknown error'))
+        }
+      } else {
+        alert(`Failed to save ${env.toUpperCase()} settings`)
+      }
+    } catch (error) {
+      console.error(`Failed to save ${env.toUpperCase()} settings:`, error)
+      alert(`Failed to save ${env.toUpperCase()} settings`)
+    }
+  }
+
   const togglePasswordVisibility = (field: keyof typeof showPasswords) => {
     setShowPasswords(prev => ({
       ...prev,
       [field]: !prev[field]
     }))
   }
+
+  const PasswordField = ({ 
+    label, 
+    value, 
+    onChange, 
+    fieldKey, 
+    placeholder,
+    helpText 
+  }: {
+    label: string
+    value: string
+    onChange: (value: string) => void
+    fieldKey: keyof typeof showPasswords
+    placeholder?: string
+    helpText?: string
+  }) => (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-2">
+        {label}
+      </label>
+      <div className="flex">
+        <input
+          type={showPasswords[fieldKey] ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="flex-1 px-3 py-2 border border-gray-300 rounded-l-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          placeholder={placeholder}
+        />
+        <button
+          type="button"
+          onClick={() => togglePasswordVisibility(fieldKey)}
+          className="px-3 py-2 bg-gray-100 border border-l-0 border-gray-300 rounded-r-lg hover:bg-gray-200 transition-colors"
+        >
+          {showPasswords[fieldKey] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+      </div>
+      {helpText && <p className="text-xs text-gray-500 mt-1">{helpText}</p>}
+    </div>
+  )
 
   const copyToClipboard = async (text: string, field: string) => {
     try {
@@ -430,12 +609,54 @@ export default function SettingsPage() {
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-lg font-medium text-gray-900 flex items-center">
               <CreditCard className="w-5 h-5 mr-2" />
-              NCBA Paybill Settings
+              NCBA Settings
             </h2>
-            <p className="text-sm text-gray-500 mt-1">Configure global NCBA Paybill notification settings</p>
+            <p className="text-sm text-gray-500 mt-1">Configure NCBA Paybill and Open Banking settings</p>
+          </div>
+
+          {/* Tabs */}
+          <div className="border-b border-gray-200">
+            <nav className="flex -mb-px">
+              <button
+                onClick={() => setActiveTab('paybill')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'paybill'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <CreditCard className="w-4 h-4 inline mr-2" />
+                Paybill Settings
+              </button>
+              <button
+                onClick={() => setActiveTab('uat')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'uat'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Server className="w-4 h-4 inline mr-2" />
+                UAT/Sandbox
+              </button>
+              <button
+                onClick={() => setActiveTab('prod')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'prod'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Cloud className="w-4 h-4 inline mr-2" />
+                Production
+              </button>
+            </nav>
           </div>
           
           <div className="p-6">
+            {/* Paybill Settings Tab */}
+            {activeTab === 'paybill' && (
+              <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Basic Configuration */}
               <div className="space-y-6">
@@ -607,9 +828,320 @@ export default function SettingsPage() {
                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center"
               >
                 <Save className="w-4 h-4 mr-2" />
-                Save NCBA Settings
+                Save Paybill Settings
               </button>
             </div>
+              </>
+            )}
+
+            {/* UAT/Sandbox Settings Tab */}
+            {activeTab === 'uat' && (
+              <>
+            <div className="space-y-6">
+              <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  <strong>UAT/Sandbox Environment:</strong> Use these settings for testing Float Purchase and other Open Banking operations. 
+                  Base URL is pre-configured for the NCBA sandbox environment.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <h3 className="text-md font-medium text-gray-900">API Configuration</h3>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Base URL
+                    </label>
+                    <input
+                      type="text"
+                      value={uatSettings.ncba_ob_uat_base_url}
+                      onChange={(e) => setUatSettings({...uatSettings, ncba_ob_uat_base_url: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="https://apidev.ncbagroup.com/openbankingapigateway/dev"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">NCBA UAT API base URL</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Token Path
+                    </label>
+                    <input
+                      type="text"
+                      value={uatSettings.ncba_ob_token_path}
+                      onChange={(e) => setUatSettings({...uatSettings, ncba_ob_token_path: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="/api/v1/Auth/generate-token"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Path to token endpoint</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Float Purchase Path
+                    </label>
+                    <input
+                      type="text"
+                      value={uatSettings.ncba_ob_float_purchase_path}
+                      onChange={(e) => setUatSettings({...uatSettings, ncba_ob_float_purchase_path: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="/api/v1/FloatPurchase/floatpurchase"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Path to float purchase endpoint</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Debit Account Number
+                    </label>
+                    <input
+                      type="text"
+                      value={uatSettings.ncba_ob_debit_account_number}
+                      onChange={(e) => setUatSettings({...uatSettings, ncba_ob_debit_account_number: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Your NCBA account number"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">NCBA account to debit for float purchases</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Debit Account Currency
+                    </label>
+                    <select
+                      value={uatSettings.ncba_ob_debit_account_currency}
+                      onChange={(e) => setUatSettings({...uatSettings, ncba_ob_debit_account_currency: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="KES">KES</option>
+                      <option value="USD">USD</option>
+                      <option value="EUR">EUR</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Currency for debit account</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Country
+                    </label>
+                    <input
+                      type="text"
+                      value={uatSettings.ncba_ob_country}
+                      onChange={(e) => setUatSettings({...uatSettings, ncba_ob_country: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Kenya"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Country code</p>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <h3 className="text-md font-medium text-gray-900">Authentication</h3>
+                  
+                  <PasswordField
+                    label="Subscription Key"
+                    value={uatSettings.ncba_ob_subscription_key}
+                    onChange={(value) => setUatSettings({...uatSettings, ncba_ob_subscription_key: value})}
+                    fieldKey="uat_subscription_key"
+                    placeholder="7e0a42d930e34680b295951acb24b140"
+                    helpText="API subscription key for UAT environment"
+                  />
+
+                  <PasswordField
+                    label="Username (UserID)"
+                    value={uatSettings.ncba_ob_username}
+                    onChange={(value) => setUatSettings({...uatSettings, ncba_ob_username: value})}
+                    fieldKey="uat_username"
+                    placeholder="Your NCBA userID"
+                    helpText="UserID for token generation (used as userID in API)"
+                  />
+
+                  <PasswordField
+                    label="Password"
+                    value={uatSettings.ncba_ob_password}
+                    onChange={(value) => setUatSettings({...uatSettings, ncba_ob_password: value})}
+                    fieldKey="uat_password"
+                    placeholder="Your NCBA password"
+                    helpText="Password for token generation"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <button
+                  onClick={() => saveObSettings('uat')}
+                  className="w-full px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors flex items-center justify-center"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  Save UAT/Sandbox Settings
+                </button>
+              </div>
+            </div>
+              </>
+            )}
+
+            {/* Production Settings Tab */}
+            {activeTab === 'prod' && (
+              <>
+            <div className="space-y-6">
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-800">
+                  <strong>Production Environment:</strong> ⚠️ These settings will be used for live transactions. 
+                  Double-check all credentials before saving.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="space-y-6">
+                  <h3 className="text-md font-medium text-gray-900">API Configuration</h3>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Base URL
+                    </label>
+                    <input
+                      type="text"
+                      value={prodSettings.ncba_ob_prod_base_url}
+                      onChange={(e) => setProdSettings({...prodSettings, ncba_ob_prod_base_url: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="https://c2bapis.ncbagroup.com/payments/api/v1"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">NCBA Production API base URL</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Token Path
+                    </label>
+                    <input
+                      type="text"
+                      value={prodSettings.ncba_ob_token_path}
+                      onChange={(e) => setProdSettings({...prodSettings, ncba_ob_token_path: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="/api/v1/Auth/generate-token"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Path to token endpoint</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Float Purchase Path
+                    </label>
+                    <input
+                      type="text"
+                      value={prodSettings.ncba_ob_float_purchase_path}
+                      onChange={(e) => setProdSettings({...prodSettings, ncba_ob_float_purchase_path: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="/api/v1/FloatPurchase/floatpurchase"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Path to float purchase endpoint</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Debit Account Number
+                    </label>
+                    <input
+                      type="text"
+                      value={prodSettings.ncba_ob_debit_account_number}
+                      onChange={(e) => setProdSettings({...prodSettings, ncba_ob_debit_account_number: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Your NCBA production account number"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">NCBA production account to debit</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Debit Account Currency
+                    </label>
+                    <select
+                      value={prodSettings.ncba_ob_debit_account_currency}
+                      onChange={(e) => setProdSettings({...prodSettings, ncba_ob_debit_account_currency: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="KES">KES</option>
+                      <option value="USD">USD</option>
+                      <option value="EUR">EUR</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Currency for debit account</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Country
+                    </label>
+                    <input
+                      type="text"
+                      value={prodSettings.ncba_ob_country}
+                      onChange={(e) => setProdSettings({...prodSettings, ncba_ob_country: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Kenya"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Country code</p>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <h3 className="text-md font-medium text-gray-900">Authentication</h3>
+                  
+                  <PasswordField
+                    label="Subscription Key"
+                    value={prodSettings.ncba_ob_subscription_key}
+                    onChange={(value) => setProdSettings({...prodSettings, ncba_ob_subscription_key: value})}
+                    fieldKey="prod_subscription_key"
+                    placeholder="Production subscription key"
+                    helpText="API subscription key for Production environment"
+                  />
+
+                  <PasswordField
+                    label="Username (UserID)"
+                    value={prodSettings.ncba_ob_username}
+                    onChange={(value) => setProdSettings({...prodSettings, ncba_ob_username: value})}
+                    fieldKey="prod_username"
+                    placeholder="Your NCBA production userID"
+                    helpText="UserID for token generation (used as userID in API)"
+                  />
+
+                  <PasswordField
+                    label="Password"
+                    value={prodSettings.ncba_ob_password}
+                    onChange={(value) => setProdSettings({...prodSettings, ncba_ob_password: value})}
+                    fieldKey="prod_password"
+                    placeholder="Your NCBA production password"
+                    helpText="Password for token generation"
+                  />
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Active Environment
+                    </label>
+                    <select
+                      value={obEnvironment}
+                      onChange={(e) => setObEnvironment(e.target.value as 'uat' | 'prod')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="uat">UAT/Sandbox</option>
+                      <option value="prod">Production</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Which environment to use for API calls</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <button
+                  onClick={() => saveObSettings('prod')}
+                  className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  Save Production Settings
+                </button>
+              </div>
+            </div>
+              </>
+            )}
           </div>
         </div>
 
