@@ -241,16 +241,36 @@ function HeaderBalance() {
             credentials: 'include',
             signal: controller.signal
           })
+          
+          // Always log the response status
+          if (!res.ok) {
+            console.error(`SMS Balance API HTTP Error: ${res.status} ${res.statusText}`)
+          }
+          
           const data = await res.json()
           
           if (isMounted) {
             if (data?.success) {
               setSmsBalance(Number(data.balance || 0))
             } else {
-              // Only log errors in development or if critical
-              if (process.env.NODE_ENV === 'development') {
-                console.error('SMS Balance API Error:', data.error, data.debug)
+              // Log errors in production too for debugging - with full details
+              console.error('❌ SMS Balance API Error:', {
+                status: res.status,
+                statusText: res.statusText,
+                error: data.error,
+                debug: data.debug,
+                fullResponse: data
+              })
+              
+              // Show alert in production if credentials are missing
+              if (data.error?.includes('SMS credentials not configured')) {
+                console.warn('⚠️ SMS Credentials Missing:', data.debug)
+                console.warn('📋 Fix: Add environment variables in Digital Ocean App Platform:')
+                console.warn('   - SUPER_ADMIN_SMS_ENABLED=true')
+                console.warn('   - SUPER_ADMIN_SMS_USERNAME=your_username')
+                console.warn('   - SUPER_ADMIN_SMS_API_KEY=your_api_key')
               }
+              
               setSmsBalance(null)
             }
           }
@@ -259,9 +279,13 @@ function HeaderBalance() {
         }
       } catch (e: any) {
         if (isMounted) {
-          // Don't log abort errors (expected for timeout)
-          if (e.name !== 'AbortError' && process.env.NODE_ENV === 'development') {
-            console.error('SMS Balance fetch error:', e)
+          // Log all errors except expected timeouts for debugging
+          if (e.name !== 'AbortError') {
+            console.error('SMS Balance fetch error:', {
+              name: e.name,
+              message: e.message,
+              stack: e.stack
+            })
           }
           setSmsBalance(null)
         }

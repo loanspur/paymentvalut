@@ -176,11 +176,19 @@ export async function GET(request: NextRequest) {
       
       console.error('SMS credentials not configured:', debugInfo)
       
+      // Always return debug info in production for troubleshooting
       return NextResponse.json(
         { 
           success: false, 
           error: 'SMS credentials not configured. Please check environment variables or database settings.',
-          debug: process.env.NODE_ENV === 'development' ? debugInfo : undefined
+          debug: {
+            user_role: debugInfo.user_role,
+            super_admin_sms_enabled: debugInfo.super_admin_sms_enabled,
+            has_env_username: debugInfo.has_env_username,
+            has_env_apikey: debugInfo.has_env_apikey,
+            env_username_length: debugInfo.env_username_length,
+            env_apikey_length: debugInfo.env_apikey_length
+          }
         },
         { status: 400 }
       )
@@ -247,13 +255,20 @@ export async function GET(request: NextRequest) {
     }
 
     if (!response.ok) {
+      console.error('AirTouch API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        response: responseText.substring(0, 500)
+      })
       return NextResponse.json(
         { 
           success: false, 
           error: `Failed to fetch SMS balance from AirTouch: ${response.status} ${response.statusText}`,
-          details: responseText.substring(0, 200)
+          details: responseText.substring(0, 200),
+          airtouch_status: response.status,
+          airtouch_response: responseText.substring(0, 200)
         },
-        { status: response.status }
+        { status: 500 } // Return 500 to distinguish from credential errors (400)
       )
     }
 
@@ -261,11 +276,16 @@ export async function GET(request: NextRequest) {
     try {
       data = JSON.parse(responseText)
     } catch (parseError) {
+      console.error('AirTouch API JSON Parse Error:', {
+        error: parseError,
+        responseText: responseText.substring(0, 500)
+      })
       return NextResponse.json(
         { 
           success: false, 
           error: 'Invalid JSON response from AirTouch API',
-          details: responseText.substring(0, 200)
+          details: responseText.substring(0, 200),
+          raw_response: responseText.substring(0, 200)
         },
         { status: 500 }
       )
@@ -302,9 +322,17 @@ export async function GET(request: NextRequest) {
       cached: false
     })
   } catch (error: any) {
-    console.error('SMS balance API error:', error)
+    console.error('SMS balance API error:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    })
     return NextResponse.json(
-      { success: false, error: error.message || 'Failed to fetch SMS balance' },
+      { 
+        success: false, 
+        error: error.message || 'Failed to fetch SMS balance',
+        details: process.env.NODE_ENV === 'production' ? 'Check server logs for details' : error.stack
+      },
       { status: 500 }
     )
   }
