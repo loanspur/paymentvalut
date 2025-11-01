@@ -8,6 +8,11 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata = {
   title: 'EazzyPay',
   description: 'Secure EazzyPay B2C Disbursement Management System',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({

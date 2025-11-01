@@ -174,7 +174,7 @@ export async function GET(request: NextRequest) {
         debugInfo.env_username_preview = process.env.SUPER_ADMIN_SMS_USERNAME?.substring(0, 3) + '...'
       }
       
-      console.error('SMS credentials not configured:', debugInfo)
+      // Log error for debugging (can be removed in production if needed)
       
       // Always return debug info in production for troubleshooting
       return NextResponse.json(
@@ -254,12 +254,8 @@ export async function GET(request: NextRequest) {
       throw fetchError
     }
 
-    if (!response.ok) {
-      console.error('AirTouch API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        response: responseText.substring(0, 500)
-      })
+        if (!response.ok) {
+          // Log error for debugging
       return NextResponse.json(
         { 
           success: false, 
@@ -275,11 +271,8 @@ export async function GET(request: NextRequest) {
     let data: any
     try {
       data = JSON.parse(responseText)
-    } catch (parseError) {
-      console.error('AirTouch API JSON Parse Error:', {
-        error: parseError,
-        responseText: responseText.substring(0, 500)
-      })
+        } catch (parseError) {
+          // Log parse error for debugging
       return NextResponse.json(
         { 
           success: false, 
@@ -321,12 +314,8 @@ export async function GET(request: NextRequest) {
       currency: 'KES',
       cached: false
     })
-  } catch (error: any) {
-    console.error('SMS balance API error:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    })
+      } catch (error: any) {
+        // Log error for debugging
     return NextResponse.json(
       { 
         success: false, 

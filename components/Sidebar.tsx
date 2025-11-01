@@ -67,11 +67,8 @@ export default function Sidebar({ className = '' }: SidebarProps) {
 
   const handleLogout = async () => {
     try {
-      console.log('🔄 Sidebar logout initiated...')
       await logout()
-      console.log('✅ Sidebar logout completed')
     } catch (error) {
-      console.error('❌ Sidebar logout error:', error)
       // Even if logout fails, try to redirect
       if (typeof window !== 'undefined') {
         window.location.href = '/secure-login'

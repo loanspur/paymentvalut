@@ -224,77 +224,52 @@ function HeaderBalance() {
     return () => { isMounted = false; clearInterval(id) }
   }, [user])
 
-  useEffect(() => {
-    let isMounted = true
-    
-    // Fetch immediately on mount
-    const fetchSmsBalance = async () => {
-      if (!user) return
-      try {
-        setSmsLoading(true)
-        // Use abort controller for faster timeout
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 6000) // 6 second timeout
+      useEffect(() => {
+        let isMounted = true
         
-        try {
-          const res = await fetch('/api/sms/balance', { 
-            credentials: 'include',
-            signal: controller.signal
-          })
-          
-          const data = await res.json()
-          
-          if (isMounted) {
-            if (data?.success) {
-              setSmsBalance(Number(data.balance || 0))
-            } else {
-              // Only log once per session to reduce spam
-              const errorKey = 'sms_balance_error_logged'
-              if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem(errorKey)) {
-                sessionStorage.setItem(errorKey, 'true')
-                
-                if (data.error?.includes('SMS credentials not configured')) {
-                  console.warn('⚠️ SMS Balance: Credentials not configured. Check Digital Ocean environment variables:', {
-                    has_enabled: data.debug?.super_admin_sms_enabled === 'true',
-                    has_username: data.debug?.has_env_username,
-                    has_apikey: data.debug?.has_env_apikey,
-                    username_length: data.debug?.env_username_length,
-                    apikey_length: data.debug?.env_apikey_length
-                  })
-                  console.warn('📋 Required: SUPER_ADMIN_SMS_ENABLED, SUPER_ADMIN_SMS_USERNAME, SUPER_ADMIN_SMS_API_KEY')
-                } else {
-                  console.warn('SMS Balance Error:', data.error || 'Unknown error')
-                }
-              }
+        // Fetch immediately on mount
+        const fetchSmsBalance = async () => {
+          if (!user) return
+          try {
+            setSmsLoading(true)
+            // Use abort controller for faster timeout
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => controller.abort(), 6000) // 6 second timeout
+            
+            try {
+              const res = await fetch('/api/sms/balance', { 
+                credentials: 'include',
+                signal: controller.signal
+              })
               
-              setSmsBalance(null)
-            }
-          }
-        } finally {
-          clearTimeout(timeoutId)
-        }
-        } catch (e: any) {
-            if (isMounted) {
-              // Only log non-timeout errors once per session
-              if (e.name !== 'AbortError') {
-                const timeoutKey = 'sms_balance_timeout_logged'
-                if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem(timeoutKey)) {
-                  sessionStorage.setItem(timeoutKey, 'true')
-                  console.warn('SMS Balance fetch timeout - API may be slow')
+              const data = await res.json()
+              
+              if (isMounted) {
+                if (data?.success) {
+                  setSmsBalance(Number(data.balance || 0))
+                } else {
+                  // Silently handle errors - don't spam console
+                  setSmsBalance(null)
                 }
               }
+            } finally {
+              clearTimeout(timeoutId)
+            }
+          } catch (e: any) {
+            if (isMounted) {
+              // Silently handle errors - don't spam console
               setSmsBalance(null)
             }
           } finally {
             if (isMounted) setSmsLoading(false)
           }
-    }
-    
-    fetchSmsBalance()
-    // Refresh every 45 seconds (slightly faster than cache expiry for freshness)
-    const id = setInterval(fetchSmsBalance, 45_000)
-    return () => { isMounted = false; clearInterval(id) }
-  }, [user])
+        }
+        
+        fetchSmsBalance()
+        // Refresh every 45 seconds (slightly faster than cache expiry for freshness)
+        const id = setInterval(fetchSmsBalance, 45_000)
+        return () => { isMounted = false; clearInterval(id) }
+      }, [user])
 
   const formatCurrency = (n: number) => new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 2 }).format(n)
 
