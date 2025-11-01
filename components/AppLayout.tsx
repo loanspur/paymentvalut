@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import Sidebar from './Sidebar'
 import ProfileDropdown from './ProfileDropdown'
 import { ToastProvider } from './ToastSimple'
-import { Bell, Wallet } from 'lucide-react'
+import { Bell, Wallet, MessageSquare } from 'lucide-react'
 
 interface AppLayoutProps {
   children: React.ReactNode
@@ -187,6 +187,8 @@ function HeaderBalance() {
   const [loading, setLoading] = useState(false)
   const [amount, setAmount] = useState<number | null>(null)
   const [label, setLabel] = useState<string>('')
+  const [smsBalance, setSmsBalance] = useState<number | null>(null)
+  const [smsLoading, setSmsLoading] = useState(false)
 
   useEffect(() => {
     let isMounted = true
@@ -222,13 +224,48 @@ function HeaderBalance() {
     return () => { isMounted = false; clearInterval(id) }
   }, [user])
 
+  useEffect(() => {
+    let isMounted = true
+    const fetchSmsBalance = async () => {
+      if (!user) return
+      try {
+        setSmsLoading(true)
+        const res = await fetch('/api/sms/balance', { credentials: 'include' })
+        const data = await res.json()
+        if (isMounted) {
+          if (data?.success) {
+            setSmsBalance(Number(data.balance || 0))
+          } else {
+            setSmsBalance(null)
+          }
+        }
+      } catch (e: any) {
+        if (isMounted) setSmsBalance(null)
+      } finally {
+        if (isMounted) setSmsLoading(false)
+      }
+    }
+    fetchSmsBalance()
+    const id = setInterval(fetchSmsBalance, 60_000)
+    return () => { isMounted = false; clearInterval(id) }
+  }, [user])
+
   const formatCurrency = (n: number) => new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 2 }).format(n)
 
   return (
-    <div className="hidden sm:flex items-center px-2 py-1 rounded-lg border border-gray-200 bg-white mr-2">
-      <Wallet className="w-4 h-4 text-blue-600 mr-2" />
-      <span className="text-xs text-gray-500 mr-1">{label}</span>
-      <span className="text-sm font-semibold text-gray-900">{loading || amount === null ? '—' : formatCurrency(amount)}</span>
+    <div className="hidden sm:flex items-center space-x-2">
+      {/* Wallet Balance */}
+      <div className="flex items-center px-2 py-1 rounded-lg border border-gray-200 bg-white">
+        <Wallet className="w-4 h-4 text-blue-600 mr-2" />
+        <span className="text-xs text-gray-500 mr-1">{label}</span>
+        <span className="text-sm font-semibold text-gray-900">{loading || amount === null ? '—' : formatCurrency(amount)}</span>
+      </div>
+      {/* SMS Balance */}
+      <div className="flex items-center px-2 py-1 rounded-lg border border-gray-200 bg-white">
+        <MessageSquare className="w-4 h-4 text-green-600 mr-2" />
+        <span className="text-xs text-gray-500 mr-1">SMS</span>
+        <span className="text-sm font-semibold text-gray-900">{smsLoading || smsBalance === null ? '—' : formatCurrency(smsBalance)}</span>
+      </div>
     </div>
   )
 }

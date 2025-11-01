@@ -186,7 +186,10 @@ export async function GET(
         pending_sms: pendingSMS,
         success_rate: Math.round(successRate * 100) / 100,
         total_cost: totalCost,
-        unique_phones: uniquePhones.length
+        unique_phones: uniquePhones.length,
+        insufficient_balance_count: campaign.metadata?.insufficient_balance_count || 0,
+        sms_balance_before: campaign.metadata?.sms_balance_before || null,
+        sms_balance_after: campaign.metadata?.sms_balance_after || null
       },
       chart_data: {
         success_vs_failed: [
@@ -205,6 +208,7 @@ export async function GET(
           error,
           count
         })),
+        insufficient_balance_count: campaign.metadata?.insufficient_balance_count || 0,
         phone_analysis: {
           total_unique: uniquePhones.length,
           duplicates: totalSMS - uniquePhones.length

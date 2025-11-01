@@ -4,6 +4,7 @@ import { calculateSMSCount, calculateSMSCost as calculateSMSCostUtil } from '@/l
 import { verifyJWTToken } from '../../../../lib/jwt-utils'
 import crypto from 'crypto'
 import UnifiedWalletService from '@/lib/unified-wallet-service'
+import { getAirTouchSMSBalance } from '@/lib/sms-balance-utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -36,7 +37,6 @@ async function sendAirTouchSMS(username: string, password: string, to: string, f
     const isTestMode = !username || !password || username.includes('test') || password.includes('test') || username === '***encrypted***' || password === '***encrypted***'
     
     if (isTestMode) {
-      console.log(`🧪 Test Mode: Simulating SMS send to ${to}`)
       return {
         success: true,
         response: `TEST_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -76,8 +76,6 @@ async function sendAirTouchSMS(username: string, password: string, to: string, f
     
     const getUrl = `${apiUrl}?${params.toString()}`
 
-    console.log(`📱 Sending SMS to ${formattedPhone} via AirTouch API (GET)`)
-    console.log(`🔐 Using MD5 hashed password (length: ${hashedPassword.length})`)
 
     const response = await fetch(getUrl, {
       method: 'GET',
@@ -93,7 +91,7 @@ async function sendAirTouchSMS(username: string, password: string, to: string, f
       data = await response.json()
     } else {
       const text = await response.text()
-      console.error('⚠️ Non-JSON response from AirTouch API:', text)
+      // Non-JSON response from AirTouch API
       return {
         success: false,
         response: `Invalid API response format: ${text.substring(0, 200)}`,
@@ -101,7 +99,6 @@ async function sendAirTouchSMS(username: string, password: string, to: string, f
       }
     }
 
-    console.log('AirTouch API Response:', data)
 
     if (response.ok && data.status_code === '1000') {
       return {
@@ -211,6 +208,32 @@ export async function POST(request: NextRequest) {
     // Calculate SMS cost
     const smsCost = calculateSMSCost(message_content, smsSettings.sms_charge_per_message)
 
+    // Check AirTouch SMS balance before sending
+    const smsBalanceResult = await getAirTouchSMSBalance(username, apiKey)
+    
+    if (!smsBalanceResult.success) {
+      return NextResponse.json(
+        { success: false, error: `Failed to check SMS balance: ${smsBalanceResult.error}` },
+        { status: 500 }
+      )
+    }
+
+    const smsBalance = smsBalanceResult.balance
+
+    // Check if SMS balance is sufficient
+    const minRequiredBalance = smsCost + 1
+    if (smsBalance < minRequiredBalance) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Insufficient AirTouch SMS balance. Required: KES ${minRequiredBalance}, Available: KES ${smsBalance}`,
+          sms_balance: smsBalance,
+          required_balance: minRequiredBalance
+        },
+        { status: 400 }
+      )
+    }
+
     // Get SMS charge config for this partner (single source of truth)
     const { data: smsChargeConfig, error: chargeConfigError } = await supabase
       .from('partner_charges_config')
@@ -222,16 +245,8 @@ export async function POST(request: NextRequest) {
 
     // Handle case where charge config doesn't exist
     let chargeConfigId = null
-    if (chargeConfigError) {
-      if (chargeConfigError.code === 'PGRST116') {
-        // No rows returned - charge config doesn't exist
-        console.warn(`⚠️ SMS charge config not found for partner ${partner_id}. Transaction will be created without charge_config_id.`)
-      } else {
-        console.error('❌ Error fetching SMS charge config:', chargeConfigError)
-      }
-    } else if (smsChargeConfig) {
+    if (!chargeConfigError && smsChargeConfig) {
       chargeConfigId = smsChargeConfig.id
-      console.log(`✅ Found SMS charge config ID: ${chargeConfigId} for partner ${partner_id}`)
     }
 
     // Check partner wallet balance
@@ -272,7 +287,6 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (notificationError) {
-      console.error('Error creating SMS notification:', notificationError)
       return NextResponse.json(
         { success: false, error: 'Failed to create SMS notification record' },
         { status: 500 }
@@ -303,7 +317,7 @@ export async function POST(request: NextRequest) {
       .eq('id', smsNotification.id)
 
     if (updateError) {
-      console.error('Error updating SMS notification:', updateError)
+      // Log silently - notification created but update failed
     }
 
     // If SMS was sent successfully, deduct cost from wallet
@@ -331,28 +345,22 @@ export async function POST(request: NextRequest) {
         .select()
         .single()
 
-      if (transactionError) {
-        console.error('Error creating wallet transaction:', transactionError)
-      } else {
+      if (!transactionError) {
         // Update wallet balance using unified service
-        const balanceResult = await UnifiedWalletService.updateWalletBalance(
+        await UnifiedWalletService.updateWalletBalance(
           partner_id,
-          -smsCost, // Negative amount for deduction
+          -smsCost,
           'sms_charge',
           {
             reference: `SMS_${smsNotification.id}`,
             description: `SMS charge for ${recipient_phone}`,
-            charge_config_id: chargeConfigId, // Single source of truth
+            charge_config_id: chargeConfigId,
             sms_notification_id: smsNotification.id,
             phone_number: recipient_phone,
             message_length: message_content.length,
             sms_cost: smsCost
           }
         )
-
-        if (!balanceResult.success) {
-          console.error('Error updating wallet balance:', balanceResult.error)
-        }
 
         // Update SMS notification with wallet transaction ID
         await supabase
@@ -361,6 +369,10 @@ export async function POST(request: NextRequest) {
           .eq('id', smsNotification.id)
       }
     }
+
+    // Re-check SMS balance after sending to report current balance
+    const finalBalanceResult = await getAirTouchSMSBalance(username, apiKey)
+    const finalSmsBalance = finalBalanceResult.success ? finalBalanceResult.balance : null
 
     return NextResponse.json({
       success: smsResult.success,
@@ -373,13 +385,15 @@ export async function POST(request: NextRequest) {
           damza_reference: updateData.damza_reference
         },
         sms_cost: smsCost,
-        wallet_balance_after: smsResult.success ? wallet.current_balance - smsCost : wallet.current_balance
+        wallet_balance_after: smsResult.success ? wallet.current_balance - smsCost : wallet.current_balance,
+        sms_balance_before: smsBalance,
+        sms_balance_after: finalSmsBalance
       },
       error: smsResult.success ? null : smsResult.response
     })
 
   } catch (error) {
-    console.error('Send SMS Error:', error)
+    console.error('Send SMS error:', error)
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { verifyJWTToken } from '../../../../../../../lib/jwt-utils'
 import { calculateSMSCount, calculateSMSCost } from '@/lib/sms-utils'
 import crypto from 'crypto'
+import { getAirTouchSMSBalance } from '@/lib/sms-balance-utils'
 
 // Decryption function for sensitive data
 function decryptData(encryptedData: string, passphrase: string): string {
@@ -22,7 +23,6 @@ function decryptData(encryptedData: string, passphrase: string): string {
     decrypted += decipher.final('utf8')
     return decrypted
   } catch (error) {
-    console.error('Decryption error:', error)
     try {
       return Buffer.from(encryptedData, 'base64').toString('utf8')
     } catch (fallbackError) {
@@ -125,6 +125,64 @@ export async function POST(
       )
     }
 
+    // Decrypt credentials for balance check
+    const passphrase = process.env.JWT_SECRET
+    if (!passphrase) {
+      return NextResponse.json(
+        { success: false, error: 'JWT_SECRET environment variable is required' },
+        { status: 500 }
+      )
+    }
+    const decryptedApiKey = decryptData(smsSettings.damza_api_key, passphrase)
+    const decryptedUsername = decryptData(smsSettings.damza_username, passphrase)
+
+    // Check AirTouch SMS balance before starting campaign
+    const smsBalanceResult = await getAirTouchSMSBalance(decryptedUsername, decryptedApiKey)
+    
+    if (!smsBalanceResult.success) {
+      return NextResponse.json(
+        { success: false, error: `Failed to check SMS balance: ${smsBalanceResult.error}` },
+        { status: 500 }
+      )
+    }
+
+    const initialSmsBalance = smsBalanceResult.balance
+
+    // Calculate estimated total cost for all SMS in campaign
+    // Each message might be multiple SMS parts
+    let estimatedTotalSmsCost = 0
+    for (let i = 0; i < campaign.recipient_list.length; i++) {
+      let processedMessage = campaign.message_content
+      
+      // Process message with merge fields if CSV data is available
+      if (campaign.csv_data && campaign.csv_data[i]) {
+        const recipientData = campaign.csv_data[i]
+        Object.keys(recipientData).forEach(field => {
+          const placeholder = `{{${field}}}`
+          const value = recipientData[field]
+          processedMessage = processedMessage.replace(new RegExp(placeholder, 'g'), value)
+        })
+      }
+      
+      const smsCost = calculateSMSCost(processedMessage, smsSettings.sms_charge_per_message || 1)
+      estimatedTotalSmsCost += smsCost
+    }
+
+    // Check if SMS balance is sufficient
+    const minRequiredSmsBalance = estimatedTotalSmsCost + 1
+    if (initialSmsBalance < minRequiredSmsBalance) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Insufficient AirTouch SMS balance. Required: KES ${minRequiredSmsBalance}, Available: KES ${initialSmsBalance}. Please top up your AirTouch SMS account.`,
+          sms_balance: initialSmsBalance,
+          required_balance: minRequiredSmsBalance,
+          estimated_total_cost: estimatedTotalSmsCost
+        },
+        { status: 400 }
+      )
+    }
+
     // Update campaign status to sending
     const { error: updateError } = await supabase
       .from('sms_bulk_campaigns')
@@ -134,7 +192,6 @@ export async function POST(
       .eq('id', params.id)
 
     if (updateError) {
-      console.error('Error updating campaign status:', updateError)
       return NextResponse.json(
         { success: false, error: 'Failed to start campaign' },
         { status: 500 }
@@ -142,15 +199,20 @@ export async function POST(
     }
 
     // Process SMS sending in background
-    processSMSCampaign(campaign, smsSettings, wallet.current_balance)
+    processSMSCampaign(campaign, smsSettings, wallet.current_balance, initialSmsBalance)
 
     return NextResponse.json({
       success: true,
-      message: 'SMS campaign started successfully'
+      message: 'SMS campaign started successfully',
+      data: {
+        estimated_total_cost: estimatedTotalSmsCost,
+        sms_balance: initialSmsBalance,
+        recipient_count: campaign.recipient_list.length
+      }
     })
 
   } catch (error) {
-    console.error('Send SMS Campaign Error:', error)
+    console.error('Send SMS campaign error:', error)
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }
@@ -159,12 +221,24 @@ export async function POST(
 }
 
 // Background function to process SMS campaign
-async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance: number) {
+async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance: number, initialSmsBalance: number) {
   try {
     let sentCount = 0
     let deliveredCount = 0
     let failedCount = 0
+    let insufficientBalanceCount = 0
     let totalCost = 0
+    
+    // Decrypt credentials once
+    const passphrase = process.env.JWT_SECRET
+    if (!passphrase) {
+      throw new Error('JWT_SECRET environment variable is required')
+    }
+    const decryptedApiKey = decryptData(smsSettings.damza_api_key, passphrase)
+    const decryptedUsername = decryptData(smsSettings.damza_username, passphrase)
+    
+    // Track current SMS balance (will be updated as we send)
+    let currentSmsBalance = initialSmsBalance
 
     // Process each recipient
     for (let i = 0; i < campaign.recipient_list.length; i++) {
@@ -186,14 +260,31 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
           phoneNumber = '254' + phoneNumber
         }
         
+        // Calculate SMS cost for this message
+        const smsCost = calculateSMSCost(processedMessage, smsSettings.sms_charge_per_message || 1)
         
-        // Decrypt the API key before sending
-        const passphrase = process.env.JWT_SECRET
-        if (!passphrase) {
-          throw new Error('JWT_SECRET environment variable is required')
+        // Check SMS balance before sending this message
+        const minRequiredBalance = smsCost + 1
+        if (currentSmsBalance < minRequiredBalance) {
+          insufficientBalanceCount++
+          failedCount++
+          
+          // Create failed SMS notification record
+          await supabase
+            .from('sms_notifications')
+            .insert({
+              partner_id: campaign.partner_id,
+              recipient_phone: phoneNumber,
+              message_type: 'bulk_campaign',
+              message_content: processedMessage,
+              status: 'failed',
+              error_message: `Insufficient AirTouch SMS balance. Required: KES ${minRequiredBalance}, Available: KES ${currentSmsBalance}`,
+              bulk_campaign_id: campaign.id,
+              sent_at: new Date().toISOString()
+            })
+          
+          continue // Skip to next recipient
         }
-        const decryptedApiKey = decryptData(smsSettings.damza_api_key, passphrase)
-        const decryptedUsername = decryptData(smsSettings.damza_username, passphrase)
         
         // Process message with merge fields if CSV data is available
         if (campaign.csv_data && campaign.csv_data[i]) {
@@ -220,10 +311,8 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
 
         if (smsResponse.success) {
           deliveredCount++
-          // Calculate SMS cost based on actual message length (160 chars per SMS)
-          const smsCount = calculateSMSCount(processedMessage)
-          const smsCost = calculateSMSCost(processedMessage, smsSettings.sms_charge_per_message || 1)
           totalCost += smsCost
+          currentSmsBalance -= smsCost
 
           // Create SMS notification record
           await supabase
@@ -260,7 +349,7 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
         await new Promise(resolve => setTimeout(resolve, 100))
 
       } catch (error) {
-        console.error(`Error sending SMS to ${phoneNumber}:`, error)
+        console.error('Error sending SMS:', error)
         failedCount++
         sentCount++
 
@@ -280,6 +369,10 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
       }
     }
 
+    // Get final SMS balance for reporting
+    const finalBalanceResult = await getAirTouchSMSBalance(decryptedUsername, decryptedApiKey)
+    const finalSmsBalance = finalBalanceResult.success ? finalBalanceResult.balance : null
+
     // Update campaign final status
     const finalStatus = deliveredCount > 0 ? 'completed' : 'failed' // If at least one SMS delivered, mark as completed
     
@@ -291,7 +384,13 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
         total_cost: totalCost, // Update actual total cost
         delivered_count: deliveredCount,
         failed_count: failedCount,
-        sent_count: sentCount
+        sent_count: sentCount,
+        metadata: {
+          ...(campaign.metadata || {}),
+          sms_balance_before: initialSmsBalance,
+          sms_balance_after: finalSmsBalance,
+          insufficient_balance_count: insufficientBalanceCount
+        }
       })
       .eq('id', campaign.id)
 
@@ -305,7 +404,6 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
         .single()
 
       if (walletError || !wallet) {
-        console.error('Error fetching wallet for transaction:', walletError)
         return
       }
 
@@ -320,16 +418,8 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
 
       // Handle case where charge config doesn't exist
       let chargeConfigId = null
-      if (chargeConfigError) {
-        if (chargeConfigError.code === 'PGRST116') {
-          // No rows returned - charge config doesn't exist
-          console.warn(`⚠️ SMS charge config not found for partner ${campaign.partner_id}. Transaction will be created without charge_config_id.`)
-        } else {
-          console.error('❌ Error fetching SMS charge config:', chargeConfigError)
-        }
-      } else if (smsChargeConfig) {
+      if (!chargeConfigError && smsChargeConfig) {
         chargeConfigId = smsChargeConfig.id
-        console.log(`✅ Found SMS charge config ID: ${chargeConfigId} for partner ${campaign.partner_id}`)
       }
 
       await supabase
@@ -477,7 +567,7 @@ async function sendSMSViaAirTouch({
         }
       }
     } catch (error) {
-      console.error('AirTouch API Error:', error)
+      console.error('AirTouch API error:', error)
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -485,7 +575,7 @@ async function sendSMSViaAirTouch({
     }
 
   } catch (error) {
-    console.error('AirTouch SMS API Error:', error)
+    console.error('AirTouch SMS API error:', error)
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verifyJWTToken } from '../../../../../lib/jwt-utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,6 +9,23 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
+    // Authentication
+    const token = request.cookies.get('auth_token')?.value
+    if (!token) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const payload = await verifyJWTToken(token)
+    if (!payload || !payload.userId) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid authentication' },
+        { status: 401 }
+      )
+    }
+
     const { amount } = await request.json()
 
     if (!amount || amount < 1) {
@@ -17,16 +35,29 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get the current user's partner (for now, get first partner as demo)
+    // Get the current user's partner
+    const { data: currentUserData, error: userError } = await supabase
+      .from('users')
+      .select('partner_id')
+      .eq('id', payload.userId)
+      .single()
+
+    if (userError || !currentUserData?.partner_id) {
+      return NextResponse.json(
+        { success: false, error: 'Partner not found for user' },
+        { status: 404 }
+      )
+    }
+
     const { data: partners, error: partnersError } = await supabase
       .from('partners')
       .select('id')
-      .limit(1)
+      .eq('id', currentUserData.partner_id)
       .single()
 
     if (partnersError || !partners) {
       return NextResponse.json(
-        { success: false, error: 'No partner found' },
+        { success: false, error: 'Partner not found' },
         { status: 404 }
       )
     }
@@ -91,32 +122,14 @@ export async function POST(request: NextRequest) {
     const otpReference = `FLOAT_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
 
-    // Create OTP validation record
-    const { data: otpRecord, error: otpError } = await supabase
-      .from('otp_validations')
-      .insert({
-        reference: otpReference,
-        partner_id: partners.id,
-        phone_number: '254712345678', // This should come from partner settings
-        email_address: 'partner@example.com', // This should come from partner settings
-        otp_code: otpCode,
-        purpose: 'float_purchase',
-        amount: totalCost,
-        status: 'pending',
-        expires_at: expiresAt.toISOString()
-      })
-      .select()
+    // Get current user for OTP delivery
+    const { data: currentUser } = await supabase
+      .from('users')
+      .select('email, phone_number')
+      .eq('id', payload.userId)
       .single()
 
-    if (otpError) {
-      console.error('Error creating OTP record:', otpError)
-      return NextResponse.json(
-        { success: false, error: 'Failed to create OTP validation' },
-        { status: 500 }
-      )
-    }
-
-    // Create wallet transaction record
+    // Create wallet transaction record first
     const { data: walletTransaction, error: transactionError } = await supabase
       .from('wallet_transactions')
       .insert({
@@ -135,7 +148,8 @@ export async function POST(request: NextRequest) {
           total_cost: totalCost,
           charge_config_id: chargeConfig?.id,
           otp_required: true,
-          otp_reference: otpReference
+          otp_reference: otpReference,
+          b2c_account: '4120187'
         }
       })
       .select()
@@ -145,6 +159,37 @@ export async function POST(request: NextRequest) {
       console.error('Error creating wallet transaction:', transactionError)
       return NextResponse.json(
         { success: false, error: 'Failed to create transaction record' },
+        { status: 500 }
+      )
+    }
+
+    // Create OTP validation record with wallet_transaction_id
+    const { data: otpRecord, error: otpError } = await supabase
+      .from('otp_validations')
+      .insert({
+        reference: otpReference,
+        partner_id: partners.id,
+        phone_number: currentUser?.phone_number || '',
+        email_address: currentUser?.email || '',
+        otp_code: otpCode,
+        purpose: 'float_purchase',
+        amount: totalCost,
+        status: 'pending',
+        expires_at: expiresAt.toISOString(),
+        metadata: {
+          wallet_transaction_id: walletTransaction.id,
+          float_amount: amount,
+          charges: totalCharges,
+          total_cost: totalCost
+        }
+      })
+      .select()
+      .single()
+
+    if (otpError) {
+      console.error('Error creating OTP record:', otpError)
+      return NextResponse.json(
+        { success: false, error: 'Failed to create OTP validation' },
         { status: 500 }
       )
     }
