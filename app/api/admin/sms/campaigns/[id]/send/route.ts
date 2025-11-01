@@ -83,25 +83,50 @@ export async function POST(
       )
     }
 
-    // Get partner SMS settings
-    const { data: smsSettings, error: settingsError } = await supabase
-      .from('partner_sms_settings')
-      .select('*')
-      .eq('partner_id', campaign.partner_id)
-      .single()
+    // Get SMS credentials - prioritize environment variables for super_admin/admin
+    let smsSettings: any = null
+    let useEnvVars = false
 
-    if (settingsError || !smsSettings) {
-      return NextResponse.json(
-        { success: false, error: 'SMS settings not configured for this partner' },
-        { status: 400 }
-      )
+    // Check if super_admin/admin and environment variables are enabled
+    const superAdminSmsEnabled = process.env.SUPER_ADMIN_SMS_ENABLED === 'true'
+    if ((payload.role === 'super_admin' || payload.role === 'admin') && superAdminSmsEnabled) {
+      // Use environment variables for super_admin/admin (fastest path)
+      if (process.env.SUPER_ADMIN_SMS_USERNAME && process.env.SUPER_ADMIN_SMS_API_KEY) {
+        useEnvVars = true
+        smsSettings = {
+          damza_username: process.env.SUPER_ADMIN_SMS_USERNAME,
+          damza_api_key: process.env.SUPER_ADMIN_SMS_API_KEY,
+          damza_sender_id: process.env.SUPER_ADMIN_SMS_SENDER_ID || 'eazzypay',
+          sms_enabled: true,
+          sms_charge_per_message: 1, // Default, can be overridden
+          is_encrypted: false
+        }
+      }
     }
 
-    if (!smsSettings.sms_enabled) {
-      return NextResponse.json(
-        { success: false, error: 'SMS is disabled for this partner' },
-        { status: 400 }
-      )
+    // Fallback to database partner SMS settings if not using env vars
+    if (!useEnvVars) {
+      const { data: dbSmsSettings, error: settingsError } = await supabase
+        .from('partner_sms_settings')
+        .select('*')
+        .eq('partner_id', campaign.partner_id)
+        .single()
+
+      if (settingsError || !dbSmsSettings) {
+        return NextResponse.json(
+          { success: false, error: 'SMS settings not configured for this partner' },
+          { status: 400 }
+        )
+      }
+
+      if (!dbSmsSettings.sms_enabled) {
+        return NextResponse.json(
+          { success: false, error: 'SMS is disabled for this partner' },
+          { status: 400 }
+        )
+      }
+
+      smsSettings = dbSmsSettings
     }
 
     // Check partner wallet balance
@@ -125,16 +150,26 @@ export async function POST(
       )
     }
 
-    // Decrypt credentials for balance check
-    const passphrase = process.env.JWT_SECRET
-    if (!passphrase) {
-      return NextResponse.json(
-        { success: false, error: 'JWT_SECRET environment variable is required' },
-        { status: 500 }
-      )
+    // Get credentials (decrypt if from database, use as-is if from environment)
+    let decryptedApiKey = ''
+    let decryptedUsername = ''
+
+    if (useEnvVars) {
+      // Environment variables are already plain text
+      decryptedApiKey = smsSettings.damza_api_key
+      decryptedUsername = smsSettings.damza_username
+    } else {
+      // Decrypt credentials from database
+      const passphrase = process.env.JWT_SECRET
+      if (!passphrase) {
+        return NextResponse.json(
+          { success: false, error: 'JWT_SECRET environment variable is required' },
+          { status: 500 }
+        )
+      }
+      decryptedApiKey = decryptData(smsSettings.damza_api_key, passphrase)
+      decryptedUsername = decryptData(smsSettings.damza_username, passphrase)
     }
-    const decryptedApiKey = decryptData(smsSettings.damza_api_key, passphrase)
-    const decryptedUsername = decryptData(smsSettings.damza_username, passphrase)
 
     // Check AirTouch SMS balance before starting campaign
     const smsBalanceResult = await getAirTouchSMSBalance(decryptedUsername, decryptedApiKey)
@@ -150,6 +185,7 @@ export async function POST(
 
     // Calculate estimated total cost for all SMS in campaign
     // Each message might be multiple SMS parts
+    const smsChargePerMessage = useEnvVars ? 1 : (smsSettings.sms_charge_per_message || 1)
     let estimatedTotalSmsCost = 0
     for (let i = 0; i < campaign.recipient_list.length; i++) {
       let processedMessage = campaign.message_content
@@ -164,7 +200,7 @@ export async function POST(
         })
       }
       
-      const smsCost = calculateSMSCost(processedMessage, smsSettings.sms_charge_per_message || 1)
+      const smsCost = calculateSMSCost(processedMessage, smsChargePerMessage)
       estimatedTotalSmsCost += smsCost
     }
 
@@ -199,7 +235,7 @@ export async function POST(
     }
 
     // Process SMS sending in background
-    processSMSCampaign(campaign, smsSettings, wallet.current_balance, initialSmsBalance)
+    processSMSCampaign(campaign, smsSettings, wallet.current_balance, initialSmsBalance, useEnvVars)
 
     return NextResponse.json({
       success: true,
@@ -221,7 +257,7 @@ export async function POST(
 }
 
 // Background function to process SMS campaign
-async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance: number, initialSmsBalance: number) {
+async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance: number, initialSmsBalance: number, useEnvVars: boolean = false) {
   try {
     let sentCount = 0
     let deliveredCount = 0
@@ -229,13 +265,23 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
     let insufficientBalanceCount = 0
     let totalCost = 0
     
-    // Decrypt credentials once
-    const passphrase = process.env.JWT_SECRET
-    if (!passphrase) {
-      throw new Error('JWT_SECRET environment variable is required')
+    // Get credentials (decrypt if from database, use as-is if from environment)
+    let decryptedApiKey = ''
+    let decryptedUsername = ''
+
+    if (useEnvVars) {
+      // Environment variables are already plain text
+      decryptedApiKey = smsSettings.damza_api_key
+      decryptedUsername = smsSettings.damza_username
+    } else {
+      // Decrypt credentials from database
+      const passphrase = process.env.JWT_SECRET
+      if (!passphrase) {
+        throw new Error('JWT_SECRET environment variable is required')
+      }
+      decryptedApiKey = decryptData(smsSettings.damza_api_key, passphrase)
+      decryptedUsername = decryptData(smsSettings.damza_username, passphrase)
     }
-    const decryptedApiKey = decryptData(smsSettings.damza_api_key, passphrase)
-    const decryptedUsername = decryptData(smsSettings.damza_username, passphrase)
     
     // Track current SMS balance (will be updated as we send)
     let currentSmsBalance = initialSmsBalance

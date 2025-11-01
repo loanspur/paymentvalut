@@ -184,29 +184,68 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get partner SMS settings
-    const { data: smsSettings, error: settingsError } = await supabase
-      .from('partner_sms_settings')
-      .select('*')
-      .eq('partner_id', partner_id)
-      .eq('sms_enabled', true)
-      .single()
+    // Get SMS credentials - prioritize environment variables for super_admin/admin
+    let username = ''
+    let apiKey = ''
+    let senderId = ''
+    let isEncrypted = false
 
-    if (settingsError || !smsSettings) {
-      return NextResponse.json(
-        { success: false, error: 'SMS settings not found or disabled for this partner' },
-        { status: 404 }
-      )
+    // Check if super_admin/admin and environment variables are enabled
+    const superAdminSmsEnabled = process.env.SUPER_ADMIN_SMS_ENABLED === 'true'
+    if ((payload.role === 'super_admin' || payload.role === 'admin') && superAdminSmsEnabled) {
+      // Use environment variables for super_admin/admin (fastest path)
+      username = process.env.SUPER_ADMIN_SMS_USERNAME || ''
+      apiKey = process.env.SUPER_ADMIN_SMS_API_KEY || ''
+      senderId = process.env.SUPER_ADMIN_SMS_SENDER_ID || 'eazzypay'
+      isEncrypted = false
+
+      if (!username || !apiKey) {
+        return NextResponse.json(
+          { success: false, error: 'SMS credentials not configured in environment variables for super admin' },
+          { status: 400 }
+        )
+      }
+    } else {
+      // Fallback to database partner SMS settings
+      const { data: smsSettings, error: settingsError } = await supabase
+        .from('partner_sms_settings')
+        .select('*')
+        .eq('partner_id', partner_id)
+        .eq('sms_enabled', true)
+        .single()
+
+      if (settingsError || !smsSettings) {
+        return NextResponse.json(
+          { success: false, error: 'SMS settings not found or disabled for this partner' },
+          { status: 404 }
+        )
+      }
+
+      // Decrypt Damza credentials from database
+      const passphrase = process.env.JWT_SECRET || 'default-passphrase'
+      apiKey = decryptData(smsSettings.damza_api_key, passphrase)
+      username = decryptData(smsSettings.damza_username, passphrase)
+      senderId = smsSettings.damza_sender_id
+      isEncrypted = smsSettings.is_encrypted || false
     }
 
-    // Decrypt Damza credentials
-    const passphrase = process.env.JWT_SECRET || 'default-passphrase'
-    const apiKey = decryptData(smsSettings.damza_api_key, passphrase)
-    const username = decryptData(smsSettings.damza_username, passphrase)
-    const senderId = smsSettings.damza_sender_id
+    // Get SMS charge per message (from settings if using database, or use default)
+    let smsChargePerMessage = 1 // Default
+    if (!superAdminSmsEnabled || payload.role !== 'super_admin' && payload.role !== 'admin') {
+      // Get from database settings if not using env vars
+      const { data: smsSettings } = await supabase
+        .from('partner_sms_settings')
+        .select('sms_charge_per_message')
+        .eq('partner_id', partner_id)
+        .single()
+      
+      if (smsSettings?.sms_charge_per_message) {
+        smsChargePerMessage = smsSettings.sms_charge_per_message
+      }
+    }
 
     // Calculate SMS cost
-    const smsCost = calculateSMSCost(message_content, smsSettings.sms_charge_per_message)
+    const smsCost = calculateSMSCost(message_content, smsChargePerMessage)
 
     // Check AirTouch SMS balance before sending
     const smsBalanceResult = await getAirTouchSMSBalance(username, apiKey)
