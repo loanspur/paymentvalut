@@ -242,33 +242,29 @@ function HeaderBalance() {
             signal: controller.signal
           })
           
-          // Always log the response status
-          if (!res.ok) {
-            console.error(`SMS Balance API HTTP Error: ${res.status} ${res.statusText}`)
-          }
-          
           const data = await res.json()
           
           if (isMounted) {
             if (data?.success) {
               setSmsBalance(Number(data.balance || 0))
             } else {
-              // Log errors in production too for debugging - with full details
-              console.error('❌ SMS Balance API Error:', {
-                status: res.status,
-                statusText: res.statusText,
-                error: data.error,
-                debug: data.debug,
-                fullResponse: data
-              })
-              
-              // Show alert in production if credentials are missing
-              if (data.error?.includes('SMS credentials not configured')) {
-                console.warn('⚠️ SMS Credentials Missing:', data.debug)
-                console.warn('📋 Fix: Add environment variables in Digital Ocean App Platform:')
-                console.warn('   - SUPER_ADMIN_SMS_ENABLED=true')
-                console.warn('   - SUPER_ADMIN_SMS_USERNAME=your_username')
-                console.warn('   - SUPER_ADMIN_SMS_API_KEY=your_api_key')
+              // Only log once per session to reduce spam
+              const errorKey = 'sms_balance_error_logged'
+              if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem(errorKey)) {
+                sessionStorage.setItem(errorKey, 'true')
+                
+                if (data.error?.includes('SMS credentials not configured')) {
+                  console.warn('⚠️ SMS Balance: Credentials not configured. Check Digital Ocean environment variables:', {
+                    has_enabled: data.debug?.super_admin_sms_enabled === 'true',
+                    has_username: data.debug?.has_env_username,
+                    has_apikey: data.debug?.has_env_apikey,
+                    username_length: data.debug?.env_username_length,
+                    apikey_length: data.debug?.env_apikey_length
+                  })
+                  console.warn('📋 Required: SUPER_ADMIN_SMS_ENABLED, SUPER_ADMIN_SMS_USERNAME, SUPER_ADMIN_SMS_API_KEY')
+                } else {
+                  console.warn('SMS Balance Error:', data.error || 'Unknown error')
+                }
               }
               
               setSmsBalance(null)
@@ -277,21 +273,21 @@ function HeaderBalance() {
         } finally {
           clearTimeout(timeoutId)
         }
-      } catch (e: any) {
-        if (isMounted) {
-          // Log all errors except expected timeouts for debugging
-          if (e.name !== 'AbortError') {
-            console.error('SMS Balance fetch error:', {
-              name: e.name,
-              message: e.message,
-              stack: e.stack
-            })
+        } catch (e: any) {
+            if (isMounted) {
+              // Only log non-timeout errors once per session
+              if (e.name !== 'AbortError') {
+                const timeoutKey = 'sms_balance_timeout_logged'
+                if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem(timeoutKey)) {
+                  sessionStorage.setItem(timeoutKey, 'true')
+                  console.warn('SMS Balance fetch timeout - API may be slow')
+                }
+              }
+              setSmsBalance(null)
+            }
+          } finally {
+            if (isMounted) setSmsLoading(false)
           }
-          setSmsBalance(null)
-        }
-      } finally {
-        if (isMounted) setSmsLoading(false)
-      }
     }
     
     fetchSmsBalance()
