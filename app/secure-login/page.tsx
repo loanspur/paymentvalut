@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, User, Lock, Shield } from 'lucide-react'
-import Image from 'next/image'
 import OTPVerification from '../../components/OTPVerification'
 import EmailVerification from '../../components/EmailVerification'
 import PhoneVerification from '../../components/PhoneVerification'

@@ -7,6 +7,14 @@ const nextConfig = {
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_APP_DOMAIN: process.env.NEXT_PUBLIC_APP_DOMAIN,
   },
+  // Image optimization configuration
+  images: {
+    unoptimized: false,
+    remotePatterns: [],
+    formats: ['image/avif', 'image/webp'],
+    deviceSizes: [640, 750, 828, 1080, 1200],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+  },
   // Performance optimizations
   experimental: {
     optimizePackageImports: ['lucide-react', 'recharts', 'date-fns'],

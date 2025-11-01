@@ -29,7 +29,7 @@ import {
   MessageSquare,
   ClipboardList
 } from 'lucide-react'
-import Image from 'next/image'
+// import Image from 'next/image' // Using regular img tag to avoid Next.js optimization issues
 
 interface SidebarProps {
   className?: string
@@ -50,12 +50,20 @@ interface NavigationGroup {
 }
 
 export default function Sidebar({ className = '' }: SidebarProps) {
-  const [logoError, setLogoError] = useState(false)
+  const [logoError, setLogoError] = useState(true) // Start with true to avoid initial 400 error
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<string[]>(['core', 'management'])
   const { user, isAuthenticated, logout } = useAuth()
   const pathname = usePathname()
+
+  // Try to load logo once on mount
+  useEffect(() => {
+    const img = new window.Image()
+    img.onload = () => setLogoError(false)
+    img.onerror = () => setLogoError(true)
+    img.src = '/eazzypay-logo.png'
+  }, [])
 
   const handleLogout = async () => {
     try {
@@ -338,15 +346,17 @@ export default function Sidebar({ className = '' }: SidebarProps) {
                     <p className="text-xs text-gray-500">B2C Disbursement</p>
                   </div>
                 ) : (
-                  <Image
-                    src="/eazzypay-logo.png"
-                    alt="EazzyPay Logo"
-                    width={140}
-                    height={36}
-                    className="h-9 w-auto"
-                    priority
-                    onError={() => setLogoError(true)}
-                  />
+                  <div className="relative">
+                    <img
+                      src="/eazzypay-logo.png"
+                      alt="EazzyPay Logo"
+                      className="h-9 w-auto"
+                      onError={() => {
+                        setLogoError(true)
+                      }}
+                      onLoad={() => setLogoError(false)}
+                    />
+                  </div>
                 )}
               </div>
             )}
