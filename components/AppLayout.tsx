@@ -226,27 +226,53 @@ function HeaderBalance() {
 
   useEffect(() => {
     let isMounted = true
+    
+    // Fetch immediately on mount
     const fetchSmsBalance = async () => {
       if (!user) return
       try {
         setSmsLoading(true)
-        const res = await fetch('/api/sms/balance', { credentials: 'include' })
-        const data = await res.json()
-        if (isMounted) {
-          if (data?.success) {
-            setSmsBalance(Number(data.balance || 0))
-          } else {
-            setSmsBalance(null)
+        // Use abort controller for faster timeout
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 6000) // 6 second timeout
+        
+        try {
+          const res = await fetch('/api/sms/balance', { 
+            credentials: 'include',
+            signal: controller.signal
+          })
+          const data = await res.json()
+          
+          if (isMounted) {
+            if (data?.success) {
+              setSmsBalance(Number(data.balance || 0))
+            } else {
+              // Only log errors in development or if critical
+              if (process.env.NODE_ENV === 'development') {
+                console.error('SMS Balance API Error:', data.error, data.debug)
+              }
+              setSmsBalance(null)
+            }
           }
+        } finally {
+          clearTimeout(timeoutId)
         }
       } catch (e: any) {
-        if (isMounted) setSmsBalance(null)
+        if (isMounted) {
+          // Don't log abort errors (expected for timeout)
+          if (e.name !== 'AbortError' && process.env.NODE_ENV === 'development') {
+            console.error('SMS Balance fetch error:', e)
+          }
+          setSmsBalance(null)
+        }
       } finally {
         if (isMounted) setSmsLoading(false)
       }
     }
+    
     fetchSmsBalance()
-    const id = setInterval(fetchSmsBalance, 60_000)
+    // Refresh every 45 seconds (slightly faster than cache expiry for freshness)
+    const id = setInterval(fetchSmsBalance, 45_000)
     return () => { isMounted = false; clearInterval(id) }
   }, [user])
 

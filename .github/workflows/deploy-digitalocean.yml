@@ -1,0 +1,33 @@
+# NOTE: Digital Ocean App Platform automatically deploys from GitHub
+# You don't need this workflow file for App Platform deployments
+# App Platform has built-in CI/CD from GitHub
+
+# This file is kept for reference or if you want custom deployment logic
+# For App Platform, just connect your GitHub repo in the DO dashboard
+
+name: Deploy to Digital Ocean App Platform
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  # App Platform handles deployment automatically
+  # This workflow can be used for notifications or custom tasks
+  notify:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deployment Notification
+        run: |
+          echo "Deployment triggered! Digital Ocean App Platform will automatically deploy."
+          echo "Check your App Platform dashboard for deployment status."
+          
+      # Optional: Add Slack/email notifications here
+

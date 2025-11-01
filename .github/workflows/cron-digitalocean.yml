@@ -1,0 +1,48 @@
+# Cron Jobs for Digital Ocean App Platform
+# These run on GitHub Actions and call your App Platform endpoints
+
+name: Scheduled Cron Jobs
+
+on:
+  schedule:
+    # Disburse retry - every 5 minutes (matches Vercel cron)
+    - cron: '*/5 * * * *'
+  workflow_dispatch:  # Allow manual trigger for testing
+
+jobs:
+  disburse-retry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Disburse Retry Endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: https://eazzypay.online
+        run: |
+          echo "Running disburse retry cron job..."
+          response=$(curl -s -w "\n%{http_code}" \
+            -X GET \
+            -H "X-Cron-Secret: ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/disburse-retry")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+          
+          if [ "$http_code" -eq 200 ]; then
+            echo "✅ Disburse retry cron executed successfully"
+            echo "$body"
+          else
+            echo "❌ Disburse retry cron failed with status $http_code"
+            echo "$body"
+            exit 1
+          fi
+
+  # Add other cron jobs here
+  # balance-monitoring:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Call Balance Monitoring
+  #       run: |
+  #         curl -X GET \
+  #           -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+  #           https://eazzypay.online/api/cron/balance-monitoring
+

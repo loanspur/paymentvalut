@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyJWTToken } from '../../../../lib/jwt-utils'
 import crypto from 'crypto'
+import { getCachedCredentials, setCachedCredentials } from '../../../../lib/sms-credentials-cache'
+import { getCachedBalance, getCachedBalanceStrict, setCachedBalance } from '../../../../lib/sms-balance-cache'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -70,80 +72,116 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get SMS credentials from system settings or environment variables
+    // Fast path: Check environment variables first (instant, no DB query)
+    const superAdminSmsEnabled = process.env.SUPER_ADMIN_SMS_ENABLED === 'true'
     let username = ''
     let apiKey = ''
     let isEncrypted = false
-    let smsSettings = null
+    let cacheKey = 'default'
 
-    // For super_admin/admin, check environment variables first
-    if (payload.role === 'super_admin' || payload.role === 'admin') {
-      const superAdminSmsEnabled = process.env.SUPER_ADMIN_SMS_ENABLED === 'true'
-      
-      if (superAdminSmsEnabled) {
-        username = process.env.SUPER_ADMIN_SMS_USERNAME || ''
-        apiKey = process.env.SUPER_ADMIN_SMS_API_KEY || ''
-        isEncrypted = false // Environment variables are plain text
-      } else {
-        // Fallback to database settings - find any enabled SMS settings
-        const { data: systemSmsSettings } = await supabase
-          .from('partner_sms_settings')
-          .select('damza_username, damza_api_key, is_encrypted')
-          .eq('sms_enabled', true)
-          .limit(1)
-          .single()
-
-        if (systemSmsSettings) {
-          smsSettings = systemSmsSettings
-          username = systemSmsSettings.damza_username || ''
-          apiKey = systemSmsSettings.damza_api_key || ''
-          isEncrypted = systemSmsSettings.is_encrypted || false
-        }
-      }
+    if (superAdminSmsEnabled && process.env.SUPER_ADMIN_SMS_USERNAME && process.env.SUPER_ADMIN_SMS_API_KEY) {
+      // Environment variables - fastest path (no DB query, no cache needed)
+      username = process.env.SUPER_ADMIN_SMS_USERNAME
+      apiKey = process.env.SUPER_ADMIN_SMS_API_KEY
+      isEncrypted = false
     } else {
-      // For regular users, get partner SMS settings
-      const { data: userData } = await supabase
-        .from('users')
-        .select('partner_id')
-        .eq('id', payload.userId)
-        .single()
+      // Database lookup - use cache to avoid repeated queries
+      cacheKey = payload.role === 'super_admin' || payload.role === 'admin' ? 'admin' : `user_${payload.userId}`
+      
+      // Check cache first
+      const cached = getCachedCredentials(cacheKey)
+      if (cached) {
+        username = cached.username
+        apiKey = cached.apiKey
+        isEncrypted = cached.isEncrypted
+      } else {
+        // Cache miss - fetch from database
+        if (payload.role === 'super_admin' || payload.role === 'admin') {
+          // Admin: try to get any enabled SMS settings
+          const { data: systemSmsSettings } = await supabase
+            .from('partner_sms_settings')
+            .select('damza_username, damza_api_key, is_encrypted')
+            .eq('sms_enabled', true)
+            .limit(1)
+            .single()
 
-      if (userData?.partner_id) {
-        const { data: partnerSmsSettings } = await supabase
-          .from('partner_sms_settings')
-          .select('damza_username, damza_api_key, is_encrypted')
-          .eq('partner_id', userData.partner_id)
-          .eq('sms_enabled', true)
-          .single()
+          if (systemSmsSettings) {
+            username = systemSmsSettings.damza_username || ''
+            apiKey = systemSmsSettings.damza_api_key || ''
+            isEncrypted = systemSmsSettings.is_encrypted || false
+          }
+        } else {
+          // Regular user: get partner SMS settings (optimize with single query that gets user + partner settings)
+          const { data: userData } = await supabase
+            .from('users')
+            .select('partner_id')
+            .eq('id', payload.userId)
+            .single()
 
-        if (partnerSmsSettings) {
-          smsSettings = partnerSmsSettings
-          username = partnerSmsSettings.damza_username || ''
-          apiKey = partnerSmsSettings.damza_api_key || ''
-          isEncrypted = partnerSmsSettings.is_encrypted || false
+          if (userData?.partner_id) {
+            const { data: partnerSmsSettings } = await supabase
+              .from('partner_sms_settings')
+              .select('damza_username, damza_api_key, is_encrypted')
+              .eq('partner_id', userData.partner_id)
+              .eq('sms_enabled', true)
+              .single()
+
+            if (partnerSmsSettings) {
+              username = partnerSmsSettings.damza_username || ''
+              apiKey = partnerSmsSettings.damza_api_key || ''
+              isEncrypted = partnerSmsSettings.is_encrypted || false
+            }
+          }
+        }
+
+        // Final fallback: use any available enabled SMS settings
+        if (!username || !apiKey) {
+          const { data: anySmsSettings } = await supabase
+            .from('partner_sms_settings')
+            .select('damza_username, damza_api_key, is_encrypted')
+            .eq('sms_enabled', true)
+            .limit(1)
+            .single()
+
+          if (anySmsSettings) {
+            username = anySmsSettings.damza_username || ''
+            apiKey = anySmsSettings.damza_api_key || ''
+            isEncrypted = anySmsSettings.is_encrypted || false
+          }
+        }
+
+        // Cache credentials for future requests (5 minutes)
+        if (username && apiKey) {
+          setCachedCredentials(cacheKey, username, apiKey, isEncrypted)
         }
       }
     }
 
-    // Final fallback: use any available enabled SMS settings
     if (!username || !apiKey) {
-      const { data: anySmsSettings } = await supabase
-        .from('partner_sms_settings')
-        .select('damza_username, damza_api_key, is_encrypted')
-        .eq('sms_enabled', true)
-        .limit(1)
-        .single()
-
-      if (anySmsSettings) {
-        username = anySmsSettings.damza_username || ''
-        apiKey = anySmsSettings.damza_api_key || ''
-        isEncrypted = anySmsSettings.is_encrypted || false
+      // Enhanced error message for debugging
+      const debugInfo: any = {
+        error: 'SMS credentials not configured',
+        user_role: payload.role,
+        super_admin_sms_enabled: process.env.SUPER_ADMIN_SMS_ENABLED,
+        has_env_username: !!process.env.SUPER_ADMIN_SMS_USERNAME,
+        has_env_apikey: !!process.env.SUPER_ADMIN_SMS_API_KEY,
+        env_username_length: process.env.SUPER_ADMIN_SMS_USERNAME?.length || 0,
+        env_apikey_length: process.env.SUPER_ADMIN_SMS_API_KEY?.length || 0
       }
-    }
-
-    if (!username || !apiKey) {
+      
+      // Only include sensitive info in development
+      if (process.env.NODE_ENV === 'development') {
+        debugInfo.env_username_preview = process.env.SUPER_ADMIN_SMS_USERNAME?.substring(0, 3) + '...'
+      }
+      
+      console.error('SMS credentials not configured:', debugInfo)
+      
       return NextResponse.json(
-        { success: false, error: 'SMS credentials not configured' },
+        { 
+          success: false, 
+          error: 'SMS credentials not configured. Please check environment variables or database settings.',
+          debug: process.env.NODE_ENV === 'development' ? debugInfo : undefined
+        },
         { status: 400 }
       )
     }
@@ -158,10 +196,21 @@ export async function GET(request: NextRequest) {
       decryptedUsername = await decryptData(username, passphrase)
     }
 
+    // Check cached balance first (30 second cache)
+    const cachedBalance = getCachedBalanceStrict()
+    if (cachedBalance !== null) {
+      return NextResponse.json({
+        success: true,
+        balance: cachedBalance,
+        currency: 'KES',
+        cached: true
+      })
+    }
+
     // Calculate MD5 hash of API key for password (as per AirTouch API requirement)
     const hashedPassword = crypto.createHash('md5').update(decryptedApiKey).digest('hex')
 
-    // Call AirTouch balance API
+    // Call AirTouch balance API (reduced timeout to 5 seconds for faster failure)
     const balanceUrl = `https://client.airtouch.co.ke:9012/users/balance-api/?username=${encodeURIComponent(decryptedUsername)}&password=${encodeURIComponent(hashedPassword)}`
 
     let response: Response
@@ -172,12 +221,23 @@ export async function GET(request: NextRequest) {
         headers: {
           'Accept': 'application/json'
         },
-        signal: AbortSignal.timeout(10000)
+        signal: AbortSignal.timeout(5000) // Reduced from 10s to 5s
       })
 
       responseText = await response.text()
     } catch (fetchError: any) {
       if (fetchError.name === 'AbortError') {
+        // Return cached balance if available, even if expired
+        const expiredCache = getCachedBalance()
+        if (expiredCache !== null) {
+          return NextResponse.json({
+            success: true,
+            balance: expiredCache,
+            currency: 'KES',
+            cached: true,
+            warning: 'Using cached balance due to API timeout'
+          })
+        }
         return NextResponse.json(
           { success: false, error: 'Request timeout - AirTouch API did not respond in time' },
           { status: 408 }
@@ -211,7 +271,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Extract balance from response
+    // Extract balance from response (optimized)
     let balance = 0
     if (data.Balance !== undefined) {
       balance = data.Balance
@@ -230,10 +290,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const finalBalance = Number(balance)
+    
+    // Cache the balance for 30 seconds
+    setCachedBalance(finalBalance)
+
     return NextResponse.json({
       success: true,
-      balance: Number(balance),
-      currency: 'KES'
+      balance: finalBalance,
+      currency: 'KES',
+      cached: false
     })
   } catch (error: any) {
     console.error('SMS balance API error:', error)
