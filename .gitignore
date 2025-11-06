@@ -84,3 +84,8 @@ jspm_packages/
 
 # TernJS port file
 .tern-port
+
+# Large database dump files
+*.sql
+!supabase/migrations/*.sql
+!supabase/seed.sql
