@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verifyJWTToken } from '../../../lib/jwt-utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,6 +9,39 @@ const supabase = createClient(
 
 export async function GET(request: NextRequest) {
   try {
+    // Get authenticated user
+    const token = request.cookies.get('auth_token')?.value
+    
+    if (!token) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const payload = await verifyJWTToken(token)
+    
+    if (!payload || !payload.userId) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid session' },
+        { status: 401 }
+      )
+    }
+
+    // Get current user from database to get partner_id
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, role, partner_id, is_active')
+      .eq('id', payload.userId)
+      .single()
+
+    if (userError || !user || !user.is_active) {
+      return NextResponse.json(
+        { success: false, error: 'User not found or inactive' },
+        { status: 401 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
     const transaction_type = searchParams.get('transaction_type')
     const status = searchParams.get('status')
@@ -16,19 +50,68 @@ export async function GET(request: NextRequest) {
     const start_date = searchParams.get('start_date')
     const end_date = searchParams.get('end_date')
     const search = searchParams.get('search')
+    const requestedPartnerId = searchParams.get('partner_id')
     
     const offset = (page - 1) * limit
 
-    // Get all wallets
+    // Determine which partner's wallet to query
+    let partnerId: string | null = null
+    
+    if (user.role === 'super_admin' || user.role === 'admin') {
+      // Admins can query any partner
+      partnerId = requestedPartnerId || user.partner_id || null
+    } else {
+      // Regular users can only access their own partner
+      partnerId = user.partner_id
+    }
+
+    if (!partnerId) {
+      return NextResponse.json(
+        { success: false, error: 'No partner assigned' },
+        { status: 400 }
+      )
+    }
+
+    // Get wallet for the specific partner
     const { data: wallets, error: walletsError } = await supabase
       .from('partner_wallets')
       .select('id, current_balance, partner_id')
+      .eq('partner_id', partnerId)
 
-    if (walletsError || !wallets || wallets.length === 0) {
+    if (walletsError) {
+      console.error('Error fetching wallets:', walletsError)
       return NextResponse.json(
-        { success: false, error: 'No wallets found' },
-        { status: 404 }
+        { success: false, error: 'Failed to fetch wallet' },
+        { status: 500 }
       )
+    }
+
+    if (!wallets || wallets.length === 0) {
+      // Return empty result if no wallet exists
+      return NextResponse.json({
+        success: true,
+        data: [],
+        summary: {
+          total_transactions: 0,
+          total_amount: 0,
+          total_topups: 0,
+          total_disbursements: 0,
+          total_float_purchases: 0,
+          completed_transactions: 0,
+          pending_transactions: 0,
+          failed_transactions: 0,
+          today_transactions: 0,
+          today_amount: 0
+        },
+        pagination: {
+          page,
+          limit,
+          offset,
+          total: 0,
+          total_pages: 0,
+          has_more: false
+        }
+      })
     }
 
     // Get all partners
@@ -48,33 +131,38 @@ export async function GET(request: NextRequest) {
     }, {} as Record<string, any>) || {}
 
     // Build query for wallet transactions
+    // Apply filters FIRST, then pagination
     let query = supabase
       .from('wallet_transactions')
-      .select('*')
+      .select('*', { count: 'exact' })
       .in('wallet_id', walletIds)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1)
 
-    // Apply filters
+    // Apply filters BEFORE pagination
     if (transaction_type) {
       query = query.eq('transaction_type', transaction_type)
     }
 
     if (status) {
-      query = query.eq('status', status)
+      // Normalize status: map 'success' to 'completed' if needed
+      const normalizedStatus = status.toLowerCase() === 'success' ? 'completed' : status.toLowerCase()
+      query = query.eq('status', normalizedStatus)
     }
 
     if (start_date) {
-      query = query.gte('created_at', start_date)
+      query = query.gte('created_at', `${start_date}T00:00:00.000Z`)
     }
 
     if (end_date) {
-      query = query.lte('created_at', end_date)
+      query = query.lte('created_at', `${end_date}T23:59:59.999Z`)
     }
 
     if (search) {
       query = query.or(`reference.ilike.%${search}%,description.ilike.%${search}%`)
     }
+
+    // Apply ordering and pagination AFTER filters
+    query = query.order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1)
 
     const { data, error, count } = await query
 
@@ -163,7 +251,7 @@ export async function GET(request: NextRequest) {
       }
     }) || []
 
-    // Get transaction summary
+    // Get transaction summary (only for the filtered wallet)
     const { data: summaryData, error: summaryError } = await supabase
       .from('wallet_transactions')
       .select('transaction_type, amount, status, created_at')

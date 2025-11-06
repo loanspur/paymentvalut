@@ -172,6 +172,11 @@ export default function WalletPage() {
   const [selectedTransaction, setSelectedTransaction] = useState<WalletTransaction | null>(null)
   const [chargeStats, setChargeStats] = useState<ChargeStatistics | null>(null)
 
+  // Reset pagination to page 1 when filters change (except page changes)
+  useEffect(() => {
+    setPagination(prev => ({ ...prev, page: 1 }))
+  }, [filters.transaction_type, filters.status, filters.start_date, filters.end_date, filters.search])
+
   useEffect(() => {
     loadWalletData()
     loadTransactions()
@@ -531,6 +536,8 @@ export default function WalletPage() {
       end_date: '',
       search: ''
     })
+    // Reset pagination to page 1 when clearing filters
+    setPagination(prev => ({ ...prev, page: 1 }))
   }
 
   const goToPage = (page: number) => {
@@ -805,7 +812,7 @@ export default function WalletPage() {
 
         {/* Search and Filters */}
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
             {/* Search */}
             <div className="md:col-span-2">
               <div className="relative">
@@ -849,7 +856,7 @@ export default function WalletPage() {
               </select>
             </div>
 
-            {/* Date Range */}
+            {/* Start Date */}
             <div>
               <input
                 type="date"
@@ -857,6 +864,20 @@ export default function WalletPage() {
                 value={filters.start_date}
                 onChange={(e) => setFilters(prev => ({ ...prev, start_date: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                title="Start Date"
+              />
+            </div>
+
+            {/* End Date */}
+            <div>
+              <input
+                type="date"
+                placeholder="End Date"
+                value={filters.end_date}
+                onChange={(e) => setFilters(prev => ({ ...prev, end_date: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                title="End Date"
+                min={filters.start_date || undefined}
               />
             </div>
 
