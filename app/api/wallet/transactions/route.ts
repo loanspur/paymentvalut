@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyJWTToken } from '../../../lib/jwt-utils'
+import { verifyJWTToken } from '../../../../lib/jwt-utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -139,7 +139,14 @@ export async function GET(request: NextRequest) {
 
     // Apply filters BEFORE pagination
     if (transaction_type) {
-      query = query.eq('transaction_type', transaction_type)
+      // Normalize transaction_type: handle both 'top_up' and 'topup'
+      let normalizedType = transaction_type.toLowerCase()
+      if (normalizedType === 'top_up' || normalizedType === 'topup') {
+        // Check for both 'top_up' and 'topup' in database (handle legacy values)
+        query = query.in('transaction_type', ['top_up', 'topup'])
+      } else {
+        query = query.eq('transaction_type', normalizedType)
+      }
     }
 
     if (status) {

@@ -836,9 +836,13 @@ export default function WalletPage() {
               >
                 <option value="">All Types</option>
                 <option value="top_up">Top Up</option>
+                <option value="topup">Top Up (Legacy)</option>
                 <option value="disbursement">Disbursement</option>
                 <option value="b2c_float_purchase">B2C Float</option>
                 <option value="charge">Charge</option>
+                <option value="manual_credit">Manual Credit</option>
+                <option value="manual_debit">Manual Debit</option>
+                <option value="sms_charge">SMS Charge</option>
               </select>
             </div>
 

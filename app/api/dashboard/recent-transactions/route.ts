@@ -75,7 +75,21 @@ export async function GET(request: NextRequest) {
       disbursementQuery = disbursementQuery.lte('created_at', endDate)
     }
     if (status && status !== 'all') {
-      disbursementQuery = disbursementQuery.eq('status', status)
+      // Normalize status values: map 'completed' to 'success', 'pending' to 'queued' or 'accepted'
+      const normalizedStatus = status.toLowerCase()
+      if (normalizedStatus === 'completed' || normalizedStatus === 'success') {
+        // Check for both 'success' status
+        disbursementQuery = disbursementQuery.eq('status', 'success')
+      } else if (normalizedStatus === 'pending') {
+        // Check for 'queued' or 'accepted' status
+        disbursementQuery = disbursementQuery.in('status', ['queued', 'accepted'])
+      } else if (normalizedStatus === 'failed' || normalizedStatus === 'error') {
+        // Check for 'failed' status
+        disbursementQuery = disbursementQuery.eq('status', 'failed')
+      } else {
+        // Use the status as-is
+        disbursementQuery = disbursementQuery.eq('status', normalizedStatus)
+      }
     }
     if (search) {
       disbursementQuery = disbursementQuery.or(`msisdn.ilike.%${search}%,customer_name.ilike.%${search}%,conversation_id.ilike.%${search}%`)

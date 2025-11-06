@@ -89,16 +89,16 @@ export default function HistoryPage() {
     return () => clearTimeout(timer)
   }, [searchTerm])
 
-  // Load data only when pagination or date filters change (client-side filtering for search/status)
+  // Load data when pagination, date filters, or status filter changes
   useEffect(() => {
     loadDisbursements()
     
     // Auto-refresh every 30 seconds
     const interval = setInterval(loadDisbursements, AUTO_REFRESH_INTERVALS.TRANSACTION_HISTORY)
     return () => clearInterval(interval)
-  }, [currentPage, itemsPerPage, filterDateRange])
+  }, [currentPage, itemsPerPage, filterDateRange, statusFilter])
 
-  // Client-side filtering when search term or status changes
+  // Client-side filtering only for search term (status is filtered server-side)
   useEffect(() => {
     setIsFiltering(true)
     
@@ -106,7 +106,7 @@ export default function HistoryPage() {
     const timer = setTimeout(() => {
       let filtered = allDisbursements
 
-      // Apply search filter
+      // Apply search filter (client-side for real-time search)
       if (searchTerm.trim() !== '') {
         const searchLower = searchTerm.toLowerCase()
         filtered = filtered.filter(disbursement => {
@@ -121,30 +121,25 @@ export default function HistoryPage() {
         })
       }
 
-      // Apply status filter
-      if (statusFilter !== 'all') {
-        filtered = filtered.filter(disbursement => 
-          disbursement.status?.toLowerCase() === statusFilter.toLowerCase()
-        )
-      }
-
+      // Status filtering is now done server-side, so we don't need to filter here
       setDisbursements(filtered)
       setIsFiltering(false)
     }, 100) // Brief delay for smooth UX
 
     return () => clearTimeout(timer)
-  }, [searchTerm, statusFilter, allDisbursements])
+  }, [searchTerm, allDisbursements])
 
   const loadDisbursements = async () => {
     try {
       setLoading(true)
       
-      // Build query parameters - only use date filters and pagination for server calls
+      // Build query parameters - include status filter for server-side filtering
       const params = new URLSearchParams({
         limit: itemsPerPage.toString(),
         page: currentPage.toString(),
         ...(filterDateRange.startDate && { startDate: filterDateRange.startDate }),
-        ...(filterDateRange.endDate && { endDate: filterDateRange.endDate })
+        ...(filterDateRange.endDate && { endDate: filterDateRange.endDate }),
+        ...(statusFilter !== 'all' && { status: statusFilter })
       })
       
       const response = await fetch(`/api/dashboard/recent-transactions?${params}`)
