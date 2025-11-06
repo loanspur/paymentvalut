@@ -196,7 +196,8 @@ function HeaderBalance() {
       if (!user) return
       try {
         setLoading(true)
-        if (user.role === 'super_admin' || user.role === 'admin') {
+        // Super admin sees total balance, others see their partner's wallet balance
+        if (user.role === 'super_admin') {
           const res = await fetch('/api/admin/wallets/partners', { credentials: 'include' })
           const data = await res.json()
           if (isMounted && data?.success) {
@@ -205,10 +206,12 @@ function HeaderBalance() {
             setLabel('Total Balance')
           }
         } else {
+          // For admin, partner_admin, partner, etc. - show their partner's wallet balance
           const res = await fetch('/api/wallet/balance', { credentials: 'include' })
           const data = await res.json()
           if (isMounted && data?.success) {
-            const bal = Number(data?.wallet?.currentBalance || 0)
+            // Use current_balance from wallet data (consistent with wallet page)
+            const bal = Number(data?.wallet?.currentBalance || data?.wallet?.current_balance || 0)
             setAmount(bal)
             setLabel('Wallet')
           }
@@ -226,6 +229,12 @@ function HeaderBalance() {
 
       useEffect(() => {
         let isMounted = true
+        
+        // Only fetch SMS balance for super_admin
+        if (user?.role !== 'super_admin') {
+          setSmsBalance(null)
+          return
+        }
         
         // Fetch immediately on mount
         const fetchSmsBalance = async () => {
@@ -281,12 +290,14 @@ function HeaderBalance() {
         <span className="text-xs text-gray-500 mr-1">{label}</span>
         <span className="text-sm font-semibold text-gray-900">{loading || amount === null ? '—' : formatCurrency(amount)}</span>
       </div>
-      {/* SMS Balance */}
-      <div className="flex items-center px-2 py-1 rounded-lg border border-gray-200 bg-white">
-        <MessageSquare className="w-4 h-4 text-green-600 mr-2" />
-        <span className="text-xs text-gray-500 mr-1">SMS</span>
-        <span className="text-sm font-semibold text-gray-900">{smsLoading || smsBalance === null ? '—' : formatCurrency(smsBalance)}</span>
-      </div>
+      {/* SMS Balance - Only show for super_admin */}
+      {user?.role === 'super_admin' && (
+        <div className="flex items-center px-2 py-1 rounded-lg border border-gray-200 bg-white">
+          <MessageSquare className="w-4 h-4 text-green-600 mr-2" />
+          <span className="text-xs text-gray-500 mr-1">SMS</span>
+          <span className="text-sm font-semibold text-gray-900">{smsLoading || smsBalance === null ? '—' : formatCurrency(smsBalance)}</span>
+        </div>
+      )}
     </div>
   )
 }

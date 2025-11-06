@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "migrate:convert": "python scripts/convert_mysql_to_postgresql.py",
+    "sync:full": "ts-node scripts/sync_mifos_to_supabase.ts full",
+    "sync:incremental": "ts-node scripts/sync_mifos_to_supabase.ts incremental",
+    "sync:table": "ts-node scripts/sync_mifos_to_supabase.ts table",
+    "import:csv": "ts-node scripts/import_csv_to_supabase.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.2.3",
@@ -16,12 +21,14 @@
     "bcryptjs": "^3.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "csv-parse": "^5.5.0",
     "date-fns": "^2.30.0",
     "dotenv": "^17.2.2",
     "jose": "^6.1.0",
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^3.0.3",
     "lucide-react": "^0.294.0",
+    "mysql2": "^3.6.0",
     "next": "^14.2.32",
     "node-fetch": "^3.3.2",
     "otplib": "^12.0.1",
@@ -43,6 +50,7 @@
     "@types/react-dom": "^18",
     "eslint": "^8",
     "eslint-config-next": "14.0.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5"
   }
 }

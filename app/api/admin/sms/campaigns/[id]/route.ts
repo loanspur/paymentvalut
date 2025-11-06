@@ -7,6 +7,63 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// Helper function to update campaign status based on actual SMS notifications
+async function updateCampaignStatusFromNotifications(campaignId: string) {
+  // Get all SMS notifications for this campaign
+  const { data: notifications, error: notifError } = await supabase
+    .from('sms_notifications')
+    .select('status')
+    .eq('bulk_campaign_id', campaignId)
+
+  if (notifError || !notifications || notifications.length === 0) {
+    return null
+  }
+
+  // Count statuses
+  const sentCount = notifications.filter(n => n.status === 'sent' || n.status === 'delivered').length
+  const failedCount = notifications.filter(n => n.status === 'failed').length
+  const pendingCount = notifications.filter(n => n.status === 'pending').length
+  const totalCount = notifications.length
+
+  // Determine campaign status based on notifications
+  let campaignStatus = 'sending'
+  if (pendingCount === 0 && totalCount > 0) {
+    // All SMS have been processed
+    if (sentCount > 0) {
+      campaignStatus = 'completed'
+    } else {
+      campaignStatus = 'failed'
+    }
+  }
+
+  // Update campaign if status changed
+  const { data: campaign } = await supabase
+    .from('sms_bulk_campaigns')
+    .select('status')
+    .eq('id', campaignId)
+    .single()
+
+  if (campaign && campaign.status !== campaignStatus) {
+    await supabase
+      .from('sms_bulk_campaigns')
+      .update({
+        status: campaignStatus,
+        delivered_count: sentCount,
+        failed_count: failedCount,
+        sent_count: totalCount
+      })
+      .eq('id', campaignId)
+  }
+
+  return {
+    status: campaignStatus,
+    sent_count: sentCount,
+    failed_count: failedCount,
+    pending_count: pendingCount,
+    total_count: totalCount
+  }
+}
+
 // GET - Fetch specific SMS campaign
 export async function GET(
   request: NextRequest,
@@ -50,6 +107,40 @@ export async function GET(
         { success: false, error: 'Campaign not found' },
         { status: 404 }
       )
+    }
+
+    // If campaign is in 'sending' status, check actual SMS notifications to update status
+    if (data.status === 'sending') {
+      const statusUpdate = await updateCampaignStatusFromNotifications(params.id)
+      if (statusUpdate) {
+        // Refetch campaign with updated status
+        const { data: updatedCampaign } = await supabase
+          .from('sms_bulk_campaigns')
+          .select(`
+            *,
+            partners:partner_id (
+              id,
+              name,
+              short_code,
+              is_active
+            ),
+            sms_templates:template_id (
+              id,
+              template_name,
+              template_content,
+              template_type
+            )
+          `)
+          .eq('id', params.id)
+          .single()
+
+        if (updatedCampaign) {
+          return NextResponse.json({
+            success: true,
+            data: updatedCampaign
+          })
+        }
+      }
     }
 
     return NextResponse.json({

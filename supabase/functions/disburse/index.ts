@@ -632,89 +632,71 @@ serve(async (req) => {
       client_request_id: body.client_request_id
     })
 
-    // 💰 NEW: Deduct charges from wallet after successful disbursement (only if wallet integration is enabled)
+    // 💰 NEW: Create pending wallet transaction for charges (only if wallet integration is enabled)
+    // Balance will be deducted when disbursement status becomes 'success' in M-Pesa callback
     if (walletIntegrationEnabled && chargeAmount > 0 && disbursementCharge && wallet) {
-      console.log('💰 [Wallet] Deducting disbursement charges from wallet...')
+      console.log('💰 [Wallet] Creating pending wallet transaction for disbursement charges...')
       
       try {
-        // Update wallet balance
-        const { error: walletUpdateError } = await supabaseClient
-          .from('partner_wallets')
-          .update({ 
-            current_balance: wallet.current_balance - chargeAmount,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', wallet.id)
-
-        if (walletUpdateError) {
-          console.error('❌ [Wallet] Error updating wallet balance:', walletUpdateError.message)
-          // Note: We don't fail the disbursement here since M-Pesa transaction was successful
-          // The charge deduction can be handled manually if needed
-        } else {
-          console.log('✅ [Wallet] Wallet balance updated successfully:', {
-            old_balance: wallet.current_balance,
-            charge_deducted: chargeAmount,
-            new_balance: wallet.current_balance - chargeAmount
-          })
-
-          // Create wallet transaction record for the charge
-          const { error: walletTransactionError } = await supabaseClient
-            .from('wallet_transactions')
-            .insert({
-              wallet_id: wallet.id,
-              transaction_type: 'charge',
-              amount: -chargeAmount, // Negative amount (debit)
-              currency: wallet.currency || 'KES',
-              status: 'completed',
-              description: `Disbursement charge for ${body.amount} KES to ${body.msisdn}`,
-              reference: `DISBURSEMENT_CHARGE_${disbursementRequest?.id}`,
-              metadata: {
-                disbursement_id: disbursementRequest?.id,
-                disbursement_amount: body.amount,
-                charge_config_id: disbursementCharge.id,
-                charge_name: disbursementCharge.charge_name,
-                conversation_id: b2cData.ConversationID,
-                client_request_id: body.client_request_id
-              }
-            })
-
-          if (walletTransactionError) {
-            console.error('❌ [Wallet] Error creating wallet transaction record:', walletTransactionError.message)
-          } else {
-            console.log('✅ [Wallet] Wallet transaction record created for charge')
-          }
-
-          // Create partner charge transaction record
-          const { error: chargeTransactionError } = await supabaseClient
-            .from('partner_charge_transactions')
-            .insert({
-              partner_id: partner.id,
-              wallet_id: wallet.id,
+        // Create wallet transaction record with status 'pending' (will be completed when disbursement succeeds)
+        const { error: walletTransactionError } = await supabaseClient
+          .from('wallet_transactions')
+          .insert({
+            wallet_id: wallet.id,
+            transaction_type: 'charge',
+            amount: -chargeAmount, // Negative amount (debit)
+            currency: wallet.currency || 'KES',
+            status: 'pending', // Will be updated to 'completed' when disbursement succeeds
+            description: `Disbursement charge for ${body.amount} KES to ${body.msisdn}`,
+            reference: `DISBURSEMENT_CHARGE_${disbursementRequest?.id}`,
+            metadata: {
+              disbursement_id: disbursementRequest?.id,
+              disbursement_amount: body.amount,
               charge_config_id: disbursementCharge.id,
-              related_transaction_id: disbursementRequest?.id,
-              related_transaction_type: 'disbursement',
-              charge_amount: chargeAmount,
-              currency: wallet.currency || 'KES',
-              transaction_type: 'debit',
-              status: 'completed',
-              description: `Automatic disbursement charge for ${body.amount} KES disbursement`,
-              metadata: {
-                disbursement_id: disbursementRequest?.id,
-                disbursement_amount: body.amount,
-                conversation_id: b2cData.ConversationID,
-                client_request_id: body.client_request_id,
-                msisdn: body.msisdn
-              }
-            })
+              charge_name: disbursementCharge.charge_name,
+              conversation_id: b2cData.ConversationID,
+              client_request_id: body.client_request_id,
+              wallet_balance_before: wallet.current_balance
+            }
+          })
 
-          if (chargeTransactionError) {
-            console.error('❌ [Wallet] Error creating partner charge transaction record:', chargeTransactionError.message)
-          } else {
-            console.log('✅ [Wallet] Partner charge transaction record created')
-          }
+        if (walletTransactionError) {
+          console.error('❌ [Wallet] Error creating pending wallet transaction record:', walletTransactionError.message)
+        } else {
+          console.log('✅ [Wallet] Pending wallet transaction record created for charge (will be completed when disbursement succeeds)')
+        }
+
+        // Create partner charge transaction record with status 'pending'
+        const { error: chargeTransactionError } = await supabaseClient
+          .from('partner_charge_transactions')
+          .insert({
+            partner_id: partner.id,
+            wallet_id: wallet.id,
+            charge_config_id: disbursementCharge.id,
+            related_transaction_id: disbursementRequest?.id,
+            related_transaction_type: 'disbursement',
+            charge_amount: chargeAmount,
+            currency: wallet.currency || 'KES',
+            transaction_type: 'debit',
+            status: 'pending', // Will be updated to 'completed' when disbursement succeeds
+            description: `Automatic disbursement charge for ${body.amount} KES disbursement`,
+            metadata: {
+              disbursement_id: disbursementRequest?.id,
+              disbursement_amount: body.amount,
+              conversation_id: b2cData.ConversationID,
+              client_request_id: body.client_request_id,
+              msisdn: body.msisdn,
+              wallet_balance_before: wallet.current_balance
+            }
+          })
+
+        if (chargeTransactionError) {
+          console.error('❌ [Wallet] Error creating pending partner charge transaction record:', chargeTransactionError.message)
+        } else {
+          console.log('✅ [Wallet] Pending partner charge transaction record created')
         }
       } catch (walletError) {
-        console.error('❌ [Wallet] Error processing wallet charge deduction:', walletError.message)
+        console.error('❌ [Wallet] Error creating pending wallet transaction:', walletError.message)
         // Note: We don't fail the disbursement here since M-Pesa transaction was successful
       }
     } else {

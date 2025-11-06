@@ -163,6 +163,158 @@ export async function POST(request: NextRequest) {
       console.log(`✅ Updated disbursement ${disbursementRequest.id} with status: ${finalStatus}`)
     }
 
+    // 💰 NEW: Process wallet charge deduction based on disbursement status
+    if (finalStatus === 'success') {
+      // Disbursement succeeded - deduct wallet balance and complete pending transactions
+      try {
+        // Find pending wallet transaction for this disbursement
+        const { data: walletTransaction, error: wtFindError } = await supabase
+          .from('wallet_transactions')
+          .select('*')
+          .eq('reference', `DISBURSEMENT_CHARGE_${disbursementRequest.id}`)
+          .eq('status', 'pending')
+          .single()
+
+        if (!wtFindError && walletTransaction) {
+          const chargeAmount = Math.abs(walletTransaction.amount)
+          
+          // Get current wallet balance
+          const { data: wallet, error: walletError } = await supabase
+            .from('partner_wallets')
+            .select('current_balance')
+            .eq('id', walletTransaction.wallet_id)
+            .single()
+
+          if (!walletError && wallet) {
+            const newBalance = wallet.current_balance - chargeAmount
+
+            // Update wallet balance
+            const { error: walletUpdateError } = await supabase
+              .from('partner_wallets')
+              .update({
+                current_balance: newBalance,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', walletTransaction.wallet_id)
+
+            if (walletUpdateError) {
+              console.error('❌ [Wallet] Error updating wallet balance:', walletUpdateError)
+            } else {
+              console.log('✅ [Wallet] Wallet balance deducted successfully:', {
+                old_balance: wallet.current_balance,
+                charge_deducted: chargeAmount,
+                new_balance: newBalance
+              })
+
+              // Update wallet transaction status to completed
+              const { error: wtUpdateError } = await supabase
+                .from('wallet_transactions')
+                .update({
+                  status: 'completed',
+                  metadata: {
+                    ...(walletTransaction.metadata || {}),
+                    wallet_balance_before: wallet.current_balance,
+                    wallet_balance_after: newBalance,
+                    completed_at: new Date().toISOString()
+                  },
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', walletTransaction.id)
+
+              if (wtUpdateError) {
+                console.error('❌ [Wallet] Error updating wallet transaction status:', wtUpdateError)
+              } else {
+                console.log('✅ [Wallet] Wallet transaction status updated to completed')
+              }
+
+              // Update partner charge transaction status to completed
+              const { error: pctUpdateError } = await supabase
+                .from('partner_charge_transactions')
+                .update({
+                  status: 'completed',
+                  wallet_balance_before: wallet.current_balance,
+                  wallet_balance_after: newBalance,
+                  metadata: {
+                    ...(walletTransaction.metadata || {}),
+                    wallet_balance_before: wallet.current_balance,
+                    wallet_balance_after: newBalance,
+                    completed_at: new Date().toISOString()
+                  },
+                  updated_at: new Date().toISOString()
+                })
+                .eq('related_transaction_id', disbursementRequest.id)
+                .eq('status', 'pending')
+
+              if (pctUpdateError) {
+                console.error('❌ [Wallet] Error updating partner charge transaction status:', pctUpdateError)
+              } else {
+                console.log('✅ [Wallet] Partner charge transaction status updated to completed')
+              }
+            }
+          }
+        } else if (wtFindError && wtFindError.code !== 'PGRST116') {
+          console.log('💰 [Wallet] No pending wallet transaction found for this disbursement (may not have charges configured)')
+        }
+      } catch (walletError) {
+        console.error('❌ [Wallet] Error processing wallet charge deduction:', walletError)
+        // Don't fail the callback if wallet update fails
+      }
+    } else if (finalStatus === 'failed') {
+      // Disbursement failed - mark pending transactions as failed (don't deduct balance)
+      try {
+        // Find pending wallet transaction for this disbursement
+        const { data: failedWalletTransaction, error: wtFindError } = await supabase
+          .from('wallet_transactions')
+          .select('*')
+          .eq('reference', `DISBURSEMENT_CHARGE_${disbursementRequest.id}`)
+          .eq('status', 'pending')
+          .single()
+
+        if (!wtFindError && failedWalletTransaction) {
+          const { error: wtUpdateError } = await supabase
+            .from('wallet_transactions')
+            .update({
+              status: 'failed',
+              metadata: {
+                ...(failedWalletTransaction.metadata || {}),
+                failure_reason: Result.ResultDesc || 'Disbursement failed',
+                failed_at: new Date().toISOString()
+              },
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', failedWalletTransaction.id)
+
+          if (wtUpdateError) {
+            console.error('❌ [Wallet] Error updating wallet transaction status to failed:', wtUpdateError)
+          } else {
+            console.log('✅ [Wallet] Wallet transaction status updated to failed (balance not deducted)')
+          }
+
+          // Update partner charge transaction status to failed
+          const { error: pctUpdateError } = await supabase
+            .from('partner_charge_transactions')
+            .update({
+              status: 'failed',
+              metadata: {
+                failure_reason: Result.ResultDesc || 'Disbursement failed',
+                failed_at: new Date().toISOString()
+              },
+              updated_at: new Date().toISOString()
+            })
+            .eq('related_transaction_id', disbursementRequest.id)
+            .eq('status', 'pending')
+
+          if (pctUpdateError) {
+            console.error('❌ [Wallet] Error updating partner charge transaction status to failed:', pctUpdateError)
+          } else {
+            console.log('✅ [Wallet] Partner charge transaction status updated to failed')
+          }
+        }
+      } catch (walletError) {
+        console.error('❌ [Wallet] Error processing failed wallet transaction:', walletError)
+      }
+    }
+
     // Log the callback
     await supabase
       .from('mpesa_callbacks')

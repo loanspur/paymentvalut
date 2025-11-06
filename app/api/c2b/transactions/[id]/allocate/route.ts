@@ -83,15 +83,15 @@ export async function POST(
     try {
       const balanceResult = await UnifiedWalletService.updateWalletBalance(
         partner_id,
-        transaction.transaction_amount,
+        transaction.amount,
         'top_up',
         {
           reference: `C2B_${transactionId}`,
-          description: `C2B allocation from ${transaction.msisdn}`,
+          description: `C2B allocation from ${transaction.customer_phone || transaction.transaction_id}`,
           c2b_transaction_id: transactionId,
           customer_name: transaction.customer_name,
-          phone_number: transaction.msisdn,
-          original_amount: transaction.transaction_amount
+          phone_number: transaction.customer_phone,
+          original_amount: transaction.amount
         }
       )
 

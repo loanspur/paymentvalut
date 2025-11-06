@@ -26,8 +26,6 @@ export default function SecureLoginPage() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        console.log('🔍 Checking authentication status...')
-        
         const response = await fetch('/api/auth/me', {
           method: 'GET',
           credentials: 'include',
@@ -37,46 +35,27 @@ export default function SecureLoginPage() {
           }
         })
         
-        console.log('📡 Auth check response status:', response.status)
-        
         if (response.ok) {
           const data = await response.json()
-          console.log('📋 Auth check response data:', data)
           
           if (data.success && data.user) {
             // User is already authenticated, redirect them
-            console.log('✅ User already authenticated, redirecting...', data.user.role)
-            
             // Add a small delay to ensure smooth transition
             setTimeout(() => {
               const redirectUrl = ['admin', 'super_admin'].includes(data.user.role) 
                 ? '/admin-dashboard' 
                 : '/'
               
-              console.log('🔄 Redirecting authenticated user to:', redirectUrl)
               window.location.replace(redirectUrl)
             }, 1000) // Increased delay to prevent race conditions
           }
-        } else if (response.status === 401) {
-          // User is not authenticated, which is expected on login page
-          console.log('ℹ️ User not authenticated, staying on login page')
-        } else {
-          console.log('⚠️ Unexpected response status:', response.status)
         }
+        // 401 is expected on login page when user is not authenticated - no need to log
       } catch (error) {
-        // Network error or other issue - user needs to login
-        console.error('❌ Auth check failed with error:', error)
-        
-        // Check if it's a connection reset error
-        if (error.message && error.message.includes('ERR_CONNECTION_RESET')) {
-          console.log('🔄 Connection reset detected, server may be restarting...')
-          // Retry after a delay
-          setTimeout(() => {
-            console.log('🔄 Retrying auth check after connection reset...')
-            checkAuth()
-          }, 2000)
-        } else {
-          console.log('ℹ️ User needs to login')
+        // Network error or other issue - silently continue, user needs to login
+        // Only log actual errors, not expected failures
+        if (error instanceof Error && !error.message.includes('ERR_')) {
+          console.error('Auth check error:', error)
         }
       }
     }
@@ -109,7 +88,24 @@ export default function SecureLoginPage() {
         body: JSON.stringify(formData)
       })
 
-      const data = await response.json()
+      let data
+      try {
+        data = await response.json()
+      } catch (jsonError) {
+        // If JSON parsing fails, response might not be JSON
+        // Try to get error message, but don't consume the body again
+        const contentType = response.headers.get('content-type')
+        const errorMessage = response.status === 500 
+          ? 'Internal server error. Please try again.' 
+          : contentType?.includes('application/json') 
+            ? 'Invalid response format' 
+            : 'Login failed'
+        
+        setError(errorMessage)
+        setIsLoading(false)
+        setIsSubmitting(false)
+        return
+      }
 
       if (response.ok) {
         setCurrentUser(data.user)
@@ -118,13 +114,10 @@ export default function SecureLoginPage() {
         
         // Check if OTP validation is required
         if (data.requires_otp) {
-          console.log('🔐 OTP validation required')
           setLoginStep('otp-verify')
         } else if (!data.user.email_verified) {
-          console.log('📧 Email verification required')
           setLoginStep('email-verify')
         } else if (!data.user.phone_verified) {
-          console.log('📱 Phone verification required')
           setLoginStep('phone-verify')
         } else {
           // Direct login success
@@ -137,8 +130,6 @@ export default function SecureLoginPage() {
               ? '/admin-dashboard' 
               : '/'
             
-            console.log('🔄 Redirecting to:', redirectUrl, 'for role:', data.user.role)
-            
             // Use window.location.replace to prevent back button issues
             window.location.replace(redirectUrl)
           }, 2000) // Increased delay to ensure cookie is set
@@ -149,7 +140,11 @@ export default function SecureLoginPage() {
         setIsSubmitting(false)
       }
     } catch (error) {
-      setError('Network error. Please try again.')
+      // Only log actual errors, not network issues that might be expected
+      if (error instanceof Error && !error.message.includes('Failed to fetch')) {
+        console.error('Login error:', error)
+      }
+      setError('Network error. Please check your connection and try again.')
       setIsLoading(false)
       setIsSubmitting(false)
     }

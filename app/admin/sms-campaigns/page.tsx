@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Send, Eye, Users, MessageSquare, Calendar, DollarSign, X, Bell, BarChart3, Upload, Download, FileText } from 'lucide-react'
+import { Plus, Edit, Trash2, Send, Eye, Users, MessageSquare, Calendar, DollarSign, X, Bell, BarChart3, Upload, Download, FileText, Search, Filter, CheckCircle2, Circle } from 'lucide-react'
 import { useToast } from '../../../components/ToastSimple'
 import { LoadingButton, DangerButton, SuccessButton } from '../../../components/LoadingButton'
 import { ConfirmationDialog, useConfirmation } from '../../../components/ConfirmationDialog'
@@ -84,15 +84,220 @@ export default function SMSCampaignsPage() {
   const [csvData, setCsvData] = useState<any[]>([])
   const [mergeFields, setMergeFields] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
+  
+  // Loanspur Clients state
+  const [showLoanspurClients, setShowLoanspurClients] = useState(false)
+  const [loanspurClients, setLoanspurClients] = useState<any[]>([])
+  const [fetchingClients, setFetchingClients] = useState(false)
+  const [selectedClients, setSelectedClients] = useState<Set<number>>(new Set())
+  const [clientFilters, setClientFilters] = useState({
+    officeId: '',
+    loanOfficerId: '',
+    loanStatus: '',
+    withSavings: undefined as boolean | undefined,
+    savingsLastDepositDate: ''
+  })
+  const [filterOptions, setFilterOptions] = useState({
+    offices: [] as any[],
+    loanOfficers: [] as any[]
+  })
 
   useEffect(() => {
     loadData()
   }, [])
 
+  // Auto-refresh campaigns every 5 seconds if there are campaigns in "sending" status
+  useEffect(() => {
+    const hasSendingCampaigns = campaigns.some(c => c.status === 'sending')
+    if (!hasSendingCampaigns) return
+
+    const interval = setInterval(() => {
+      loadData()
+    }, 5000) // Refresh every 5 seconds
+
+    return () => clearInterval(interval)
+  }, [campaigns])
+
+  // Load filter options when partner is selected
+  const loadFilterOptions = async () => {
+    if (!formData.partner_id) return
+
+    try {
+      const response = await fetch(`/api/mifos/clients?partner_id=${formData.partner_id}`)
+      const data = await response.json()
+      
+      if (response.ok && data.success) {
+        setFilterOptions({
+          offices: data.offices || [],
+          loanOfficers: data.loanOfficers || []
+        })
+      } else {
+        console.error('Error loading filter options:', data.error)
+        addToast({
+          type: 'error',
+          title: 'Failed to Load Filter Options',
+          message: data.error || 'Failed to load offices and loan officers from Mifos X'
+        })
+      }
+    } catch (error) {
+      console.error('Error loading filter options:', error)
+      addToast({
+        type: 'error',
+        title: 'Network Error',
+        message: 'Failed to load filter options. Please check your connection and try again.'
+      })
+    }
+  }
+
+  const loadLoanOfficers = async (officeId: string) => {
+    if (!formData.partner_id || !officeId) {
+      setFilterOptions(prev => ({ ...prev, loanOfficers: [] }))
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/mifos/clients?partner_id=${formData.partner_id}&office_id=${officeId}`)
+      if (response.ok) {
+        const data = await response.json()
+        setFilterOptions(prev => ({ ...prev, loanOfficers: data.loanOfficers || [] }))
+      }
+    } catch (error) {
+      console.error('Error loading loan officers:', error)
+    }
+  }
+
+  const fetchLoanspurClients = async () => {
+    if (!formData.partner_id) {
+      addToast({
+        type: 'error',
+        title: 'Partner Required',
+        message: 'Please select a partner first'
+      })
+      return
+    }
+
+    setFetchingClients(true)
+    try {
+      const response = await fetch('/api/mifos/clients', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          partner_id: formData.partner_id,
+          filters: clientFilters
+        })
+      })
+
+      const result = await response.json()
+
+      if (response.ok && result.success) {
+        setLoanspurClients(result.clients || [])
+        setSelectedClients(new Set())
+        addToast({
+          type: 'success',
+          title: 'Clients Fetched',
+          message: `Found ${result.clients?.length || 0} clients matching your filters`
+        })
+      } else {
+        addToast({
+          type: 'error',
+          title: 'Failed to Fetch Clients',
+          message: result.error || 'Failed to fetch clients from Mifos X'
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching clients:', error)
+      addToast({
+        type: 'error',
+        title: 'Network Error',
+        message: 'Failed to fetch clients. Please check your connection and try again.'
+      })
+    } finally {
+      setFetchingClients(false)
+    }
+  }
+
+  const addSelectedClientsToRecipients = () => {
+    if (selectedClients.size === 0) {
+      addToast({
+        type: 'warning',
+        title: 'No Clients Selected',
+        message: 'Please select at least one client to add to recipients'
+      })
+      return
+    }
+
+    const selectedClientsData = loanspurClients.filter(c => selectedClients.has(c.id))
+    const phoneNumbers = selectedClientsData
+      .map(c => c.mobileNo)
+      .filter(phone => phone && phone.trim() !== '')
+      .map(phone => {
+        // Format phone number
+        let phoneStr = phone.replace(/\D/g, '')
+        if (phoneStr.startsWith('0')) {
+          phoneStr = '254' + phoneStr.substring(1)
+        } else if (!phoneStr.startsWith('254')) {
+          phoneStr = '254' + phoneStr
+        }
+        return phoneStr
+      })
+
+    if (phoneNumbers.length === 0) {
+      addToast({
+        type: 'warning',
+        title: 'No Valid Phone Numbers',
+        message: 'Selected clients do not have valid phone numbers'
+      })
+      return
+    }
+
+    // Add phone numbers to recipient list
+    const currentRecipients = formData.recipient_list
+      .split(/[,\n]/)
+      .map(r => r.trim())
+      .filter(r => r.length > 0)
+    
+    const newRecipients = [...currentRecipients, ...phoneNumbers]
+    
+    setFormData({
+      ...formData,
+      recipient_list: newRecipients.join('\n')
+    })
+
+    // If using CSV mode, prepare CSV data with merge fields
+    if (uploadMethod === 'csv') {
+      const newCsvData = selectedClientsData.map(client => ({
+        phone_number: client.mobileNo?.replace(/\D/g, '') || '',
+        first_name: client.displayName?.split(' ')[0] || '',
+        last_name: client.displayName?.split(' ').slice(1).join(' ') || '',
+        account_no: client.accountNo || '',
+        loan_amount: client.loanAmount?.toString() || '',
+        loan_outstanding: client.loanOutstanding?.toString() || '',
+        savings_balance: client.totalSavings?.toString() || '',
+        overdue_days: client.overdueDays?.toString() || ''
+      }))
+
+      setCsvData([...csvData, ...newCsvData])
+      
+      // Update merge fields
+      const newMergeFields = ['phone_number', 'first_name', 'last_name', 'account_no', 'loan_amount', 'loan_outstanding', 'savings_balance', 'overdue_days']
+      const existingMergeFields = new Set(mergeFields)
+      newMergeFields.forEach(field => existingMergeFields.add(field))
+      setMergeFields(Array.from(existingMergeFields))
+    }
+
+    addToast({
+      type: 'success',
+      title: 'Clients Added',
+      message: `Added ${phoneNumbers.length} clients to recipients`
+    })
+  }
+
   const loadData = async () => {
     try {
       const [campaignsResponse, partnersResponse, templatesResponse] = await Promise.all([
-        fetch('/api/admin/sms/campaigns'),
+        fetch('/api/admin/sms/campaigns', { cache: 'no-store' }),
         fetch('/api/partners'),
         fetch('/api/admin/sms/templates')
       ])
@@ -672,7 +877,21 @@ export default function SMSCampaignsPage() {
                   </label>
                   <select
                     value={formData.partner_id}
-                    onChange={(e) => setFormData({ ...formData, partner_id: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, partner_id: e.target.value })
+                      // Reset Loanspur Clients section when partner changes
+                      setShowLoanspurClients(false)
+                      setLoanspurClients([])
+                      setSelectedClients(new Set())
+                      setClientFilters({
+                        officeId: '',
+                        loanOfficerId: '',
+                        loanStatus: '',
+                        withSavings: undefined,
+                        savingsLastDepositDate: ''
+                      })
+                      setFilterOptions({ offices: [], loanOfficers: [] })
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   >
@@ -853,6 +1072,295 @@ export default function SMSCampaignsPage() {
                           </div>
                           <div className="text-sm text-blue-700">
                             Use these in your message: {mergeFields.map(field => `{{${field}}}`).join(', ')}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Loanspur Clients Section */}
+                <div className="border-t pt-4 mt-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Loanspur Clients
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!showLoanspurClients && formData.partner_id) {
+                          loadFilterOptions()
+                        }
+                        setShowLoanspurClients(!showLoanspurClients)
+                      }}
+                      className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                    >
+                      <Filter className="w-4 h-4" />
+                      {showLoanspurClients ? 'Hide' : 'Fetch from Mifos X'}
+                    </button>
+                  </div>
+
+                  {showLoanspurClients && formData.partner_id && (
+                    <div className="space-y-4 bg-gray-50 p-4 rounded-lg border">
+                      {/* Filters */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Office
+                          </label>
+                          <select
+                            value={clientFilters.officeId}
+                            onChange={(e) => {
+                              setClientFilters({ ...clientFilters, officeId: e.target.value, loanOfficerId: '' })
+                              loadLoanOfficers(e.target.value)
+                            }}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md"
+                          >
+                            <option value="">All Offices</option>
+                            {filterOptions.offices.map((office) => (
+                              <option key={office.id} value={office.id}>
+                                {office.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Loan Officer
+                          </label>
+                          <select
+                            value={clientFilters.loanOfficerId}
+                            onChange={(e) => setClientFilters({ ...clientFilters, loanOfficerId: e.target.value })}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md"
+                            disabled={!clientFilters.officeId}
+                          >
+                            <option value="">All Loan Officers</option>
+                            {filterOptions.loanOfficers.map((officer) => (
+                              <option key={officer.id} value={officer.id}>
+                                {officer.displayName}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Loan Status
+                          </label>
+                          <select
+                            value={clientFilters.loanStatus}
+                            onChange={(e) => setClientFilters({ ...clientFilters, loanStatus: e.target.value })}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md"
+                          >
+                            <option value="">All Statuses</option>
+                            <option value="active">Active</option>
+                            <option value="overpaid">Overpaid</option>
+                            <option value="closed">Closed</option>
+                            <option value="writeoff">Written Off</option>
+                            <option value="rescheduled">Rescheduled</option>
+                            <option value="without_loans">Without Loans</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Savings
+                          </label>
+                          <select
+                            value={clientFilters.withSavings === undefined ? '' : clientFilters.withSavings.toString()}
+                            onChange={(e) => setClientFilters({ 
+                              ...clientFilters, 
+                              withSavings: e.target.value === '' ? undefined : e.target.value === 'true' 
+                            })}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md"
+                          >
+                            <option value="">All</option>
+                            <option value="true">With Savings</option>
+                            <option value="false">Without Savings</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">
+                            Savings Last Deposit Date
+                          </label>
+                          <input
+                            type="date"
+                            value={clientFilters.savingsLastDepositDate}
+                            onChange={(e) => setClientFilters({ ...clientFilters, savingsLastDepositDate: e.target.value })}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded-md"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Fetch Button */}
+                      <div className="flex justify-end">
+                        <LoadingButton
+                          type="button"
+                          onClick={fetchLoanspurClients}
+                          loading={fetchingClients}
+                          variant="primary"
+                          size="sm"
+                          className="flex items-center gap-2"
+                        >
+                          <Search className="w-4 h-4" />
+                          Fetch Clients
+                        </LoadingButton>
+                      </div>
+
+                      {/* Clients List */}
+                      {loanspurClients.length > 0 && (
+                        <div className="mt-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-medium text-gray-700">
+                              Found {loanspurClients.length} clients
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const allSelected = new Set(loanspurClients.map(c => c.id))
+                                  setSelectedClients(selectedClients.size === loanspurClients.length ? new Set() : allSelected)
+                                }}
+                                className="text-xs text-blue-600 hover:text-blue-800"
+                              >
+                                {selectedClients.size === loanspurClients.length ? 'Deselect All' : 'Select All'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={addSelectedClientsToRecipients}
+                                className="text-xs text-green-600 hover:text-green-800 font-medium"
+                              >
+                                Add {selectedClients.size > 0 ? `${selectedClients.size} ` : ''}Selected to Recipients
+                              </button>
+                            </div>
+                          </div>
+                          
+                          <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-md">
+                            <table className="min-w-full divide-y divide-gray-200 text-xs">
+                              <thead className="bg-gray-100 sticky top-0">
+                                <tr>
+                                  <th className="px-2 py-2 text-left">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedClients.size === loanspurClients.length && loanspurClients.length > 0}
+                                      onChange={(e) => {
+                                        const allSelected = new Set(loanspurClients.map(c => c.id))
+                                        setSelectedClients(e.target.checked ? allSelected : new Set())
+                                      }}
+                                      className="rounded"
+                                    />
+                                  </th>
+                                  <th className="px-2 py-2 text-left">Name</th>
+                                  <th className="px-2 py-2 text-left">Phone</th>
+                                  <th className="px-2 py-2 text-left">Account</th>
+                                  <th className="px-2 py-2 text-left">Loan Amount</th>
+                                  <th className="px-2 py-2 text-left">Outstanding</th>
+                                  <th className="px-2 py-2 text-left">Savings</th>
+                                  <th className="px-2 py-2 text-left">Overdue</th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white divide-y divide-gray-200">
+                                {loanspurClients.map((client) => (
+                                  <tr key={client.id} className="hover:bg-gray-50">
+                                    <td className="px-2 py-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedClients.has(client.id)}
+                                        onChange={(e) => {
+                                          const newSelected = new Set(selectedClients)
+                                          if (e.target.checked) {
+                                            newSelected.add(client.id)
+                                          } else {
+                                            newSelected.delete(client.id)
+                                          }
+                                          setSelectedClients(newSelected)
+                                        }}
+                                        className="rounded"
+                                      />
+                                    </td>
+                                    <td className="px-2 py-2 font-medium">{client.displayName}</td>
+                                    <td className="px-2 py-2">{client.mobileNo || 'N/A'}</td>
+                                    <td className="px-2 py-2 text-gray-600">{client.accountNo || '-'}</td>
+                                    <td className="px-2 py-2">
+                                      {(() => {
+                                        const loanAmount = Number(client.loanAmount || 0)
+                                        const totalLoans = Number(client.totalLoans || client.activeLoanCount || 0)
+                                        
+                                        if (totalLoans > 0) {
+                                          return (
+                                            <div className="flex flex-col">
+                                              <span className="text-blue-600 font-medium">
+                                                KES {loanAmount.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                              </span>
+                                              <span className="text-xs text-gray-500">
+                                                {totalLoans} {totalLoans === 1 ? 'loan' : 'loans'}
+                                              </span>
+                                            </div>
+                                          )
+                                        } else {
+                                          return <span className="text-gray-400">KES 0.00</span>
+                                        }
+                                      })()}
+                                    </td>
+                                    <td className="px-2 py-2">
+                                      {(() => {
+                                        const loanOutstanding = Number(client.loanOutstanding || 0)
+                                        
+                                        if (loanOutstanding > 0) {
+                                          return (
+                                            <span className="text-orange-600 font-medium">
+                                              KES {loanOutstanding.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                          )
+                                        } else {
+                                          return <span className="text-gray-400">KES 0.00</span>
+                                        }
+                                      })()}
+                                    </td>
+                                    <td className="px-2 py-2">
+                                      {(() => {
+                                        const savings = Number(client.totalSavings || 0)
+                                        
+                                        if (savings > 0) {
+                                          return (
+                                            <span className="text-green-600 font-medium">
+                                              KES {savings.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                          )
+                                        } else {
+                                          return <span className="text-gray-400">KES 0.00</span>
+                                        }
+                                      })()}
+                                    </td>
+                                    <td className="px-2 py-2">
+                                      {(() => {
+                                        const overdueDays = Number(client.overdueDays || 0)
+                                        const loanOutstanding = Number(client.loanOutstanding || 0)
+                                        
+                                        if (overdueDays > 0) {
+                                          return (
+                                            <div className="flex flex-col">
+                                              <span className="text-red-600 font-medium">
+                                                {overdueDays} {overdueDays === 1 ? 'day' : 'days'}
+                                              </span>
+                                              {loanOutstanding > 0 && (
+                                                <span className="text-xs text-gray-500">
+                                                  O/S: KES {loanOutstanding.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </span>
+                                              )}
+                                            </div>
+                                          )
+                                        } else {
+                                          return <span className="text-gray-400">Current</span>
+                                        }
+                                      })()}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                           </div>
                         </div>
                       )}

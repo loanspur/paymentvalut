@@ -31,17 +31,14 @@ export async function POST(request: NextRequest) {
 
     // Prioritize "Kulman" partner if available, otherwise use first one
     let partner = partners.find(p => p.name?.toLowerCase().includes('kulman')) || partners[0]
-    
-    console.log('🔍 Found partners:', partners.map(p => ({ name: p.name, shortcode: p.mpesa_shortcode })))
-    console.log('✅ Using partner:', { name: partner.name, shortcode: partner.mpesa_shortcode })
 
     const environment = partner.mpesa_environment || 'sandbox'
-    const baseUrl = environment === 'production' 
+    const safaricomBaseUrl = environment === 'production' 
       ? 'https://api.safaricom.co.ke' 
       : 'https://sandbox.safaricom.co.ke'
 
     // Get access token
-    const tokenResponse = await fetch(`${baseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
+    const tokenResponse = await fetch(`${safaricomBaseUrl}/oauth/v1/generate?grant_type=client_credentials`, {
       method: 'GET',
       headers: {
         'Authorization': `Basic ${btoa(`${partner.mpesa_consumer_key}:${partner.mpesa_consumer_secret}`)}`
@@ -58,8 +55,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Prepare callback URLs
-    const validationUrl = `https://paymentvalut-ju.vercel.app/api/mpesa-callback/validation`
-    const confirmationUrl = `https://paymentvalut-ju.vercel.app/api/mpesa-callback/result`
+    const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
+    const validationUrl = `${appBaseUrl}/api/mpesa-callback/validation`
+    const confirmationUrl = `${appBaseUrl}/api/mpesa-callback/result`
 
     // For B2C, callbacks are configured during the disbursement request
     // We don't need to register URLs separately like C2B
@@ -71,14 +69,6 @@ export async function POST(request: NextRequest) {
     
     const validationAccessible = testValidation.ok
     const confirmationAccessible = testConfirmation.ok
-
-    console.log('📡 Testing B2C callback URLs:', {
-      shortcode: partner.mpesa_shortcode,
-      validation_url: validationUrl,
-      confirmation_url: confirmationUrl,
-      validation_accessible: validationAccessible,
-      confirmation_accessible: confirmationAccessible
-    })
 
     return NextResponse.json({
       message: 'B2C callback URLs are ready for use',
@@ -103,6 +93,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const appBaseUrl = process.env.NEXT_PUBLIC_APP_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
     return NextResponse.json({
       message: 'B2C Callback Registration Tool',
       instructions: {
@@ -110,8 +101,8 @@ export async function GET(request: NextRequest) {
         step2: 'Register validation and confirmation URLs',
         step3: 'Handle callbacks for real-time reconciliation',
         endpoints: {
-          validation: 'https://paymentvalut-ju.vercel.app/api/mpesa-callback/validation',
-          confirmation: 'https://paymentvalut-ju.vercel.app/api/mpesa-callback/result'
+          validation: `${appBaseUrl}/api/mpesa-callback/validation`,
+          confirmation: `${appBaseUrl}/api/mpesa-callback/result`
         }
       }
     })

@@ -27,6 +27,17 @@ const nextConfig = {
   },
   // Webpack optimizations
   webpack: (config, { isServer }) => {
+    // Exclude scripts directory from compilation
+    config.resolve.alias = {
+      ...config.resolve.alias,
+    }
+    
+    // Ignore scripts folder in webpack
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: ['**/scripts/**'],
+    }
+
     if (!isServer) {
       // Optimize bundle splitting
       config.optimization = {

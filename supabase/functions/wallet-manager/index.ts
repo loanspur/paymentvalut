@@ -417,36 +417,59 @@ async function handleTopupValidation(req: Request) {
         .single()
 
       if (walletRow && walletRow.partner_id) {
+        // Check if wallet_transactions record already exists
+        const { data: existingTransaction } = await supabaseClient
+          .from('wallet_transactions')
+          .select('id, reference, description, metadata')
+          .eq('id', transaction_id)
+          .single()
+
         // Use SQL RPC to perform atomic balance update at DB level
+        // Pass existing transaction reference to avoid duplicates
         const { data: rpcResult, error: rpcError } = await supabaseClient
           .rpc('update_partner_wallet_balance', {
             p_partner_id: walletRow.partner_id,
             p_amount: parseFloat(transaction.amount),
-            p_transaction_type: 'top_up'
+            p_transaction_type: 'top_up',
+            p_reference: existingTransaction?.reference || `STK_${transaction_id}`,
+            p_description: existingTransaction?.description || `Wallet top-up via STK Push`,
+            p_metadata: existingTransaction?.metadata || { stk_push_transaction_id: queryResponse.transactionId }
           })
 
-        if (!rpcError) {
-          // Update transaction status
-          await supabaseClient
-            .from('wallet_transactions')
-            .update({ 
-              status: 'completed',
-              stk_push_status: 'completed'
-            })
-            .eq('id', transaction_id)
+        if (!rpcError && rpcResult?.success) {
+          // The RPC function will update the existing transaction if it exists
+          // Just ensure the transaction status is updated
+          if (existingTransaction) {
+            await supabaseClient
+              .from('wallet_transactions')
+              .update({ 
+                status: 'completed',
+                stk_push_status: 'completed',
+                amount: parseFloat(transaction.amount),
+                metadata: {
+                  ...(existingTransaction.metadata || {}),
+                  wallet_balance_after: rpcResult.new_balance,
+                  stk_push_transaction_id: queryResponse.transactionId
+                }
+              })
+              .eq('id', transaction_id)
+          }
 
           return new Response(
             JSON.stringify({
               success: true,
               message: 'Wallet credited successfully',
               transactionId: transaction_id,
-              creditedAmount: parseFloat(transaction.amount)
+              creditedAmount: parseFloat(transaction.amount),
+              newBalance: rpcResult.new_balance
             }),
             { 
               status: 200, 
               headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
             }
           )
+        } else {
+          console.error('[STK Callback] RPC Error:', rpcError, rpcResult)
         }
       }
     }

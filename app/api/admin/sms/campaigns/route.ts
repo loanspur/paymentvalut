@@ -69,6 +69,56 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // For campaigns in "sending" status, check actual SMS notifications to update status
+    if (data && data.length > 0) {
+      const sendingCampaigns = data.filter((c: any) => c.status === 'sending')
+      
+      for (const campaign of sendingCampaigns) {
+        // Get all SMS notifications for this campaign
+        const { data: notifications } = await supabase
+          .from('sms_notifications')
+          .select('status')
+          .eq('bulk_campaign_id', campaign.id)
+
+        if (notifications && notifications.length > 0) {
+          const sentCount = notifications.filter((n: any) => n.status === 'sent' || n.status === 'delivered').length
+          const failedCount = notifications.filter((n: any) => n.status === 'failed').length
+          const pendingCount = notifications.filter((n: any) => n.status === 'pending').length
+          const totalCount = notifications.length
+
+          // Determine campaign status based on notifications
+          let campaignStatus = 'sending'
+          if (pendingCount === 0 && totalCount > 0) {
+            // All SMS have been processed
+            if (sentCount > 0) {
+              campaignStatus = 'completed'
+            } else {
+              campaignStatus = 'failed'
+            }
+          }
+
+          // Update campaign if status changed
+          if (campaign.status !== campaignStatus) {
+            await supabase
+              .from('sms_bulk_campaigns')
+              .update({
+                status: campaignStatus,
+                delivered_count: sentCount,
+                failed_count: failedCount,
+                sent_count: totalCount
+              })
+              .eq('id', campaign.id)
+
+            // Update in local data array
+            campaign.status = campaignStatus
+            campaign.delivered_count = sentCount
+            campaign.failed_count = failedCount
+            campaign.sent_count = totalCount
+          }
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: data || []

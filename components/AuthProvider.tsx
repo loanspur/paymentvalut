@@ -11,6 +11,7 @@ interface User {
   name?: string
   first_name?: string
   last_name?: string
+  partner_id?: string | null
 }
 
 interface AuthContextType {
@@ -54,7 +55,6 @@ export default function AuthProvider({ children }: AuthProviderProps) {
 
     // Skip auth check for public routes (including login pages)
     if (isPublicRoute) {
-      console.log('🔄 Skipping auth check - public route:', pathname)
       setIsLoading(false)
       return
     }

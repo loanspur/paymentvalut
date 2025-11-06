@@ -127,14 +127,23 @@ export async function POST(request: NextRequest) {
 
     // Generate JWT token with expiration using secure utility
     // If OTP is required, create a temporary token that doesn't allow full access
-    const token = await createJWTToken({ 
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      isActive: user.is_active,
-      otpValidated: !requiresOTP, // Only set to true if OTP is not required
-      requiresOTP: requiresOTP
-    })
+    let token
+    try {
+      token = await createJWTToken({ 
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        isActive: user.is_active,
+        otpValidated: !requiresOTP, // Only set to true if OTP is not required
+        requiresOTP: requiresOTP
+      })
+    } catch (tokenError) {
+      console.error('❌ JWT token creation failed:', tokenError)
+      return NextResponse.json({
+        error: 'Authentication failed',
+        details: 'Failed to generate authentication token'
+      }, { status: 500 })
+    }
 
     console.log('✅ Login successful for user:', user.email, 'Role:', user.role)
 

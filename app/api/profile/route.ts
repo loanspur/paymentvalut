@@ -182,10 +182,8 @@ export async function PUT(request: NextRequest) {
     if (filteredUpdateData.phone_number !== undefined) {
       filteredUpdateData.phone_verified = false
       filteredUpdateData.phone_verified_at = null
-      console.log('📱 Phone number being updated, resetting verification status')
     }
 
-    console.log('🔍 [DEBUG] Updating profile with data:', filteredUpdateData)
 
     // Update the user's profile
     const { data: updatedUser, error: updateError } = await supabase

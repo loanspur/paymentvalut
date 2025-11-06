@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../components/AuthProvider'
 import { 
   Download, 
   Filter, 
@@ -48,6 +49,7 @@ interface FilterOptions {
 }
 
 export default function LoanTrackingPage() {
+  const { user } = useAuth()
   const [loans, setLoans] = useState<LoanTrackingRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
@@ -65,20 +67,27 @@ export default function LoanTrackingPage() {
 
   useEffect(() => {
     fetchLoanTrackingData()
-  }, [])
+  }, [user])
 
   const fetchLoanTrackingData = async () => {
     try {
       setLoading(true)
       
-      // Check if loan_tracking table exists first
-      const { data, error } = await supabase
+      // Build query - filter by partner_id if user is not super_admin
+      let query = supabase
         .from('loan_tracking')
         .select(`
           *,
-          partners!inner(name)
+          partners!inner(name, is_mifos_configured)
         `)
         .order('created_at', { ascending: false })
+
+      // If user is not super_admin, filter by their partner_id
+      if (user && user.role !== 'super_admin' && user.partner_id) {
+        query = query.eq('partner_id', user.partner_id)
+      }
+
+      const { data, error } = await query
 
       if (error) {
         console.error('Error fetching loan tracking data:', error)
@@ -96,10 +105,17 @@ export default function LoanTrackingPage() {
       }
 
       // Transform the data to include partner name
+      // Also filter out partners without Mifos configured (for non-super_admin users)
       const transformedData = data?.map(record => ({
         ...record,
         partner_name: record.partners?.name || 'Unknown Partner'
-      })) || []
+      }))
+      .filter(record => {
+        // Super admin can see all loans
+        if (user?.role === 'super_admin') return true
+        // For other users, only show loans from partners with Mifos configured
+        return record.partners?.is_mifos_configured === true
+      }) || []
 
       setLoans(transformedData)
     } catch (error) {

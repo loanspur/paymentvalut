@@ -107,20 +107,36 @@ export async function GET(request: NextRequest) {
       walletTransactionGroups[transaction.wallet_id].push(transaction)
     })
 
-    // Calculate running balances for each wallet
-    const walletRunningBalances: Record<string, number> = {}
+    // Calculate balance after for each transaction
+    // Start from current wallet balance and work backwards through transactions
+    const walletBalanceAfter: Record<string, number> = {}
+    
     Object.keys(walletTransactionGroups).forEach(walletId => {
-      const transactions = walletTransactionGroups[walletId]
-        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      const walletInfo = walletMap[walletId]
+      const currentBalance = walletInfo?.current_balance || 0
       
-      let runningBalance = 0
+      // Sort transactions by date descending (newest first)
+      const transactions = walletTransactionGroups[walletId]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      
+      // Work backwards from current balance
+      let runningBalance = currentBalance
       transactions.forEach(transaction => {
-        if (transaction.transaction_type === 'top_up' || transaction.transaction_type === 'manual_credit') {
-          runningBalance += Math.abs(transaction.amount)
-        } else {
-          runningBalance -= Math.abs(transaction.amount)
+        // Store balance after this transaction
+        walletBalanceAfter[transaction.id] = runningBalance
+        
+        // Reverse the transaction to get balance before
+        if (transaction.status === 'completed') {
+          if (transaction.transaction_type === 'top_up' || 
+              transaction.transaction_type === 'manual_credit' ||
+              transaction.transaction_type === 'topup') {
+            // This was a credit, so subtract to get balance before
+            runningBalance -= Math.abs(transaction.amount)
+          } else {
+            // This was a debit, so add to get balance before
+            runningBalance += Math.abs(transaction.amount)
+          }
         }
-        walletRunningBalances[`${walletId}_${transaction.id}`] = runningBalance
       })
     })
 
@@ -132,9 +148,11 @@ export async function GET(request: NextRequest) {
       const balanceAfterFromMetadata = typeof metadata.wallet_balance_after === 'number' 
         ? metadata.wallet_balance_after 
         : (typeof metadata.walletBalanceAfter === 'number' ? metadata.walletBalanceAfter : null)
+      
+      // Use metadata balance if available, otherwise use calculated balance
       const balanceAfter = balanceAfterFromMetadata !== null && balanceAfterFromMetadata !== undefined
         ? balanceAfterFromMetadata
-        : (walletRunningBalances[`${transaction.wallet_id}_${transaction.id}`] || 0)
+        : (walletBalanceAfter[transaction.id] ?? walletInfo?.current_balance ?? 0)
 
       return {
         ...transaction,

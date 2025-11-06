@@ -54,16 +54,11 @@ export default function Sidebar({ className = '' }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<string[]>(['core', 'management'])
+  const [hasMifosConfigured, setHasMifosConfigured] = useState<boolean | null>(null)
   const { user, isAuthenticated, logout } = useAuth()
   const pathname = usePathname()
 
-  // Try to load logo once on mount
-  useEffect(() => {
-    const img = new window.Image()
-    img.onload = () => setLogoError(false)
-    img.onerror = () => setLogoError(true)
-    img.src = '/eazzypay-logo.png'
-  }, [])
+  // Logo file not present - using text fallback by default
 
   const handleLogout = async () => {
     try {
@@ -75,6 +70,41 @@ export default function Sidebar({ className = '' }: SidebarProps) {
       }
     }
   }
+
+  // Check if user's partner has Mifos X configured
+  useEffect(() => {
+    const checkMifosConfiguration = async () => {
+      if (!user || user.role === 'super_admin') {
+        // Super admin can see all loans, so always show loan tracking
+        setHasMifosConfigured(true)
+        return
+      }
+
+      if (!user.partner_id) {
+        setHasMifosConfigured(false)
+        return
+      }
+
+      try {
+        const response = await fetch('/api/partners', { credentials: 'include' })
+        if (response.ok) {
+          const data = await response.json()
+          // API returns partners array, get the first one (user's partner)
+          const partner = data.partners?.[0]
+          setHasMifosConfigured(partner?.is_mifos_configured === true)
+        } else {
+          setHasMifosConfigured(false)
+        }
+      } catch (error) {
+        console.error('Error checking Mifos configuration:', error)
+        setHasMifosConfigured(false)
+      }
+    }
+
+    if (isAuthenticated && user) {
+      checkMifosConfiguration()
+    }
+  }, [user, isAuthenticated])
 
   // Filter navigation based on user role
   const getFilteredNavigationGroups = (): NavigationGroup[] => {
@@ -125,12 +155,13 @@ export default function Sidebar({ className = '' }: SidebarProps) {
             icon: History,
             description: 'View all transactions'
           },
-          {
+          // Only show Loan Tracking if partner has Mifos X configured (or user is super_admin)
+          ...((isSuperAdmin || hasMifosConfigured === true) ? [{
             name: 'Loan Tracking',
             href: '/loan-tracking',
             icon: FileText,
             description: 'Monitor approved loans & disbursements'
-          },
+          }] : []),
           {
             name: 'Wallet Management',
             href: '/wallet',

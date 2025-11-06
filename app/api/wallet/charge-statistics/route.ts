@@ -70,9 +70,10 @@ export async function GET(request: NextRequest) {
     const fetchChargesSince = async (sinceIso: string) => {
       const { data } = await supabase
         .from('wallet_transactions')
-        .select('amount, metadata, transaction_type')
+        .select('amount, metadata, transaction_type, status')
         .in('wallet_id', walletIds)
         .in('transaction_type', ['charge', 'sms_charge', 'b2c_float_purchase'])
+        .eq('status', 'completed') // Only count completed transactions
         .gte('created_at', sinceIso)
       return data || []
     }
@@ -84,36 +85,49 @@ export async function GET(request: NextRequest) {
 
     // Calculate statistics
     const calculateStats = (charges: any[]) => {
-      const totalAmount = charges.reduce((sum, charge) => {
+      // Filter only completed transactions
+      const completedCharges = charges.filter(c => c.status === 'completed')
+      
+      const totalAmount = completedCharges.reduce((sum, charge) => {
         if (charge.transaction_type === 'b2c_float_purchase') {
-          const fee = Math.abs(charge.metadata?.charges || 0)
+          // For float purchases, use the charge amount from metadata or the transaction amount
+          const fee = Math.abs(charge.metadata?.charges || charge.metadata?.charge_amount || charge.amount || 0)
           return sum + fee
         }
-        return sum + Math.abs(charge.amount)
+        // For other charges, use the absolute amount
+        return sum + Math.abs(charge.amount || 0)
       }, 0)
+      
       const chargeTypes: Record<string, { count: number, amount: number }> = {}
       
-      charges.forEach(charge => {
+      completedCharges.forEach(charge => {
         const chargeName = charge.transaction_type === 'b2c_float_purchase'
           ? (charge.metadata?.charge_name || 'Float Purchase Fee')
-          : (charge.metadata?.charge_name || (charge.transaction_type === 'sms_charge' ? 'SMS Charges' : 'Charges'))
+          : (charge.transaction_type === 'sms_charge' 
+              ? 'SMS Charges' 
+              : (charge.metadata?.charge_name || 'Transaction Charges'))
+        
         if (!chargeTypes[chargeName]) {
           chargeTypes[chargeName] = { count: 0, amount: 0 }
         }
+        
         if (charge.transaction_type === 'b2c_float_purchase') {
-          const fee = Math.abs(charge.metadata?.charges || 0)
+          const fee = Math.abs(charge.metadata?.charges || charge.metadata?.charge_amount || charge.amount || 0)
           if (fee > 0) {
             chargeTypes[chargeName].count += 1
             chargeTypes[chargeName].amount += fee
           }
         } else {
-          chargeTypes[chargeName].count += 1
-          chargeTypes[chargeName].amount += Math.abs(charge.amount)
+          const amount = Math.abs(charge.amount || 0)
+          if (amount > 0) {
+            chargeTypes[chargeName].count += 1
+            chargeTypes[chargeName].amount += amount
+          }
         }
       })
 
       return {
-        totalTransactions: charges.length,
+        totalTransactions: completedCharges.length,
         totalAmount,
         chargeTypes
       }

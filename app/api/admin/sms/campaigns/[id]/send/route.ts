@@ -234,8 +234,22 @@ export async function POST(
       )
     }
 
-    // Process SMS sending in background
+    // Process SMS sending in background (fire and forget, but handle errors)
     processSMSCampaign(campaign, smsSettings, wallet.current_balance, initialSmsBalance, useEnvVars)
+      .catch(async (error) => {
+        // Log error but don't block the response
+        console.error('Background SMS campaign processing error:', error)
+        // Update campaign to failed if background process crashes
+        try {
+          await supabase
+            .from('sms_bulk_campaigns')
+            .update({ status: 'failed', error_message: error.message || 'Background processing failed' })
+            .eq('id', params.id)
+        } catch (updateError) {
+          // Ignore errors in error handling
+          console.error('Failed to update campaign status on error:', updateError)
+        }
+      })
 
     return NextResponse.json({
       success: true,
@@ -419,8 +433,26 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
     const finalBalanceResult = await getAirTouchSMSBalance(decryptedUsername, decryptedApiKey)
     const finalSmsBalance = finalBalanceResult.success ? finalBalanceResult.balance : null
 
-    // Update campaign final status
-    const finalStatus = deliveredCount > 0 ? 'completed' : 'failed' // If at least one SMS delivered, mark as completed
+    // Get actual status from SMS notifications to ensure accuracy
+    const { data: notifications } = await supabase
+      .from('sms_notifications')
+      .select('status')
+      .eq('bulk_campaign_id', campaign.id)
+
+    // Recalculate based on actual notifications
+    let actualSentCount = deliveredCount
+    let actualFailedCount = failedCount
+    
+    if (notifications && notifications.length > 0) {
+      actualSentCount = notifications.filter(n => n.status === 'sent' || n.status === 'delivered').length
+      actualFailedCount = notifications.filter(n => n.status === 'failed').length
+    }
+
+    // Update campaign final status - mark as completed if all SMS were processed and at least one succeeded
+    const allProcessed = notifications && notifications.length === campaign.recipient_list.length
+    const finalStatus = allProcessed 
+      ? (actualSentCount > 0 ? 'completed' : 'failed')
+      : (actualSentCount > 0 ? 'completed' : 'sending') // Still sending if not all processed but some sent
     
     await supabase
       .from('sms_bulk_campaigns')
@@ -428,9 +460,9 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
         status: finalStatus,
         sent_at: new Date().toISOString(),
         total_cost: totalCost, // Update actual total cost
-        delivered_count: deliveredCount,
-        failed_count: failedCount,
-        sent_count: sentCount,
+        delivered_count: actualSentCount,
+        failed_count: actualFailedCount,
+        sent_count: notifications?.length || sentCount,
         metadata: {
           ...(campaign.metadata || {}),
           sms_balance_before: initialSmsBalance,

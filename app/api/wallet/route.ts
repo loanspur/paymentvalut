@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verifyJWTToken } from '../../../lib/jwt-utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,18 +9,57 @@ const supabase = createClient(
 
 export async function GET(request: NextRequest) {
   try {
-    // Get the current user from the request (you'll need to implement auth)
-    // For now, we'll get the first partner as a demo
-    const { data: partners, error: partnersError } = await supabase
-      .from('partners')
-      .select('id')
-      .limit(1)
+    // Get authenticated user
+    const token = request.cookies.get('auth_token')?.value
+    
+    if (!token) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const payload = await verifyJWTToken(token)
+    
+    if (!payload || !payload.userId) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid session' },
+        { status: 401 }
+      )
+    }
+
+    // Get current user from database to get partner_id
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, role, partner_id, is_active')
+      .eq('id', payload.userId)
       .single()
 
-    if (partnersError || !partners) {
+    if (userError || !user || !user.is_active) {
       return NextResponse.json(
-        { success: false, error: 'No partner found' },
-        { status: 404 }
+        { success: false, error: 'User not found or inactive' },
+        { status: 401 }
+      )
+    }
+
+    // For super_admin or admin, allow query param to specify partner_id
+    const { searchParams } = new URL(request.url)
+    const requestedPartnerId = searchParams.get('partner_id')
+    
+    let partnerId: string | null = null
+    
+    if (user.role === 'super_admin' || user.role === 'admin') {
+      // Admins can query any partner
+      partnerId = requestedPartnerId || user.partner_id || null
+    } else {
+      // Regular users can only access their own partner
+      partnerId = user.partner_id
+    }
+
+    if (!partnerId) {
+      return NextResponse.json(
+        { success: false, error: 'No partner assigned' },
+        { status: 400 }
       )
     }
 
@@ -27,7 +67,7 @@ export async function GET(request: NextRequest) {
     let { data: wallet, error: walletError } = await supabase
       .from('partner_wallets')
       .select('*')
-      .eq('partner_id', partners.id)
+      .eq('partner_id', partnerId)
       .single()
 
     if (walletError && walletError.code === 'PGRST116') {
@@ -35,7 +75,7 @@ export async function GET(request: NextRequest) {
       const { data: newWallet, error: createError } = await supabase
         .from('partner_wallets')
         .insert({
-          partner_id: partners.id,
+          partner_id: partnerId,
           current_balance: 0,
           currency: 'KES',
           low_balance_threshold: 1000,
