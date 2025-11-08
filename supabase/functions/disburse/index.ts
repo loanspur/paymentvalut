@@ -635,7 +635,14 @@ serve(async (req) => {
     // 💰 NEW: Create pending wallet transaction for charges (only if wallet integration is enabled)
     // Balance will be deducted when disbursement status becomes 'success' in M-Pesa callback
     if (walletIntegrationEnabled && chargeAmount > 0 && disbursementCharge && wallet) {
-      console.log('💰 [Wallet] Creating pending wallet transaction for disbursement charges...')
+      console.log(`\n${'='.repeat(80)}`)
+      console.log(`💰 [Disburse Function] [${new Date().toISOString()}] CREATING PENDING WALLET TRANSACTION`)
+      console.log(`💰 Disbursement ID: ${disbursementRequest?.id}`)
+      console.log(`💰 Disbursement Status: ${disbursementRequest?.status || 'accepted'}`)
+      console.log(`💰 Charge Amount: ${chargeAmount} KES`)
+      console.log(`💰 Current Wallet Balance: ${wallet.current_balance} KES`)
+      console.log(`💰 ⚠️ IMPORTANT: Wallet balance will NOT be deducted until disbursement status is 'success'`)
+      console.log(`${'='.repeat(80)}\n`)
       
       try {
         // Create wallet transaction record with status 'pending' (will be completed when disbursement succeeds)
@@ -661,12 +668,17 @@ serve(async (req) => {
           })
 
         if (walletTransactionError) {
-          console.error('❌ [Wallet] Error creating pending wallet transaction record:', walletTransactionError.message)
+          console.error('❌ [Disburse Function] Error creating pending wallet transaction record:', walletTransactionError.message)
         } else {
-          console.log('✅ [Wallet] Pending wallet transaction record created for charge (will be completed when disbursement succeeds)')
+          console.log(`✅ [Disburse Function] Pending wallet transaction record created`)
+          console.log(`   Transaction will remain 'pending' until disbursement status becomes 'success'`)
+          console.log(`   Wallet balance has NOT been deducted (current: ${wallet.current_balance} KES)`)
         }
 
         // Create partner charge transaction record with status 'pending'
+        // CRITICAL: Do NOT set wallet_balance_after to a deducted value - keep it the same as wallet_balance_before
+        // The wallet balance should NOT be deducted until the disbursement status is 'success'
+        // wallet_balance_after will be updated when the charge is actually processed (when disbursement succeeds)
         const { error: chargeTransactionError } = await supabaseClient
           .from('partner_charge_transactions')
           .insert({
@@ -680,13 +692,17 @@ serve(async (req) => {
             transaction_type: 'debit',
             status: 'pending', // Will be updated to 'completed' when disbursement succeeds
             description: `Automatic disbursement charge for ${body.amount} KES disbursement`,
+            wallet_balance_before: wallet.current_balance,
+            wallet_balance_after: wallet.current_balance, // Keep same - will be updated when actually deducted
             metadata: {
               disbursement_id: disbursementRequest?.id,
               disbursement_amount: body.amount,
               conversation_id: b2cData.ConversationID,
               client_request_id: body.client_request_id,
               msisdn: body.msisdn,
-              wallet_balance_before: wallet.current_balance
+              wallet_balance_before: wallet.current_balance,
+              deduction_deferred: true, // Mark that deduction is deferred until disbursement succeeds
+              deferred_reason: 'Disbursement status is not yet success - will be processed when disbursement succeeds'
             }
           })
 

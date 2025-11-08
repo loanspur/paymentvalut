@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import UnifiedWalletService from '@/lib/unified-wallet-service'
 import { verifyJWTToken } from '../../../../../../../lib/jwt-utils'
 import { calculateSMSCount, calculateSMSCost } from '@/lib/sms-utils'
 import crypto from 'crypto'
@@ -472,16 +473,18 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
       })
       .eq('id', campaign.id)
 
-    // Deduct cost from partner wallet
-    if (totalCost > 0) {
-      // Get the wallet to get the wallet ID
+    // Deduct cost from partner wallet (only for successfully sent SMS)
+    // totalCost is only incremented when smsResponse.success is true, so this is correct
+    if (totalCost > 0 && actualSentCount > 0) {
+      // Get the current wallet balance (not the initial one)
       const { data: wallet, error: walletError } = await supabase
         .from('partner_wallets')
-        .select('id')
+        .select('id, current_balance')
         .eq('partner_id', campaign.partner_id)
         .single()
 
       if (walletError || !wallet) {
+        console.error('Error fetching wallet for SMS campaign deduction:', walletError)
         return
       }
 
@@ -500,32 +503,31 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
         chargeConfigId = smsChargeConfig.id
       }
 
-      await supabase
-        .from('partner_wallets')
-        .update({
-          current_balance: walletBalance - totalCost
-        })
-        .eq('partner_id', campaign.partner_id)
-
-      // Create wallet transaction record
-      // Include charge_config_id in metadata for single source of truth
-      await supabase
-        .from('wallet_transactions')
-        .insert({
-          wallet_id: wallet.id,
-          transaction_type: 'sms_charge',
-          amount: -totalCost,
-          description: `SMS Campaign: ${campaign.campaign_name}`,
+      // Use UnifiedWalletService to ensure consistency
+      const balanceResult = await UnifiedWalletService.updateWalletBalance(
+        campaign.partner_id,
+        -totalCost, // Negative amount for deduction
+        'sms_charge',
+        {
           reference: `SMS_CAMPAIGN_${campaign.id}`,
-          status: 'completed',
-          metadata: {
-            charge_config_id: chargeConfigId, // Single source of truth
-            bulk_campaign_id: campaign.id,
-            total_cost: totalCost,
-            sent_count: sentCount,
-            delivered_count: deliveredCount
-          }
-        })
+          description: `SMS Campaign: ${campaign.campaign_name}`,
+          charge_config_id: chargeConfigId,
+          bulk_campaign_id: campaign.id,
+          total_cost: totalCost,
+          sent_count: actualSentCount,
+          delivered_count: actualSentCount,
+          failed_count: actualFailedCount
+        }
+      )
+
+      if (!balanceResult.success) {
+        console.error('Error deducting wallet balance for SMS campaign:', balanceResult.error)
+      } else {
+        console.log(`✅ [SMS Campaign] Wallet deducted: ${totalCost} KES for ${actualSentCount} successfully sent SMS`)
+      }
+    } else if (totalCost > 0 && actualSentCount === 0) {
+      // No SMS were successfully sent, so don't deduct
+      console.log(`⏸️ [SMS Campaign] No successful SMS sent, skipping wallet deduction`)
     }
 
 

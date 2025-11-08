@@ -194,25 +194,24 @@ async function retryDisbursement(supabaseClient: any, disbursement: any) {
     const result = await response.json()
     
     if (response.ok && result.status === 'accepted') {
-      console.log(`   ✅ [Retry] Disbursement retry successful!`)
+      console.log(`   ✅ [Retry] Disbursement retry accepted by M-Pesa!`)
       console.log(`   📋 Conversation ID: ${result.conversation_id}`)
       console.log(`   💰 Disbursement ID: ${result.disbursement_id}`)
+      console.log(`   ⏸️ [Retry] Status is 'accepted' - waiting for M-Pesa callback to confirm actual success`)
 
-      // Update disbursement record with success
+      // CRITICAL: Do NOT set status to 'success' when M-Pesa returns 'accepted'
+      // 'accepted' means M-Pesa accepted the request, but the transaction hasn't completed yet
+      // The actual success/failure will come via the M-Pesa callback (result route)
+      // Only the callback can confirm if the money was actually sent to the recipient
       const { error: successUpdateError } = await supabaseClient
         .from('disbursement_requests')
         .update({
-          status: 'success',
+          status: 'accepted', // Keep as 'accepted' - wait for M-Pesa callback to set 'success'
           conversation_id: result.conversation_id,
           originator_conversation_id: result.originator_conversation_id,
-          transaction_id: result.conversation_id,
-          transaction_receipt: result.details?.transaction_receipt || result.conversation_id,
-          receipt_number: result.details?.transaction_receipt || result.conversation_id,
-          transaction_amount: disbursement.amount,
-          transaction_date: new Date().toISOString().split('T')[0].replace(/-/g, ''),
-          result_code: '0',
-          result_desc: 'Success',
-          next_retry_at: null,
+          // Do NOT set transaction_id, receipt_number, or result_code yet
+          // These will be set by the M-Pesa callback when the transaction actually succeeds
+          next_retry_at: null, // Clear retry since M-Pesa accepted the request
           updated_at: new Date().toISOString()
         })
         .eq('id', disbursementId)

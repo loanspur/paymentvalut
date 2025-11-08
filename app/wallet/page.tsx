@@ -124,6 +124,7 @@ export default function WalletPage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [userProfile, setUserProfile] = useState<{ phone_number?: string, email?: string } | null>(null)
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null)
+  const [viewingPartnerId, setViewingPartnerId] = useState<string | null>(null)
   const [isTopUpLoading, setIsTopUpLoading] = useState(false)
   const [topUpMethod, setTopUpMethod] = useState<'stk_push' | 'manual'>('stk_push')
   const [stkAwaiting, setStkAwaiting] = useState(false)
@@ -177,16 +178,40 @@ export default function WalletPage() {
     setPagination(prev => ({ ...prev, page: 1 }))
   }, [filters.transaction_type, filters.status, filters.start_date, filters.end_date, filters.search])
 
+  // Load user and partners first
   useEffect(() => {
-    loadWalletData()
-    loadTransactions()
     loadCurrentUser()
     loadPartners()
-    loadChargeStatistics()
     loadUserProfile()
-  }, [pagination.page, filters])
+  }, [])
 
-  // Poll for STK completion without causing flicker
+  // Auto-select first partner for super_admin if none selected (after partners are loaded)
+  useEffect(() => {
+    if (currentUser?.role === 'super_admin' && !viewingPartnerId && partners.length > 0) {
+      const firstActivePartner = partners.find(p => p.is_active)
+      if (firstActivePartner) {
+        setViewingPartnerId(firstActivePartner.id)
+      }
+    }
+  }, [currentUser, partners, viewingPartnerId])
+
+  // Load wallet data only when partner is selected (or user has partner_id)
+  useEffect(() => {
+    // For super_admin, wait until viewingPartnerId is set
+    if (currentUser?.role === 'super_admin' && !viewingPartnerId) {
+      return
+    }
+    // For regular users, wait until currentUser is loaded
+    if (currentUser?.role !== 'super_admin' && !currentUser?.partner_id) {
+      return
+    }
+    
+    loadWalletData()
+    loadTransactions()
+    loadChargeStatistics()
+  }, [pagination.page, filters, viewingPartnerId, currentUser])
+
+  // Poll for STK completion and auto-verify with NCBA (optimized to prevent flickering)
   useEffect(() => {
     if (stkAwaiting && stkWalletTransactionId) {
       // Clear any existing polling interval
@@ -194,52 +219,157 @@ export default function WalletPage() {
         clearInterval(pollingRef.current)
       }
       let attempts = 0
-      const maxAttempts = 45 // ~90s at 2s interval
+      let verificationAttempted = false
+      let lastStatus: string | null = null
+      const maxAttempts = 60 // ~120s at 2s interval
+      const verificationDelay = 5 // Verify with NCBA after 5 attempts (10 seconds)
+      
       pollingRef.current = setInterval(async () => {
         attempts += 1
         try {
-          // Refresh transactions list
-          await loadTransactions()
-          // Check latest state for the transaction
-          const tx = transactions.find(t => t.id === stkWalletTransactionId)
-          if (tx && tx.status === 'completed') {
-            if (pollingRef.current) clearInterval(pollingRef.current)
-            pollingRef.current = null
-            setStkCompleted(true)
-            if (!completionToastShownRef.current) {
-              completionToastShownRef.current = true
-              addToast({
-                type: 'success',
-                title: 'Top-up Completed',
-                message: 'Your wallet has been credited successfully',
-                duration: 6000
-              })
+          // Only fetch the specific transaction to avoid full state updates that cause flickering
+          const params = new URLSearchParams({
+            page: '1',
+            limit: '50'
+          })
+          if (currentUser?.role === 'super_admin' && viewingPartnerId) {
+            params.append('partner_id', viewingPartnerId)
+          }
+          
+          const txResponse = await fetch(`/api/wallet/transactions?${params}`)
+          if (txResponse.ok) {
+            const txData = await txResponse.json()
+            const freshTx = txData.data?.find((t: WalletTransaction) => t.id === stkWalletTransactionId)
+            
+            if (freshTx) {
+              // Only update state if status changed to prevent unnecessary re-renders
+              if (freshTx.status !== lastStatus) {
+                lastStatus = freshTx.status
+                
+                if (freshTx.status === 'completed') {
+                  if (pollingRef.current) clearInterval(pollingRef.current)
+                  pollingRef.current = null
+                  setStkCompleted(true)
+                  // Keep stkAwaiting true so the success modal persists
+                  // It will be set to false when user clicks "Done"
+                  if (!completionToastShownRef.current) {
+                    completionToastShownRef.current = true
+                    addToast({
+                      type: 'success',
+                      title: 'Top-up Completed',
+                      message: 'Your wallet has been credited successfully',
+                      duration: 6000
+                    })
+                  }
+                  // Reload data to show updated balance (only once when completed)
+                  loadWalletData()
+                  loadTransactions()
+                  return
+                }
+              }
+              
+              // If still pending after verification delay, verify with NCBA
+              if (!verificationAttempted && attempts >= verificationDelay && freshTx.status === 'pending') {
+                verificationAttempted = true
+                console.log('Auto-verifying STK push with NCBA...')
+                
+                try {
+                  const verifyResponse = await fetch('/api/wallet/topup/verify-stk', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                      wallet_transaction_id: stkWalletTransactionId
+                    })
+                  })
+                  
+                      if (verifyResponse.ok) {
+                        const verifyData = await verifyResponse.json()
+                        if (verifyData.success) {
+                          console.log('Auto-verification successful:', verifyData.message)
+                          // Check status again after verification
+                          setTimeout(async () => {
+                            const recheckResponse = await fetch(`/api/wallet/transactions?${params}`)
+                            if (recheckResponse.ok) {
+                              const recheckData = await recheckResponse.json()
+                              const recheckTx = recheckData.data?.find((t: WalletTransaction) => t.id === stkWalletTransactionId)
+                              if (recheckTx?.status === 'completed') {
+                                if (pollingRef.current) clearInterval(pollingRef.current)
+                                pollingRef.current = null
+                                setStkCompleted(true)
+                                // Keep stkAwaiting true so the success modal persists
+                                // It will be set to false when user clicks "Done"
+                                if (!completionToastShownRef.current) {
+                                  completionToastShownRef.current = true
+                                  addToast({
+                                    type: 'success',
+                                    title: 'Top-up Completed',
+                                    message: 'Your wallet has been credited successfully',
+                                    duration: 6000
+                                  })
+                                }
+                                loadWalletData()
+                                loadTransactions()
+                              }
+                            }
+                          }, 1000)
+                        }
+                      }
+                } catch (verifyError) {
+                  console.error('Auto-verification error:', verifyError)
+                }
+              }
             }
           }
-        } catch {
-          // ignore transient errors
+        } catch (error) {
+          console.error('Polling error:', error)
         }
+        
         if (attempts >= maxAttempts) {
           if (pollingRef.current) clearInterval(pollingRef.current)
           pollingRef.current = null
+          // If still pending after max attempts, offer manual verification
+          addToast({
+            type: 'info',
+            title: 'Verification Timeout',
+            message: 'Transaction is still pending. You can verify manually from the transaction details.',
+            duration: 8000
+          })
         }
       }, 2000)
     }
     return () => {
-      if (pollingRef.current && (!stkAwaiting || !stkWalletTransactionId)) {
+      if (pollingRef.current) {
         clearInterval(pollingRef.current)
         pollingRef.current = null
       }
     }
-  }, [stkAwaiting, stkWalletTransactionId, transactions])
+  }, [stkAwaiting, stkWalletTransactionId, currentUser, viewingPartnerId])
 
   const loadWalletData = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/wallet')
+      let url = '/api/wallet'
+      if (currentUser?.role === 'super_admin' && viewingPartnerId) {
+        url += `?partner_id=${viewingPartnerId}`
+      }
+      const response = await fetch(url)
       if (response.ok) {
         const data = await response.json()
         setWallet(data.data)
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        if (errorData.error === 'No partner assigned' && currentUser?.role === 'super_admin') {
+          // For super_admin, show a message to select a partner
+          addToast({
+            type: 'info',
+            title: 'Select Partner',
+            message: 'Please select a partner to view wallet data',
+            duration: 5000
+          })
+        }
       }
     } catch (error) {
       console.error('Failed to load wallet data:', error)
@@ -291,7 +421,11 @@ export default function WalletPage() {
 
   const loadChargeStatistics = async () => {
     try {
-      const response = await fetch('/api/wallet/charge-statistics')
+      let url = '/api/wallet/charge-statistics'
+      if (currentUser?.role === 'super_admin' && viewingPartnerId) {
+        url += `?partner_id=${viewingPartnerId}`
+      }
+      const response = await fetch(url)
       if (response.ok) {
         const data = await response.json()
         setChargeStats(data.data)
@@ -309,6 +443,10 @@ export default function WalletPage() {
         ...Object.fromEntries(Object.entries(filters).filter(([_, v]) => v !== ''))
       })
 
+      if (currentUser?.role === 'super_admin' && viewingPartnerId) {
+        params.append('partner_id', viewingPartnerId)
+      }
+
       const response = await fetch(`/api/wallet/transactions?${params}`)
       if (response.ok) {
         const data = await response.json()
@@ -318,6 +456,17 @@ export default function WalletPage() {
           total: data.pagination?.total || 0,
           totalPages: Math.ceil((data.pagination?.total || 0) / pagination.limit)
         }))
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        if (errorData.error === 'No partner assigned' && currentUser?.role === 'super_admin') {
+          // For super_admin, show a message to select a partner
+          addToast({
+            type: 'info',
+            title: 'Select Partner',
+            message: 'Please select a partner to view transactions',
+            duration: 5000
+          })
+        }
       }
     } catch (error) {
       console.error('Failed to load transactions:', error)
@@ -557,6 +706,28 @@ export default function WalletPage() {
                 <p className="text-sm text-gray-500">Manage your wallet balance and transactions</p>
               </div>
             </div>
+            {/* Partner Selector for Super Admin */}
+            {currentUser?.role === 'super_admin' && (
+              <div className="mr-4">
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  View Partner Wallet
+                </label>
+                <select
+                  value={viewingPartnerId || ''}
+                  onChange={(e) => {
+                    setViewingPartnerId(e.target.value || null)
+                  }}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                >
+                  <option value="">Select a partner</option>
+                  {partners.filter(p => p.is_active).map(partner => (
+                    <option key={partner.id} value={partner.id}>
+                      {partner.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="flex items-center space-x-3">
               {/* Wallet Action Buttons */}
               <button
@@ -1100,22 +1271,47 @@ export default function WalletPage() {
             <div className="mt-3">
               <h3 className="text-lg font-medium text-gray-900 mb-4">Top Up Wallet</h3>
 
-              {/* Waiting for STK confirmation */}
-              {stkAwaiting ? (
+              {/* Waiting for STK confirmation or showing success */}
+              {stkAwaiting || stkCompleted ? (
                 <div className="space-y-4">
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex items-center">
-                      <RefreshCw className="w-5 h-5 mr-2 animate-spin text-blue-600" />
-                      <p className="text-sm text-blue-800">
-                        {stkCompleted
-                          ? 'Payment completed. Your wallet should update shortly.'
-                          : 'Waiting for STK push confirmation. Please complete the prompt on your phone.'}
+                  {stkCompleted ? (
+                    <div className="p-6 bg-gradient-to-r from-green-50 to-green-100 border-2 border-green-400 rounded-lg shadow-lg">
+                      <div className="flex items-center justify-center mb-3">
+                        <div className="bg-green-500 rounded-full p-3 shadow-lg">
+                          <CheckCircle className="w-10 h-10 text-white" />
+                        </div>
+                      </div>
+                      <h4 className="text-xl font-bold text-green-800 text-center mb-2">
+                        ✅ Payment Completed Successfully!
+                      </h4>
+                      <p className="text-sm text-green-700 text-center mb-3 font-medium">
+                        Your wallet has been credited successfully. The balance has been updated.
+                      </p>
+                      <div className="bg-white rounded-lg p-4 border-2 border-green-300 shadow-sm">
+                        <div className="flex items-center justify-center space-x-2 mb-2">
+                          <CheckCircle className="w-5 h-5 text-green-600" />
+                          <p className="text-sm font-semibold text-gray-800">
+                            Transaction Processed
+                          </p>
+                        </div>
+                        <p className="text-xs text-gray-600 text-center">
+                          Your wallet balance has been updated. You can now use your funds.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-center">
+                        <RefreshCw className="w-5 h-5 mr-2 animate-spin text-blue-600" />
+                        <p className="text-sm text-blue-800">
+                          Waiting for STK push confirmation. Please complete the prompt on your phone.
+                        </p>
+                      </div>
+                      <p className="text-xs text-blue-700 mt-2">
+                        Do not close this window until the payment is confirmed. We'll verify automatically.
                       </p>
                     </div>
-                    {!stkCompleted && (
-                      <p className="text-xs text-blue-700 mt-2">Do not close this window until the payment is confirmed.</p>
-                    )}
-                  </div>
+                  )}
 
                   <div className="flex justify-end">
                     <button
@@ -1133,10 +1329,17 @@ export default function WalletPage() {
                           clearInterval(pollingRef.current)
                           pollingRef.current = null
                         }
+                        // Reload data when closing
+                        loadWalletData()
+                        loadTransactions()
                       }}
-                      className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      className={`px-6 py-2 rounded-lg transition-colors ${
+                        stkCompleted
+                          ? 'bg-green-600 text-white hover:bg-green-700'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
                     >
-                      OK
+                      {stkCompleted ? 'Done' : 'OK'}
                     </button>
                   </div>
                 </div>
@@ -1621,10 +1824,61 @@ export default function WalletPage() {
                 </div>
               )}
 
-              <div className="mt-6 flex justify-end">
+              <div className="mt-6 flex justify-between items-center">
+                {/* Verify button for pending STK push transactions */}
+                {selectedTransaction.status === 'pending' && 
+                 selectedTransaction.transaction_type === 'top_up' &&
+                 selectedTransaction.metadata?.stk_push_initiated && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/wallet/topup/verify-stk', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json'
+                          },
+                          body: JSON.stringify({
+                            wallet_transaction_id: selectedTransaction.id
+                          })
+                        })
+                        const data = await response.json()
+                        if (data.success) {
+                          addToast({
+                            type: 'success',
+                            title: 'Verification Successful',
+                            message: data.message || 'Transaction verified and wallet updated',
+                            duration: 5000
+                          })
+                          // Reload transactions and wallet data
+                          loadTransactions()
+                          loadWalletData()
+                          setShowTransactionDetails(false)
+                        } else {
+                          addToast({
+                            type: 'error',
+                            title: 'Verification Failed',
+                            message: data.error || 'Failed to verify transaction',
+                            duration: 5000
+                          })
+                        }
+                      } catch (error) {
+                        addToast({
+                          type: 'error',
+                          title: 'Error',
+                          message: 'Failed to verify transaction',
+                          duration: 5000
+                        })
+                      }
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                  >
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    Verify with NCBA
+                  </button>
+                )}
                 <button
                   onClick={() => setShowTransactionDetails(false)}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors ml-auto"
                 >
                   Close
                 </button>

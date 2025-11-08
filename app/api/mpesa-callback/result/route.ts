@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import UnifiedWalletService from '@/lib/unified-wallet-service'
 
 // Initialize Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -30,10 +31,7 @@ interface MpesaResultCallback {
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('🔔 M-Pesa callback received at cbsvault.co.ke')
-    
     const callbackData: MpesaResultCallback = await request.json()
-    console.log('Callback data:', JSON.stringify(callbackData, null, 2))
 
     const { Result } = callbackData
     const conversationId = Result.ConversationID
@@ -49,9 +47,6 @@ export async function POST(request: NextRequest) {
 
     // If not found by conversation_id, try to find by Occasion (disbursement ID)
     if (findError || !disbursementRequest) {
-      console.log(`Disbursement not found by conversation_id: ${conversationId}, trying Occasion field`)
-      
-      // Extract Occasion from ResultParameters if available
       let occasion = null
       if (Result.ResultParameters?.ResultParameter) {
         for (const param of Result.ResultParameters.ResultParameter) {
@@ -63,7 +58,6 @@ export async function POST(request: NextRequest) {
       }
       
       if (occasion) {
-        console.log(`Trying to find disbursement by Occasion: ${occasion}`)
         const { data: disbursementByOccasion, error: occasionError } = await supabase
           .from('disbursement_requests')
           .select('*')
@@ -73,15 +67,11 @@ export async function POST(request: NextRequest) {
         if (!occasionError && disbursementByOccasion) {
           disbursementRequest = disbursementByOccasion
           findError = null
-          console.log(`Found disbursement by Occasion: ${occasion}`)
         }
       }
     }
 
     if (findError || !disbursementRequest) {
-      console.log(`Disbursement not found for conversation_id: ${conversationId}`)
-      
-      // Still save the callback for debugging
       await supabase
         .from('mpesa_callbacks')
         .insert({
@@ -158,16 +148,21 @@ export async function POST(request: NextRequest) {
       .eq('id', disbursementRequest.id)
 
     if (updateError) {
-      console.error('Error updating disbursement request:', updateError)
-    } else {
-      console.log(`✅ Updated disbursement ${disbursementRequest.id} with status: ${finalStatus}`)
+      console.error('[M-Pesa Callback] Error updating disbursement request:', updateError)
     }
 
-    // 💰 NEW: Process wallet charge deduction based on disbursement status
-    if (finalStatus === 'success') {
-      // Disbursement succeeded - deduct wallet balance and complete pending transactions
+    // Process wallet charge deduction based on disbursement status
+    // Only deduct wallet balance when disbursement status is 'success'
+    const { data: currentDisbursement } = await supabase
+      .from('disbursement_requests')
+      .select('status, result_code')
+      .eq('id', disbursementRequest.id)
+      .single()
+    
+    const actualStatus = currentDisbursement?.status || finalStatus
+    
+    if (finalStatus === 'success' && actualStatus === 'success') {
       try {
-        // Find pending wallet transaction for this disbursement
         const { data: walletTransaction, error: wtFindError } = await supabase
           .from('wallet_transactions')
           .select('*')
@@ -176,9 +171,18 @@ export async function POST(request: NextRequest) {
           .single()
 
         if (!wtFindError && walletTransaction) {
-          const chargeAmount = Math.abs(walletTransaction.amount)
+          // Re-check the disbursement status one more time before deducting
+          const { data: finalCheck, error: finalCheckError } = await supabase
+            .from('disbursement_requests')
+            .select('status, result_code')
+            .eq('id', disbursementRequest.id)
+            .single()
           
-          // Get current wallet balance
+          if (finalCheckError || !finalCheck || finalCheck.status !== 'success') {
+            throw new Error(`Disbursement status is '${finalCheck?.status || 'unknown'}', not 'success'. Wallet deduction aborted.`)
+          }
+          
+          const chargeAmount = Math.abs(walletTransaction.amount)
           const { data: wallet, error: walletError } = await supabase
             .from('partner_wallets')
             .select('current_balance')
@@ -186,83 +190,158 @@ export async function POST(request: NextRequest) {
             .single()
 
           if (!walletError && wallet) {
-            const newBalance = wallet.current_balance - chargeAmount
+            const balanceResult = await UnifiedWalletService.updateWalletBalance(
+              disbursementRequest.partner_id,
+              -chargeAmount, // Negative amount for deduction
+              'charge',
+              {
+                reference: `DISBURSEMENT_CHARGE_${disbursementRequest.id}`,
+                description: `Disbursement charge for ${disbursementRequest.amount} KES`,
+                related_transaction_id: disbursementRequest.id,
+                related_transaction_type: 'disbursement',
+                disbursement_id: disbursementRequest.id,
+                disbursement_amount: disbursementRequest.amount,
+                charge_amount: chargeAmount,
+                wallet_transaction_id: walletTransaction.id,
+                processed_via_callback: true,
+                callback_timestamp: new Date().toISOString()
+              }
+            )
 
-            // Update wallet balance
-            const { error: walletUpdateError } = await supabase
-              .from('partner_wallets')
-              .update({
-                current_balance: newBalance,
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', walletTransaction.wallet_id)
-
-            if (walletUpdateError) {
-              console.error('❌ [Wallet] Error updating wallet balance:', walletUpdateError)
+            if (!balanceResult.success) {
+              console.error('[M-Pesa Callback] UnifiedWalletService failed to deduct wallet balance:', balanceResult.error)
+              throw new Error(`Failed to deduct wallet balance: ${balanceResult.error}`)
             } else {
-              console.log('✅ [Wallet] Wallet balance deducted successfully:', {
-                old_balance: wallet.current_balance,
-                charge_deducted: chargeAmount,
-                new_balance: newBalance
-              })
+              const newBalance = balanceResult.newBalance || (wallet.current_balance - chargeAmount)
 
-              // Update wallet transaction status to completed
               const { error: wtUpdateError } = await supabase
                 .from('wallet_transactions')
                 .update({
                   status: 'completed',
                   metadata: {
                     ...(walletTransaction.metadata || {}),
-                    wallet_balance_before: wallet.current_balance,
-                    wallet_balance_after: newBalance,
-                    completed_at: new Date().toISOString()
+                    wallet_balance_before: balanceResult.previousBalance,
+                    wallet_balance_after: balanceResult.newBalance,
+                    completed_at: new Date().toISOString(),
+                    processed_via_unified_service: true
                   },
                   updated_at: new Date().toISOString()
                 })
                 .eq('id', walletTransaction.id)
 
               if (wtUpdateError) {
-                console.error('❌ [Wallet] Error updating wallet transaction status:', wtUpdateError)
-              } else {
-                console.log('✅ [Wallet] Wallet transaction status updated to completed')
+                console.error('[M-Pesa Callback] Error updating wallet transaction status:', wtUpdateError)
               }
 
-              // Update partner charge transaction status to completed
-              const { error: pctUpdateError } = await supabase
+              const { data: pendingCharges, error: pctFindError } = await supabase
                 .from('partner_charge_transactions')
-                .update({
-                  status: 'completed',
-                  wallet_balance_before: wallet.current_balance,
-                  wallet_balance_after: newBalance,
-                  metadata: {
-                    ...(walletTransaction.metadata || {}),
-                    wallet_balance_before: wallet.current_balance,
-                    wallet_balance_after: newBalance,
-                    completed_at: new Date().toISOString()
-                  },
-                  updated_at: new Date().toISOString()
-                })
+                .select('*')
                 .eq('related_transaction_id', disbursementRequest.id)
                 .eq('status', 'pending')
 
-              if (pctUpdateError) {
-                console.error('❌ [Wallet] Error updating partner charge transaction status:', pctUpdateError)
+              if (!pctFindError && pendingCharges && pendingCharges.length > 0) {
+                // Process each pending charge transaction
+                for (const chargeTransaction of pendingCharges) {
+                  // Only deduct if charge wasn't already deducted
+                  if (chargeTransaction.status === 'pending' && chargeTransaction.metadata?.deduction_deferred !== true) {
+                    // This charge was already deducted, just update status
+                    const { error: pctUpdateError } = await supabase
+                      .from('partner_charge_transactions')
+                      .update({
+                        status: 'completed',
+                        wallet_balance_before: wallet.current_balance,
+                        wallet_balance_after: newBalance,
+                        metadata: {
+                          ...(chargeTransaction.metadata || {}),
+                          wallet_balance_before: wallet.current_balance,
+                          wallet_balance_after: newBalance,
+                          completed_at: new Date().toISOString()
+                        },
+                        processed_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                      })
+                      .eq('id', chargeTransaction.id)
+
+                    if (pctUpdateError) {
+                      console.error('[M-Pesa Callback] Error updating charge transaction:', pctUpdateError)
+                    }
+                  } else {
+                    const deferredChargeAmount = chargeTransaction.charge_amount || chargeAmount
+                    const deferredBalanceResult = await UnifiedWalletService.updateWalletBalance(
+                      disbursementRequest.partner_id,
+                      -deferredChargeAmount,
+                      'charge',
+                      {
+                        reference: `CHARGE_${chargeTransaction.id}`,
+                        description: chargeTransaction.description || `Deferred charge for disbursement ${disbursementRequest.id}`,
+                        charge_transaction_id: chargeTransaction.id,
+                        charge_config_id: chargeTransaction.charge_config_id,
+                        related_transaction_id: disbursementRequest.id,
+                        related_transaction_type: 'disbursement',
+                        deferred_charge: true,
+                        processed_at: new Date().toISOString()
+                      }
+                    )
+
+                    if (deferredBalanceResult.success) {
+                      // Update charge transaction status to completed
+                      const { error: pctUpdateError } = await supabase
+                        .from('partner_charge_transactions')
+                        .update({
+                          status: 'completed',
+                          wallet_balance_before: wallet.current_balance,
+                          wallet_balance_after: deferredBalanceResult.newBalance,
+                          metadata: {
+                            ...(chargeTransaction.metadata || {}),
+                            wallet_balance_before: wallet.current_balance,
+                            wallet_balance_after: deferredBalanceResult.newBalance,
+                            completed_at: new Date().toISOString(),
+                            deferred_charge_processed: true
+                          },
+                          processed_at: new Date().toISOString(),
+                          updated_at: new Date().toISOString()
+                        })
+                        .eq('id', chargeTransaction.id)
+
+                      if (pctUpdateError) {
+                        console.error('[M-Pesa Callback] Error updating deferred charge transaction:', pctUpdateError)
+                      }
+                    } else {
+                      console.error('[M-Pesa Callback] Failed to process deferred charge transaction:', deferredBalanceResult.error)
+                    }
+                  }
+                }
               } else {
-                console.log('✅ [Wallet] Partner charge transaction status updated to completed')
+                const { error: pctUpdateError } = await supabase
+                  .from('partner_charge_transactions')
+                  .update({
+                    status: 'completed',
+                    wallet_balance_before: wallet.current_balance,
+                    wallet_balance_after: newBalance,
+                    metadata: {
+                      wallet_balance_before: wallet.current_balance,
+                      wallet_balance_after: newBalance,
+                      completed_at: new Date().toISOString()
+                    },
+                    processed_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('related_transaction_id', disbursementRequest.id)
+                  .eq('status', 'pending')
+
+                if (pctUpdateError && pctUpdateError.code !== 'PGRST116') {
+                  console.error('[M-Pesa Callback] Error updating partner charge transaction status:', pctUpdateError)
+                }
               }
             }
           }
-        } else if (wtFindError && wtFindError.code !== 'PGRST116') {
-          console.log('💰 [Wallet] No pending wallet transaction found for this disbursement (may not have charges configured)')
         }
       } catch (walletError) {
-        console.error('❌ [Wallet] Error processing wallet charge deduction:', walletError)
-        // Don't fail the callback if wallet update fails
+        console.error('[M-Pesa Callback] Error processing wallet charge deduction:', walletError)
       }
     } else if (finalStatus === 'failed') {
-      // Disbursement failed - mark pending transactions as failed (don't deduct balance)
+      // Disbursement failed - mark pending transactions as failed
       try {
-        // Find pending wallet transaction for this disbursement
         const { data: failedWalletTransaction, error: wtFindError } = await supabase
           .from('wallet_transactions')
           .select('*')
@@ -285,12 +364,9 @@ export async function POST(request: NextRequest) {
             .eq('id', failedWalletTransaction.id)
 
           if (wtUpdateError) {
-            console.error('❌ [Wallet] Error updating wallet transaction status to failed:', wtUpdateError)
-          } else {
-            console.log('✅ [Wallet] Wallet transaction status updated to failed (balance not deducted)')
+            console.error('[M-Pesa Callback] Error updating wallet transaction status to failed:', wtUpdateError)
           }
 
-          // Update partner charge transaction status to failed
           const { error: pctUpdateError } = await supabase
             .from('partner_charge_transactions')
             .update({
@@ -305,13 +381,11 @@ export async function POST(request: NextRequest) {
             .eq('status', 'pending')
 
           if (pctUpdateError) {
-            console.error('❌ [Wallet] Error updating partner charge transaction status to failed:', pctUpdateError)
-          } else {
-            console.log('✅ [Wallet] Partner charge transaction status updated to failed')
+            console.error('[M-Pesa Callback] Error updating partner charge transaction status to failed:', pctUpdateError)
           }
         }
       } catch (walletError) {
-        console.error('❌ [Wallet] Error processing failed wallet transaction:', walletError)
+        console.error('[M-Pesa Callback] Error processing failed wallet transaction:', walletError)
       }
     }
 
@@ -349,8 +423,6 @@ export async function POST(request: NextRequest) {
           status: finalStatus
         }
 
-        console.log(`📤 Sending webhook to USSD backend: ${ussdWebhookUrl}`)
-        
         const webhookResponse = await fetch(ussdWebhookUrl, {
           method: 'POST',
           headers: {
@@ -366,24 +438,18 @@ export async function POST(request: NextRequest) {
           }
         })
 
-        if (webhookResponse.ok) {
-          console.log(`✅ Webhook sent successfully to USSD backend (${webhookResponse.status})`)
-        } else {
-          console.error(`❌ Webhook failed: ${webhookResponse.status} ${webhookResponse.statusText}`)
+        if (!webhookResponse.ok) {
+          console.error('[M-Pesa Callback] Webhook failed:', webhookResponse.status, webhookResponse.statusText)
         }
       } catch (webhookError) {
-        console.error('❌ Error sending webhook to USSD backend:', webhookError)
-        // Don't fail the callback processing if webhook fails
+        console.error('[M-Pesa Callback] Error sending webhook:', webhookError)
       }
-    } else if (disbursementRequest.origin === 'ussd') {
-      console.warn('⚠️ USSD webhook URL not configured, skipping webhook notification')
     }
 
-    console.log('✅ M-Pesa callback processed successfully')
     return NextResponse.json({ message: 'OK' }, { status: 200 })
 
   } catch (error) {
-    console.error('❌ Error processing M-Pesa callback:', error)
+    console.error('[M-Pesa Callback] Error:', error)
     return NextResponse.json({ message: 'OK' }, { status: 200 })
   }
 }

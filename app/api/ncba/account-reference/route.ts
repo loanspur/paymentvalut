@@ -40,10 +40,10 @@ export async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, string>)
 
-    // Verify partner exists
+    // Verify partner exists and get short_code
     const { data: partner, error: partnerError } = await supabase
       .from('partners')
-      .select('id, name')
+      .select('id, name, short_code')
       .eq('id', partner_id)
       .eq('is_active', true)
       .single()
@@ -55,14 +55,17 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Generate account reference
-    const accountReference = `${settings.ncba_account_number}${settings.ncba_account_reference_separator}${partner_id}`
+    // Generate account reference using partner short_code (same format as STK push and manual payments)
+    // Format: 774451#FINSAFE (consistent across all payment methods)
+    const partnerIdentifier = partner.short_code || partner.id
+    const accountReference = `${settings.ncba_account_number}${settings.ncba_account_reference_separator}${partnerIdentifier}`
 
     return NextResponse.json({
       success: true,
       data: {
         partner_id,
         partner_name: partner.name,
+        partner_short_code: partner.short_code,
         account_reference: accountReference,
         account_number: settings.ncba_account_number,
         separator: settings.ncba_account_reference_separator,
@@ -117,10 +120,10 @@ export async function POST(request: NextRequest) {
       return acc
     }, {} as Record<string, string>)
 
-    // Get partners
+    // Get partners with short_code
     const { data: partners, error: partnersError } = await supabase
       .from('partners')
-      .select('id, name')
+      .select('id, name, short_code')
       .in('id', partner_ids)
       .eq('is_active', true)
 
@@ -131,14 +134,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate account references for all partners
-    const accountReferences = partners.map(partner => ({
-      partner_id: partner.id,
-      partner_name: partner.name,
-      account_reference: `${settings.ncba_account_number}${settings.ncba_account_reference_separator}${partner.id}`,
-      account_number: settings.ncba_account_number,
-      separator: settings.ncba_account_reference_separator
-    }))
+    // Generate account references for all partners using short_code (consistent with STK push and manual payments)
+    const accountReferences = partners.map(partner => {
+      const partnerIdentifier = partner.short_code || partner.id
+      return {
+        partner_id: partner.id,
+        partner_name: partner.name,
+        partner_short_code: partner.short_code,
+        account_reference: `${settings.ncba_account_number}${settings.ncba_account_reference_separator}${partnerIdentifier}`,
+        account_number: settings.ncba_account_number,
+        separator: settings.ncba_account_reference_separator
+      }
+    })
 
     return NextResponse.json({
       success: true,
@@ -146,7 +153,7 @@ export async function POST(request: NextRequest) {
         account_references: accountReferences,
         instructions: {
           paybill_number: '880100',
-          example: `Paybill: 880100, Account: ${settings.ncba_account_number}${settings.ncba_account_reference_separator}<PARTNER_ID>`
+          example: `Paybill: 880100, Account: ${settings.ncba_account_number}${settings.ncba_account_reference_separator}<PARTNER_SHORT_CODE>`
         }
       }
     })

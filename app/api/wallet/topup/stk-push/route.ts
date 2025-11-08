@@ -301,7 +301,10 @@ export async function POST(request: NextRequest) {
     const paybill_number = settings.ncba_business_short_code || '880100'
     const account_number = settings.ncba_account_number || '774451'
     const account_reference_separator = settings.ncba_account_reference_separator || '#'
-    const account_reference = `${account_number}${account_reference_separator}${partner.id}`
+    // Use partner short_code instead of partner.id for consistency with manual payments
+    // Format: 774451#FINSAFE (same as manual paybill payments)
+    const partnerShortCode = partner.short_code || partner.id
+    const account_reference = `${account_number}${account_reference_separator}${partnerShortCode}`
     const transaction_reference = `STK${timestamp}${Math.random().toString(36).substr(2, 4).toUpperCase()}`
 
     // Prepare NCBA STK Push request (different format from Safaricom)

@@ -8,7 +8,6 @@ const supabase = createClient(
 
 export async function GET(request: NextRequest) {
   try {
-    // Get all partners first
     const { data: partners, error: partnersError } = await supabase
       .from('partners')
       .select(`
@@ -26,7 +25,6 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get all wallets separately
     const { data: wallets, error: walletsError } = await supabase
       .from('partner_wallets')
       .select(`

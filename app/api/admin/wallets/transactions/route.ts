@@ -96,13 +96,6 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Log for debugging
-    console.log('Admin wallet transactions query result:', {
-      dataCount: data?.length || 0,
-      totalCount: count || 0,
-      offset,
-      limit
-    })
 
     // Get partner information for all transactions
     const walletIds = data?.map(t => t.wallet_id) || []
@@ -132,20 +125,27 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Transform data to include partner information
-    const transformedData = data?.map(transaction => ({
-      id: transaction.id,
-      wallet_id: transaction.wallet_id,
-      partner_id: partnerMap[transaction.wallet_id]?.partner_id,
-      partner_name: partnerMap[transaction.wallet_id]?.partner_name,
-      transaction_type: transaction.transaction_type,
-      amount: transaction.amount,
-      reference: transaction.reference,
-      description: transaction.description,
-      status: transaction.status,
-      created_at: transaction.created_at,
-      metadata: transaction.metadata
-    })) || []
+    // Transform data to include partner information and deduplicate by ID
+    const transactionMap = new Map()
+    data?.forEach(transaction => {
+      // Only add if we haven't seen this transaction ID before
+      if (!transactionMap.has(transaction.id)) {
+        transactionMap.set(transaction.id, {
+          id: transaction.id,
+          wallet_id: transaction.wallet_id,
+          partner_id: partnerMap[transaction.wallet_id]?.partner_id,
+          partner_name: partnerMap[transaction.wallet_id]?.partner_name,
+          transaction_type: transaction.transaction_type,
+          amount: transaction.amount,
+          reference: transaction.reference,
+          description: transaction.description,
+          status: transaction.status,
+          created_at: transaction.created_at,
+          metadata: transaction.metadata
+        })
+      }
+    })
+    const transformedData = Array.from(transactionMap.values())
 
     // Get transaction summary (without pagination for global stats)
     const { data: summaryData, error: summaryError } = await supabase

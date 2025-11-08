@@ -54,7 +54,7 @@ export class UnifiedWalletService {
       let currentBalance = 0
 
       if (walletError && walletError.code !== 'PGRST116') {
-        console.error('❌ Error fetching wallet:', walletError)
+        console.error('[UnifiedWalletService] Error fetching wallet:', walletError)
         return {
           success: false,
           partnerId,
@@ -118,6 +118,27 @@ export class UnifiedWalletService {
         }
       }
 
+      // CRITICAL CHECK: If this is a charge related to a disbursement, verify disbursement status
+      if (transactionType === 'charge' && metadata?.related_transaction_id && metadata?.related_transaction_type === 'disbursement') {
+        const { data: relatedDisbursement, error: disbursementCheckError } = await supabase
+          .from('disbursement_requests')
+          .select('id, status, result_code')
+          .eq('id', metadata.related_transaction_id)
+          .single()
+        
+        if (!disbursementCheckError && relatedDisbursement && relatedDisbursement.status !== 'success') {
+          return {
+            success: false,
+            walletId,
+            partnerId,
+            previousBalance: currentBalance,
+            amount,
+            transactionType,
+            error: `Cannot deduct wallet: Related disbursement status is '${relatedDisbursement.status}', not 'success'`
+          }
+        }
+      }
+
       // Update wallet balance
       const updateData: any = {
         current_balance: newBalance,
@@ -136,7 +157,7 @@ export class UnifiedWalletService {
         .eq('id', walletId)
 
       if (balanceError) {
-        console.error('❌ Error updating wallet balance:', balanceError)
+        console.error('[UnifiedWalletService] Error updating wallet balance:', balanceError)
         return {
           success: false,
           walletId,
@@ -148,7 +169,7 @@ export class UnifiedWalletService {
         }
       }
 
-      // Create wallet transaction record (include resulting balance for easy reads)
+      // Create wallet transaction record
       const transactionData: WalletTransactionData = {
         walletId,
         transactionType: transactionType as any,
@@ -164,9 +185,7 @@ export class UnifiedWalletService {
       const transactionResult = await this.createWalletTransaction(transactionData, wallet.currency || 'KES')
 
       if (!transactionResult) {
-        console.error('❌ Failed to create wallet transaction, but balance was updated')
-        // Balance was already updated, so we still return success but log the error
-        // The transaction record is important for audit trail, but we don't want to fail the entire operation
+        console.error('[UnifiedWalletService] Failed to create wallet transaction, but balance was updated')
       }
 
       return {
@@ -180,7 +199,7 @@ export class UnifiedWalletService {
       }
 
     } catch (error) {
-      console.error('❌ UnifiedWalletService.updateWalletBalance Exception:', error)
+      console.error('[UnifiedWalletService] Exception:', error)
       return {
         success: false,
         partnerId,
@@ -193,8 +212,10 @@ export class UnifiedWalletService {
 
   /**
    * Create wallet transaction record
+   * IMPORTANT: This method only creates the transaction record - it does NOT update wallet balance
+   * Wallet balance should only be updated via updateWalletBalance() method
    */
-  static async createWalletTransaction(transactionData: WalletTransactionData, currency: string = 'KES'): Promise<boolean> {
+  static async createWalletTransaction(transactionData: WalletTransactionData, currency: string = 'KES', status: string = 'completed'): Promise<boolean> {
     try {
       const { data, error } = await supabase
         .from('wallet_transactions')
@@ -205,7 +226,7 @@ export class UnifiedWalletService {
           currency: currency,
           reference: transactionData.reference,
           description: transactionData.description,
-          status: 'completed',
+          status: status, // Allow status to be specified (e.g., 'pending' for deferred charges)
           metadata: transactionData.metadata,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -214,29 +235,14 @@ export class UnifiedWalletService {
         .single()
 
       if (error) {
-        console.error('❌ Error creating wallet transaction:', error)
-        console.error('❌ Transaction data:', {
-          wallet_id: transactionData.walletId,
-          transaction_type: transactionData.transactionType,
-          amount: transactionData.amount,
-          reference: transactionData.reference,
-          description: transactionData.description
-        })
+        console.error('[UnifiedWalletService] Error creating wallet transaction:', error)
         return false
       }
-
-      console.log('✅ Wallet transaction created successfully:', {
-        transaction_id: data?.id,
-        wallet_id: transactionData.walletId,
-        transaction_type: transactionData.transactionType,
-        amount: transactionData.amount,
-        reference: transactionData.reference
-      })
 
       return true
 
     } catch (error) {
-      console.error('❌ UnifiedWalletService.createWalletTransaction Exception:', error)
+      console.error('[UnifiedWalletService] Exception creating wallet transaction:', error)
       return false
     }
   }

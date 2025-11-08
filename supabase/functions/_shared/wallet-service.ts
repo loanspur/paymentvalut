@@ -192,6 +192,8 @@ export class WalletService {
 
   /**
    * Update wallet balance
+   * ⚠️ DEPRECATED: This method bypasses UnifiedWalletService and its checks
+   * Use UnifiedWalletService.updateWalletBalance() instead for all wallet updates
    */
   async updateWalletBalance(walletId: string, newBalance: number, lastTopupAmount?: number): Promise<boolean> {
     try {
@@ -211,13 +213,13 @@ export class WalletService {
         .eq('id', walletId);
 
       if (error) {
-        console.error('Update Wallet Balance Error:', error);
+        console.error('[WalletService] Error updating wallet balance:', error);
         return false;
       }
 
       return true;
     } catch (error) {
-      console.error('Update Wallet Balance Exception:', error);
+      console.error('[WalletService] Exception:', error);
       return false;
     }
   }

@@ -139,7 +139,8 @@ export default function AdminWalletsPage() {
     if (activeTab === 'transactions') {
       loadTransactions()
     }
-  }, [activeTab, pagination.page, filters])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, pagination.page, filters.partner_id, filters.transaction_type, filters.status, filters.search, filters.start_date, filters.end_date])
 
   const loadPartnersData = async () => {
     try {
@@ -173,7 +174,12 @@ export default function AdminWalletsPage() {
       const data = await response.json()
       
       if (response.ok && data.success) {
-        setTransactions(data.data || [])
+        // Deduplicate transactions by ID to prevent duplicates
+        const transactionsData = data.data || []
+        const uniqueTransactions = transactionsData.filter((transaction: WalletTransaction, index: number, self: WalletTransaction[]) => 
+          index === self.findIndex((t: WalletTransaction) => t.id === transaction.id)
+        )
+        setTransactions(uniqueTransactions)
         setPagination(prev => ({
           ...prev,
           total: data.pagination?.total || 0,
