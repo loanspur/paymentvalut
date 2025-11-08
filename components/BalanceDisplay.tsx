@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { RefreshCw, TrendingUp, TrendingDown, Wallet, CreditCard } from 'lucide-react'
+import { formatDate } from '../lib/utils'
 
 interface BalanceData {
   id: string
@@ -73,15 +74,6 @@ export default function BalanceDisplay({ partnerId }: { partnerId: string }) {
     }).format(amount)
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-KE', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
 
   const getStatusBadge = (status: string) => {
     switch (status) {

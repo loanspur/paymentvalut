@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from './AuthProvider'
+import { formatDateOnly } from '../lib/utils'
 import { 
   User, 
   Mail, 
@@ -744,7 +745,7 @@ export default function ProfileManager() {
                         <span className="text-sm text-gray-700">Account Created</span>
                       </div>
                       <span className="text-sm text-gray-900">
-                        {new Date(profile.created_at).toLocaleDateString()}
+                        {formatDateOnly(profile.created_at)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between py-2">
@@ -753,7 +754,7 @@ export default function ProfileManager() {
                         <span className="text-sm text-gray-700">Last Updated</span>
                       </div>
                       <span className="text-sm text-gray-900">
-                        {new Date(profile.updated_at).toLocaleDateString()}
+                        {formatDateOnly(profile.updated_at)}
                       </span>
                     </div>
                     {profile.last_activity_at && (
@@ -763,7 +764,7 @@ export default function ProfileManager() {
                           <span className="text-sm text-gray-700">Last Activity</span>
                         </div>
                         <span className="text-sm text-gray-900">
-                          {new Date(profile.last_activity_at).toLocaleDateString()}
+                          {formatDateOnly(profile.last_activity_at)}
                         </span>
                       </div>
                     )}
@@ -783,7 +784,7 @@ export default function ProfileManager() {
                     <h3 className="text-lg font-medium text-gray-900">Password Security</h3>
                     <p className="text-sm text-gray-500">
                       Last changed: {profile.last_password_change ? 
-                        new Date(profile.last_password_change).toLocaleDateString() : 
+                        formatDateOnly(profile.last_password_change) : 
                         'Never'
                       }
                     </p>
@@ -1025,7 +1026,7 @@ export default function ProfileManager() {
                           </span>
                         </div>
                         <p className="text-xs text-gray-400 mt-2">
-                          Granted: {new Date(shortcode.granted_at).toLocaleDateString()}
+                          Granted: {formatDateOnly(shortcode.granted_at)}
                         </p>
                       </div>
                     ))}

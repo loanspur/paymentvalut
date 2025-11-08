@@ -23,9 +23,8 @@ export async function GET(request: NextRequest) {
     // Build query for wallet transactions
     let query = supabase
       .from('wallet_transactions')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1)
 
     // Apply filters
     if (partner_id) {
@@ -84,15 +83,26 @@ export async function GET(request: NextRequest) {
       query = query.or(`reference.ilike.%${search}%,description.ilike.%${search}%`)
     }
 
+    // Apply pagination after all filters
+    query = query.range(offset, offset + limit - 1)
+
     const { data, error, count } = await query
 
     if (error) {
       console.error('Error fetching admin wallet transactions:', error)
       return NextResponse.json(
-        { success: false, error: 'Failed to fetch wallet transactions' },
+        { success: false, error: 'Failed to fetch wallet transactions', details: error.message },
         { status: 500 }
       )
     }
+
+    // Log for debugging
+    console.log('Admin wallet transactions query result:', {
+      dataCount: data?.length || 0,
+      totalCount: count || 0,
+      offset,
+      limit
+    })
 
     // Get partner information for all transactions
     const walletIds = data?.map(t => t.wallet_id) || []

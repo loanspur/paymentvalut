@@ -158,6 +158,7 @@ export default function AdminWalletsPage() {
 
   const loadTransactions = async () => {
     try {
+      setLoading(true)
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
@@ -169,17 +170,26 @@ export default function AdminWalletsPage() {
       })
 
       const response = await fetch(`/api/admin/wallets/transactions?${params}`)
-      if (response.ok) {
-        const data = await response.json()
+      const data = await response.json()
+      
+      if (response.ok && data.success) {
         setTransactions(data.data || [])
         setPagination(prev => ({
           ...prev,
           total: data.pagination?.total || 0,
           totalPages: Math.ceil((data.pagination?.total || 0) / pagination.limit)
         }))
+      } else {
+        console.error('Failed to load transactions:', data.error || 'Unknown error')
+        showError('Error', data.error || 'Failed to load transactions')
+        setTransactions([])
       }
     } catch (error) {
       console.error('Failed to load transactions:', error)
+      showError('Error', 'Failed to load transactions. Please try again.')
+      setTransactions([])
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -229,16 +239,7 @@ export default function AdminWalletsPage() {
     }).format(amount)
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Africa/Nairobi'
-    })
-  }
+  // formatDate is imported from lib/utils (uses EA Time)
 
   const getTransactionIcon = (type: string) => {
     switch (type) {

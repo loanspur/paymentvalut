@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { formatDateTime } from '../lib/utils'
 import { 
   Search, 
   Filter, 
@@ -148,7 +149,7 @@ export default function AuditTrail({ className = '' }: AuditTrailProps) {
   }
 
   const formatTimestamp = (timestamp: string) => {
-    return new Date(timestamp).toLocaleString()
+    return formatDateTime(timestamp)
   }
 
   const handleFilterChange = (key: string, value: string) => {

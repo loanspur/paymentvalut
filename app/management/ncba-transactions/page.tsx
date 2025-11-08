@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { formatDateOnly } from '../../../lib/utils'
+import { formatDateOnly, formatDate } from '../../../lib/utils'
 import { 
   CreditCard, 
   Filter, 
@@ -303,7 +303,8 @@ export default function NCBATransactionsPage() {
     }).format(amount)
   }
 
-  const formatDate = (dateString: string) => {
+  // Format date with NCBA timestamp support (uses EA Time from utils)
+  const formatNCBADate = (dateString: string) => {
     if (!dateString) return 'Invalid Date'
     
     // Handle NCBA timestamp format (YYYYMMDDhhmmss)
@@ -316,25 +317,11 @@ export default function NCBATransactionsPage() {
       const second = dateString.substring(12, 14)
       
       const isoString = `${year}-${month}-${day}T${hour}:${minute}:${second}`
-      return new Date(isoString).toLocaleString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'Africa/Nairobi'
-      })
+      return formatDate(isoString)
     }
     
-    // Handle regular ISO date strings
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Africa/Nairobi'
-    })
+    // Handle regular ISO date strings - use centralized utility
+    return formatDate(dateString)
   }
 
   return (
@@ -744,7 +731,7 @@ export default function NCBATransactionsPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div className="flex items-center">
                           <Clock className="w-3 h-3 mr-1 text-gray-400" />
-                          {formatDate(transaction.created_at)}
+                          {formatNCBADate(transaction.created_at)}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -1013,11 +1000,11 @@ export default function NCBATransactionsPage() {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-600">Transaction Time:</span>
-                      <span className="text-sm text-gray-900">{formatDate(selectedTransaction.transaction_time)}</span>
+                      <span className="text-sm text-gray-900">{formatNCBADate(selectedTransaction.transaction_time)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-600">Created At:</span>
-                      <span className="text-sm text-gray-900">{formatDate(selectedTransaction.created_at)}</span>
+                      <span className="text-sm text-gray-900">{formatNCBADate(selectedTransaction.created_at)}</span>
                     </div>
                   </div>
                 </div>

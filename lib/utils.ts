@@ -1,4 +1,4 @@
-import { BALANCE_THRESHOLDS, DATA_FRESHNESS } from './constants'
+import { BALANCE_THRESHOLDS, DATA_FRESHNESS, TIMEZONE } from './constants'
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
@@ -43,7 +43,9 @@ export const ensureUtcTimestamp = (timestamp?: string): string => {
 
 // Date formatting with East Africa Time (UTC+3)
 export const formatDate = (date: string | Date): string => {
+  if (!date) return 'Invalid Date'
   const dateObj = new Date(date)
+  if (isNaN(dateObj.getTime())) return 'Invalid Date'
   
   return dateObj.toLocaleDateString('en-US', {
     year: 'numeric',
@@ -51,13 +53,15 @@ export const formatDate = (date: string | Date): string => {
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: 'Africa/Nairobi'
+    timeZone: TIMEZONE.ZONE
   })
 }
 
 // Date and time formatting with East Africa Time (UTC+3)
 export const formatDateTime = (date: string | Date): string => {
+  if (!date) return 'Invalid Date'
   const dateObj = new Date(date)
+  if (isNaN(dateObj.getTime())) return 'Invalid Date'
   
   return dateObj.toLocaleString('en-US', {
     year: 'numeric',
@@ -66,32 +70,130 @@ export const formatDateTime = (date: string | Date): string => {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    timeZone: 'Africa/Nairobi'
+    timeZone: TIMEZONE.ZONE
   })
 }
 
 // Date only formatting with East Africa Time (UTC+3)
 export const formatDateOnly = (date: string | Date): string => {
+  if (!date) return 'Invalid Date'
   const dateObj = new Date(date)
+  if (isNaN(dateObj.getTime())) return 'Invalid Date'
   
   return dateObj.toLocaleDateString('en-US', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-    timeZone: 'Africa/Nairobi'
+    timeZone: TIMEZONE.ZONE
   })
 }
 
 // Time only formatting with East Africa Time (UTC+3)
 export const formatTimeOnly = (date: string | Date): string => {
+  if (!date) return 'Invalid Date'
   const dateObj = new Date(date)
+  if (isNaN(dateObj.getTime())) return 'Invalid Date'
   
   return dateObj.toLocaleTimeString('en-US', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
-    timeZone: 'Africa/Nairobi'
+    timeZone: TIMEZONE.ZONE
   })
+}
+
+// Get current date/time in EA Time
+export const getCurrentEATime = (): Date => {
+  return new Date()
+}
+
+// Format date with custom format string (EA Time)
+export const formatDateCustom = (date: string | Date, format: 'short' | 'medium' | 'long' | 'full' = 'medium'): string => {
+  if (!date) return 'Invalid Date'
+  const dateObj = new Date(date)
+  if (isNaN(dateObj.getTime())) return 'Invalid Date'
+  
+  const formatOptions: Record<string, Intl.DateTimeFormatOptions> = {
+    short: {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      timeZone: TIMEZONE.ZONE
+    },
+    medium: {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: TIMEZONE.ZONE
+    },
+    long: {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZone: TIMEZONE.ZONE
+    },
+    full: {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      timeZone: TIMEZONE.ZONE
+    }
+  }
+  
+  return dateObj.toLocaleString('en-US', formatOptions[format])
+}
+
+// Format date for input fields (YYYY-MM-DD format in EA Time)
+export const formatDateForInput = (date: string | Date): string => {
+  if (!date) return ''
+  const dateObj = new Date(date)
+  if (isNaN(dateObj.getTime())) return ''
+  
+  // Convert to EA Time and format as YYYY-MM-DD
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: TIMEZONE.ZONE
+  })
+  
+  return formatter.format(dateObj)
+}
+
+// Format date for input datetime-local fields (YYYY-MM-DDTHH:mm format in EA Time)
+export const formatDateTimeForInput = (date: string | Date): string => {
+  if (!date) return ''
+  const dateObj = new Date(date)
+  if (isNaN(dateObj.getTime())) return ''
+  
+  // Get EA Time components
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: TIMEZONE.ZONE
+  })
+  
+  const parts = formatter.formatToParts(dateObj)
+  const year = parts.find(p => p.type === 'year')?.value
+  const month = parts.find(p => p.type === 'month')?.value
+  const day = parts.find(p => p.type === 'day')?.value
+  const hour = parts.find(p => p.type === 'hour')?.value
+  const minute = parts.find(p => p.type === 'minute')?.value
+  
+  return `${year}-${month}-${day}T${hour}:${minute}`
 }
 
 // Relative time formatting

@@ -161,7 +161,13 @@ export class UnifiedWalletService {
         }
       }
 
-      const transactionResult = await this.createWalletTransaction(transactionData)
+      const transactionResult = await this.createWalletTransaction(transactionData, wallet.currency || 'KES')
+
+      if (!transactionResult) {
+        console.error('❌ Failed to create wallet transaction, but balance was updated')
+        // Balance was already updated, so we still return success but log the error
+        // The transaction record is important for audit trail, but we don't want to fail the entire operation
+      }
 
       return {
         success: true,
@@ -188,14 +194,15 @@ export class UnifiedWalletService {
   /**
    * Create wallet transaction record
    */
-  static async createWalletTransaction(transactionData: WalletTransactionData): Promise<boolean> {
+  static async createWalletTransaction(transactionData: WalletTransactionData, currency: string = 'KES'): Promise<boolean> {
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('wallet_transactions')
         .insert({
           wallet_id: transactionData.walletId,
           transaction_type: transactionData.transactionType,
           amount: transactionData.amount,
+          currency: currency,
           reference: transactionData.reference,
           description: transactionData.description,
           status: 'completed',
@@ -203,11 +210,28 @@ export class UnifiedWalletService {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
+        .select()
+        .single()
 
       if (error) {
         console.error('❌ Error creating wallet transaction:', error)
+        console.error('❌ Transaction data:', {
+          wallet_id: transactionData.walletId,
+          transaction_type: transactionData.transactionType,
+          amount: transactionData.amount,
+          reference: transactionData.reference,
+          description: transactionData.description
+        })
         return false
       }
+
+      console.log('✅ Wallet transaction created successfully:', {
+        transaction_id: data?.id,
+        wallet_id: transactionData.walletId,
+        transaction_type: transactionData.transactionType,
+        amount: transactionData.amount,
+        reference: transactionData.reference
+      })
 
       return true
 

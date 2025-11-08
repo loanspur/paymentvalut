@@ -1,4 +1,13 @@
 // Application Constants
+
+// Timezone Configuration - East Africa Time (EAT)
+export const TIMEZONE = {
+  ZONE: 'Africa/Nairobi',
+  OFFSET: '+03:00',
+  NAME: 'East Africa Time (EAT)',
+  UTC_OFFSET: 3 // hours
+} as const
+
 export const BALANCE_THRESHOLDS = {
   CRITICAL: 1000,
   WARNING: 5000

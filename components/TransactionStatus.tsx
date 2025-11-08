@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { formatDate } from '../lib/utils'
 import { 
   RefreshCw, 
   TrendingUp, 
@@ -94,15 +95,7 @@ export default function TransactionStatus({ partnerId }: { partnerId: string }) 
     }).format(amount)
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-KE', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
+  // formatDate is imported from lib/utils (uses EA Time)
 
   const getStatusBadge = (status: string) => {
     switch (status) {

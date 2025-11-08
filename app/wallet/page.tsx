@@ -444,16 +444,7 @@ export default function WalletPage() {
     return phone.replace(/^(\d{3})(\d+)(\d{3})$/, (_m, a, mid, b) => `${a}${'*'.repeat(mid.length)}${b}`)
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Africa/Nairobi'
-    })
-  }
+  // formatDate is imported from lib/utils (uses EA Time)
 
   const getTransactionIcon = (type: string) => {
     switch (type) {

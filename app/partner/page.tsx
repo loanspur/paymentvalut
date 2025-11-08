@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import NotificationSystem, { useNotifications } from '../../components/NotificationSystem'
+import { formatDate } from '../../lib/utils'
 
 interface User {
   id: string
@@ -496,7 +497,7 @@ export default function PartnerDashboard() {
                       {disbursement.partner_shortcodes?.shortcode_name || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(disbursement.created_at).toLocaleDateString()}
+                      {formatDate(disbursement.created_at)}
                     </td>
                   </tr>
                 ))}
