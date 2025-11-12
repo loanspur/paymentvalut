@@ -352,7 +352,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate OTP reference
-    const otpReference = `FLOAT_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const otpReference = `FLOAT_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`
 
     // Create wallet transaction record first
     const now = new Date().toISOString()
@@ -402,10 +402,24 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (!walletTransaction || !walletTransaction.id) {
+      console.error('Transaction creation returned no data:', walletTransaction)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Failed to create transaction record - no data returned'
+        },
+        { status: 500 }
+      )
+    }
+
     // Use existing OTP generation API to create and send OTP
     let otpData: any = null
     try {
-      const otpUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/otp/generate`
+      // Get the base URL for server-side API calls
+      // In production, use NEXT_PUBLIC_APP_URL, otherwise use localhost
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+      const otpUrl = `${baseUrl}/api/otp/generate`
       
       // Format phone number to 254XXXXXXXXX format if needed
       let formattedPhone = currentUser.phone_number?.replace(/\D/g, '') || ''
@@ -418,6 +432,8 @@ export async function POST(request: NextRequest) {
           formattedPhone = '254' + formattedPhone
         }
       }
+
+      console.log('Calling OTP generation API:', { otpUrl, formattedPhone, email: currentUser.email })
 
       const otpResponse = await fetch(otpUrl, {
         method: 'POST',
@@ -434,8 +450,24 @@ export async function POST(request: NextRequest) {
       })
 
       if (!otpResponse.ok) {
-        const otpError = await otpResponse.json().catch(() => ({ error: 'Failed to parse error response' }))
-        console.error('OTP generation failed:', otpError.error || 'Unknown error')
+        let otpError: any = { error: 'Failed to parse error response' }
+        try {
+          otpError = await otpResponse.json()
+        } catch (parseError) {
+          const errorText = await otpResponse.text()
+          console.error('OTP generation failed - non-JSON response:', {
+            status: otpResponse.status,
+            statusText: otpResponse.statusText,
+            body: errorText
+          })
+          otpError = { error: `OTP generation failed: ${otpResponse.status} ${otpResponse.statusText}` }
+        }
+        
+        console.error('OTP generation failed:', {
+          status: otpResponse.status,
+          error: otpError.error || 'Unknown error',
+          details: otpError
+        })
         
         // Clean up transaction if OTP generation fails
         await supabase
@@ -444,14 +476,22 @@ export async function POST(request: NextRequest) {
           .eq('id', walletTransaction.id)
 
         return NextResponse.json(
-          { success: false, error: otpError.error || 'Failed to generate OTP' },
+          { 
+            success: false, 
+            error: otpError.error || 'Failed to generate OTP',
+            details: otpError.details || `HTTP ${otpResponse.status}: ${otpResponse.statusText}`
+          },
           { status: 500 }
         )
       }
 
-      otpData = await otpResponse.json()
-      
-      if (!otpData.success || !otpData.reference) {
+      try {
+        otpData = await otpResponse.json()
+      } catch (jsonError) {
+        console.error('Failed to parse OTP response as JSON:', jsonError)
+        const errorText = await otpResponse.text()
+        console.error('OTP response body:', errorText)
+        
         // Clean up transaction if OTP generation fails
         await supabase
           .from('wallet_transactions')
@@ -459,7 +499,26 @@ export async function POST(request: NextRequest) {
           .eq('id', walletTransaction.id)
 
         return NextResponse.json(
-          { success: false, error: 'Failed to generate OTP' },
+          { success: false, error: 'Invalid response from OTP service' },
+          { status: 500 }
+        )
+      }
+      
+      if (!otpData.success || !otpData.reference) {
+        console.error('OTP generation returned invalid data:', otpData)
+        
+        // Clean up transaction if OTP generation fails
+        await supabase
+          .from('wallet_transactions')
+          .delete()
+          .eq('id', walletTransaction.id)
+
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: 'Failed to generate OTP - invalid response',
+            details: otpData.error || 'No reference returned'
+          },
           { status: 500 }
         )
       }
@@ -492,16 +551,28 @@ export async function POST(request: NextRequest) {
         .eq('id', walletTransaction.id)
 
     } catch (otpError) {
-      console.error('OTP generation exception:', otpError instanceof Error ? otpError.message : 'Unknown error')
+      console.error('OTP generation exception:', {
+        message: otpError instanceof Error ? otpError.message : 'Unknown error',
+        stack: otpError instanceof Error ? otpError.stack : undefined,
+        error: otpError
+      })
       
       // Clean up transaction if OTP generation fails
-      await supabase
-        .from('wallet_transactions')
-        .delete()
-        .eq('id', walletTransaction.id)
+      try {
+        await supabase
+          .from('wallet_transactions')
+          .delete()
+          .eq('id', walletTransaction.id)
+      } catch (cleanupError) {
+        console.error('Failed to cleanup transaction:', cleanupError)
+      }
 
       return NextResponse.json(
-        { success: false, error: 'Failed to generate and send OTP. Please try again.' },
+        { 
+          success: false, 
+          error: 'Failed to generate and send OTP. Please try again.',
+          details: otpError instanceof Error ? otpError.message : 'Unknown error occurred'
+        },
         { status: 500 }
       )
     }
