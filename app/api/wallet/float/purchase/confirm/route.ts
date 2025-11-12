@@ -208,17 +208,31 @@ export async function POST(request: NextRequest) {
     // Get current user info for agent name
     const { data: currentUser, error: userError } = await supabase
       .from('users')
-      .select('email, phone_number, full_name')
+      .select('email, phone_number, first_name, last_name')
       .eq('id', userId)
       .single()
     
     if (userError || !currentUser) {
-      console.error('Error fetching current user:', userError)
+      console.error('Error fetching current user:', {
+        error: userError,
+        userId,
+        message: userError?.message,
+        code: userError?.code
+      })
       return NextResponse.json(
-        { success: false, error: 'Failed to fetch user information' },
+        { 
+          success: false, 
+          error: 'Failed to fetch user information',
+          details: userError?.message || 'User not found'
+        },
         { status: 500 }
       )
     }
+    
+    // Construct full name from first_name and last_name
+    const fullName = currentUser.first_name || currentUser.last_name
+      ? `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim()
+      : null
 
     // Call NCBA Open Banking float purchase API
     // Import the NCBA float purchase function directly or use internal fetch
@@ -297,7 +311,7 @@ export async function POST(request: NextRequest) {
     const txnRef = `FLOAT_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
     
     const ncbaPayload: Record<string, string> = {
-      reqAgentName: currentUser?.full_name || currentUser?.email || 'EazzyPay Agent',
+      reqAgentName: fullName || currentUser?.email || 'EazzyPay Agent',
       reqCreditAmount: String(floatAmount),
       reqCustomerReference: `FLOAT_${partnerId}_${Date.now()}`,
       reqDealReference: otp_reference,
