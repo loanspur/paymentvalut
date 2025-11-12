@@ -20,12 +20,15 @@ export async function POST(request: NextRequest) {
     }
 
     const payload = await verifyJWTToken(token)
-    if (!payload || !payload.userId) {
+    if (!payload || !(payload as any).userId) {
       return NextResponse.json(
         { success: false, error: 'Invalid authentication' },
         { status: 401 }
       )
     }
+    
+    // Type assertion for payload
+    const userId = (payload as any).userId as string
 
     const { 
       amount, 
@@ -49,7 +52,7 @@ export async function POST(request: NextRequest) {
       const { data, error: userError } = await supabase
         .from('users')
         .select('id, email, phone_number, first_name, last_name, partner_id, role, is_active')
-        .eq('id', payload.userId)
+        .eq('id', userId)
         .single()
 
       if (userError) {
@@ -59,7 +62,7 @@ export async function POST(request: NextRequest) {
             { 
               success: false, 
               error: 'User account not found in database. Please contact your administrator.',
-              details: `User ID ${payload.userId} does not exist`
+              details: `User ID ${userId} does not exist`
             },
             { status: 404 }
           )
@@ -80,7 +83,7 @@ export async function POST(request: NextRequest) {
           { 
             success: false, 
             error: 'User account not found',
-            details: `No user data returned for ID ${payload.userId}`
+            details: `No user data returned for ID ${userId}`
           },
           { status: 404 }
         )
@@ -89,8 +92,9 @@ export async function POST(request: NextRequest) {
       currentUserData = data
       
       // Use JWT role as fallback if database role is missing (shouldn't happen, but safety check)
-      if (!currentUserData.role && payload.role) {
-        currentUserData.role = payload.role
+      const userRole = (payload as any).role as string | undefined
+      if (!currentUserData.role && userRole) {
+        currentUserData.role = userRole
       }
 
       if (!currentUserData.is_active) {
@@ -433,7 +437,7 @@ export async function POST(request: NextRequest) {
 
       // Call OTP generation function directly (no HTTP call)
       const otpResult = await generateAndSendOTP({
-        userId: payload.userId,
+        userId: userId,
         partnerId: targetPartnerId!,
         phoneNumber: formattedPhone,
         emailAddress: currentUser.email,
