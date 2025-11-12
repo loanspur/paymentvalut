@@ -900,16 +900,32 @@ export default function WalletPage() {
 
   // formatDate is imported from lib/utils (uses EA Time)
 
+  // Helper function to determine if a transaction is a credit (increases balance)
+  const isCreditTransaction = (type: string): boolean => {
+    return ['top_up', 'manual_credit'].includes(type)
+  }
+
+  // Helper function to determine if a transaction is a debit (decreases balance)
+  const isDebitTransaction = (type: string): boolean => {
+    return ['disbursement', 'charge', 'manual_debit', 'b2c_float_purchase', 'sms_charge'].includes(type)
+  }
+
   const getTransactionIcon = (type: string) => {
     switch (type) {
       case 'top_up':
         return <TrendingUp className="w-4 h-4 text-green-600" />
+      case 'manual_credit':
+        return <Plus className="w-4 h-4 text-green-600" />
+      case 'manual_debit':
+        return <TrendingDown className="w-4 h-4 text-red-600" />
       case 'disbursement':
         return <TrendingDown className="w-4 h-4 text-red-600" />
       case 'b2c_float_purchase':
         return <CreditCard className="w-4 h-4 text-blue-600" />
       case 'charge':
         return <DollarSign className="w-4 h-4 text-orange-600" />
+      case 'sms_charge':
+        return <DollarSign className="w-4 h-4 text-purple-600" />
       default:
         return <Wallet className="w-4 h-4 text-gray-600" />
     }
@@ -1411,9 +1427,9 @@ export default function WalletPage() {
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap">
                     <div className={`text-sm font-medium ${
-                      transaction.transaction_type === 'top_up' ? 'text-green-600' : 'text-red-600'
+                      isCreditTransaction(transaction.transaction_type) ? 'text-green-600' : 'text-red-600'
                     }`}>
-                      {transaction.transaction_type === 'top_up' ? '+' : '-'}{formatAmount(transaction.amount)}
+                      {isCreditTransaction(transaction.transaction_type) ? '+' : '-'}{formatAmount(Math.abs(transaction.amount))}
                     </div>
                   </td>
                   <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
@@ -2304,9 +2320,9 @@ export default function WalletPage() {
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-600">Amount:</span>
                       <span className={`text-sm font-medium ${
-                        selectedTransaction.transaction_type === 'top_up' ? 'text-green-600' : 'text-red-600'
+                        isCreditTransaction(selectedTransaction.transaction_type) ? 'text-green-600' : 'text-red-600'
                       }`}>
-                        {selectedTransaction.transaction_type === 'top_up' ? '+' : '-'}{formatAmount(selectedTransaction.amount)}
+                        {isCreditTransaction(selectedTransaction.transaction_type) ? '+' : '-'}{formatAmount(Math.abs(selectedTransaction.amount))}
                       </span>
                     </div>
                     <div className="flex justify-between">

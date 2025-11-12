@@ -183,7 +183,11 @@ export class UnifiedWalletService {
       // Update topup fields if this is a topup transaction
       if (transactionType === 'top_up' || transactionType === 'manual_credit') {
         updateData.last_topup_date = new Date().toISOString()
-        updateData.last_topup_amount = normalizedAmount
+        // Use original_amount from metadata if available (for manual credits), otherwise use absolute value of normalizedAmount
+        // This ensures we always store the positive credit amount, not the delta
+        updateData.last_topup_amount = metadata?.original_amount 
+          ? toNumber(metadata.original_amount) 
+          : Math.abs(normalizedAmount)
       }
 
       const { error: balanceError } = await supabase

@@ -145,10 +145,27 @@ export default function AdminWalletsPage() {
   const loadPartnersData = async () => {
     try {
       setLoading(true)
-      const response = await fetch('/api/admin/wallets/partners')
+      // Add cache-busting parameter to ensure fresh data
+      const timestamp = Date.now()
+      const response = await fetch(`/api/admin/wallets/partners?t=${timestamp}`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      })
       if (response.ok) {
         const data = await response.json()
-        setPartners(data.data || [])
+        if (data.success && data.data) {
+          setPartners(data.data || [])
+        } else {
+          console.error('Invalid response format:', data)
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        console.error('Failed to load partners data:', response.status, errorData)
       }
     } catch (error) {
       console.error('Failed to load partners data:', error)
@@ -171,7 +188,7 @@ export default function AdminWalletsPage() {
       })
 
       const response = await fetch(`/api/admin/wallets/transactions?${params}`)
-      const data = await response.json()
+        const data = await response.json()
       
       if (response.ok && data.success) {
         // Deduplicate transactions by ID to prevent duplicates
@@ -224,10 +241,21 @@ export default function AdminWalletsPage() {
         showSuccess('Allocation Complete', 'Manual allocation completed successfully!')
         setShowAllocationModal(false)
         setAllocationData({ partner_id: '', amount: 0, description: '', transaction_type: 'credit' })
+        
+        // Immediate refresh attempt
         loadPartnersData()
         if (activeTab === 'transactions') {
           loadTransactions()
         }
+        
+        // Also refresh after a delay to ensure database transaction is fully committed
+        // This handles any eventual consistency issues
+        setTimeout(() => {
+          loadPartnersData()
+          if (activeTab === 'transactions') {
+            loadTransactions()
+          }
+        }, 1500)
       } else {
         const error = await response.json()
         showError('Allocation Failed', `Allocation failed: ${error.error}`)
@@ -372,9 +400,10 @@ export default function AdminWalletsPage() {
               </button>
               <button
                 onClick={loadPartnersData}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                disabled={loading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <RefreshCw className="w-4 h-4 mr-2" />
+                <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
               </button>
             </div>

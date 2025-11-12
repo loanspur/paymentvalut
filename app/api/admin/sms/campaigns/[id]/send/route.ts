@@ -512,8 +512,8 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
           reference: `SMS_CAMPAIGN_${campaign.id}`,
           description: `SMS Campaign: ${campaign.campaign_name}`,
           charge_config_id: chargeConfigId,
-          bulk_campaign_id: campaign.id,
-          total_cost: totalCost,
+            bulk_campaign_id: campaign.id,
+            total_cost: totalCost,
           sent_count: actualSentCount,
           delivered_count: actualSentCount,
           failed_count: actualFailedCount
@@ -524,7 +524,7 @@ async function processSMSCampaign(campaign: any, smsSettings: any, walletBalance
         console.error('Error deducting wallet balance for SMS campaign:', balanceResult.error)
       } else {
         console.log(`✅ [SMS Campaign] Wallet deducted: ${totalCost} KES for ${actualSentCount} successfully sent SMS`)
-      }
+          }
     } else if (totalCost > 0 && actualSentCount === 0) {
       // No SMS were successfully sent, so don't deduct
       console.log(`⏸️ [SMS Campaign] No successful SMS sent, skipping wallet deduction`)

@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Force fresh data by ordering by updated_at desc to get latest changes first
     const { data: wallets, error: walletsError } = await supabase
       .from('partner_wallets')
       .select(`
@@ -39,6 +40,7 @@ export async function GET(request: NextRequest) {
         created_at,
         updated_at
       `)
+      .order('updated_at', { ascending: false })
 
     if (walletsError) {
       console.error('Error fetching wallets:', walletsError)
@@ -63,10 +65,13 @@ export async function GET(request: NextRequest) {
       
       if (walletIds.length > 0) {
         // Get transaction counts by type for each wallet
+        // Order by created_at desc to ensure we get the latest transactions first
+        // Use a timestamp query parameter to prevent caching
         const { data: transactions, error: transactionsError } = await supabase
           .from('wallet_transactions')
-          .select('wallet_id, transaction_type, status')
+          .select('wallet_id, transaction_type, status, created_at')
           .in('wallet_id', walletIds)
+          .order('created_at', { ascending: false })
 
         if (!transactionsError && transactions) {
           // Group transactions by wallet_id
@@ -83,7 +88,10 @@ export async function GET(request: NextRequest) {
             const walletTransactions = walletTransactionMap[wallet.id] || []
             transactionSummaries[wallet.partner_id] = {
               total_transactions: walletTransactions.length,
-              total_topups: walletTransactions.filter(t => t.transaction_type === 'top_up').length,
+              // Include both top_up and manual_credit in topups count (both are credits to wallet)
+              total_topups: walletTransactions.filter(t => 
+                t.transaction_type === 'top_up' || t.transaction_type === 'manual_credit'
+              ).length,
               total_disbursements: walletTransactions.filter(t => 
                 t.transaction_type === 'disbursement' || 
                 (t.transaction_type === 'charge' && 
@@ -145,6 +153,12 @@ export async function GET(request: NextRequest) {
         total_balance: transformedPartners.reduce((sum, p) => sum + p.current_balance, 0),
         low_balance_partners: transformedPartners.filter(p => p.current_balance < p.low_balance_threshold).length,
         total_transactions: transformedPartners.reduce((sum, p) => sum + p.total_transactions, 0)
+      }
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       }
     })
 
