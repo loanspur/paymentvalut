@@ -288,15 +288,17 @@ export async function POST(request: NextRequest) {
       s = settingsResult.data
 
       // Obtain token first
-      // Construct token URL properly - ensure baseUrl ends with / and path starts with /
+      // Ensure baseUrl ends with / and path is relative (no leading /)
       const baseUrl = s.baseUrl.endsWith('/') ? s.baseUrl : `${s.baseUrl}/`
-      const tokenPath = s.tokenPath.startsWith('/') ? s.tokenPath : `/${s.tokenPath}`
+      const tokenPath = s.tokenPath.startsWith('/') ? s.tokenPath.substring(1) : s.tokenPath
       const tokenUrl = new URL(tokenPath, baseUrl).toString()
       
       console.log('Requesting NCBA token:', {
         constructedUrl: tokenUrl,
-        baseUrl: s.baseUrl,
-        tokenPath: s.tokenPath,
+        originalBaseUrl: s.baseUrl,
+        adjustedBaseUrl: baseUrl,
+        originalTokenPath: s.tokenPath,
+        adjustedTokenPath: tokenPath,
         environment: s.environment
       })
       
@@ -376,15 +378,17 @@ export async function POST(request: NextRequest) {
     // Make NCBA float purchase request
     let ncbaData: any
     try {
-      // Construct URL properly - ensure baseUrl ends with / and path starts with /
+      // Ensure baseUrl ends with / and path is relative (no leading /)
       const baseUrl = s.baseUrl.endsWith('/') ? s.baseUrl : `${s.baseUrl}/`
-      const floatPath = s.floatPurchasePath.startsWith('/') ? s.floatPurchasePath : `/${s.floatPurchasePath}`
+      const floatPath = s.floatPurchasePath.startsWith('/') ? s.floatPurchasePath.substring(1) : s.floatPurchasePath
       const url = new URL(floatPath, baseUrl).toString()
       
       console.log('Making NCBA float purchase request:', {
         constructedUrl: url,
-        baseUrl: s.baseUrl,
-        floatPurchasePath: s.floatPurchasePath,
+        originalBaseUrl: s.baseUrl,
+        adjustedBaseUrl: baseUrl,
+        originalFloatPurchasePath: s.floatPurchasePath,
+        adjustedFloatPurchasePath: floatPath,
         environment: s.environment,
         payloadKeys: Object.keys(ncbaPayload),
         payload: { ...ncbaPayload, reqDebitAccountNumber: '***', reqMobileNumber: '***' }
