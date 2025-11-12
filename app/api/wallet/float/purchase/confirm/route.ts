@@ -316,10 +316,33 @@ export async function POST(request: NextRequest) {
         console.error('NCBA token request failed:', {
           status: tokenRes.status,
           statusText: tokenRes.statusText,
-          response: tokenText
+          response: tokenText.substring(0, 500),
+          headers: Object.fromEntries(tokenRes.headers.entries()),
+          requestedUrl: tokenUrl,
+          finalUrl: tokenRes.url
         })
         return NextResponse.json(
-          { success: false, stage: 'token', status: tokenRes.status, error: tokenText },
+          { success: false, stage: 'token', status: tokenRes.status, error: tokenText.substring(0, 500) },
+          { status: 500 }
+        )
+      }
+      
+      // Check if response is HTML (error page)
+      if (tokenText.trim().startsWith('<!DOCTYPE') || tokenText.trim().startsWith('<html')) {
+        console.error('NCBA token endpoint returned HTML instead of JSON:', {
+          response: tokenText.substring(0, 500),
+          requestedUrl: tokenUrl,
+          finalUrl: tokenRes.url
+        })
+        return NextResponse.json(
+          { 
+            success: false, 
+            stage: 'token', 
+            error: 'NCBA token endpoint returned HTML error page',
+            requestedUrl: tokenUrl,
+            finalUrl: tokenRes.url,
+            responsePreview: tokenText.substring(0, 200)
+          },
           { status: 500 }
         )
       }
@@ -327,20 +350,67 @@ export async function POST(request: NextRequest) {
       let tokenData: any
       try {
         tokenData = JSON.parse(tokenText)
-      } catch {
-        tokenData = { token: tokenText }
+      } catch (parseError) {
+        // If not JSON, treat the entire response as the token (if it's not HTML)
+        if (!tokenText.trim().startsWith('<!')) {
+          console.log('Token response is not JSON, treating as plain text token')
+          tokenData = { token: tokenText.trim() }
+        } else {
+          console.error('Token response appears to be HTML:', tokenText.substring(0, 200))
+          return NextResponse.json(
+            { 
+              success: false, 
+              stage: 'token', 
+              error: 'NCBA returned HTML instead of token',
+              responsePreview: tokenText.substring(0, 200)
+            },
+            { status: 500 }
+          )
+        }
       }
       
-      accessToken = tokenData.access_token || tokenData.token || tokenData.Token || tokenData.AccessToken
+      // Log the full response structure for debugging
+      console.log('NCBA token response structure:', {
+        hasData: !!tokenData.data,
+        keys: Object.keys(tokenData),
+        sample: JSON.stringify(tokenData).substring(0, 200)
+      })
+      
+      // Try multiple possible token field names and nested structures
+      accessToken = 
+        tokenData.access_token || 
+        tokenData.token || 
+        tokenData.Token || 
+        tokenData.AccessToken ||
+        tokenData.accessToken ||
+        tokenData.data?.access_token ||
+        tokenData.data?.token ||
+        tokenData.data?.Token ||
+        tokenData.data?.AccessToken ||
+        tokenData.result?.access_token ||
+        tokenData.result?.token ||
+        (typeof tokenData === 'string' ? tokenData.trim() : null)
+      
       if (!accessToken) {
-        console.error('No access token in NCBA response:', tokenData)
+        console.error('No access token found in NCBA response:', {
+          responseStructure: Object.keys(tokenData),
+          fullResponse: JSON.stringify(tokenData).substring(0, 500),
+          rawText: tokenText.substring(0, 500)
+        })
         return NextResponse.json(
-          { success: false, stage: 'token', error: 'No access token in response', response: tokenData },
+          { 
+            success: false, 
+            stage: 'token', 
+            error: 'No access token in response', 
+            response: tokenData,
+            responseKeys: Object.keys(tokenData),
+            rawResponse: tokenText.substring(0, 200)
+          },
           { status: 500 }
         )
       }
       
-      console.log('NCBA token obtained successfully')
+      console.log('NCBA token obtained successfully (length:', accessToken.length, ')')
     } catch (tokenError: any) {
       console.error('Error obtaining NCBA token:', {
         message: tokenError?.message,
