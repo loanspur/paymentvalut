@@ -183,15 +183,50 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (transactionError || !walletTransaction) {
+      console.error('Error fetching wallet transaction:', {
+        error: transactionError,
+        transactionId,
+        message: transactionError?.message,
+        code: transactionError?.code
+      })
       return NextResponse.json(
-        { success: false, error: 'Wallet transaction not found' },
+        { 
+          success: false, 
+          error: 'Wallet transaction not found',
+          details: transactionError?.message || 'Transaction not found or invalid'
+        },
         { status: 404 }
       )
     }
 
-    const partnerId = walletTransaction.partner_wallets.partner_id
+    // Extract partner ID from the joined data
+    const partnerId = (walletTransaction as any).partner_wallets?.partner_id
+    if (!partnerId) {
+      console.error('Partner ID not found in wallet transaction:', walletTransaction)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Partner ID not found in transaction',
+          details: 'Wallet transaction is missing partner information'
+        },
+        { status: 400 }
+      )
+    }
+    
     const floatAmount = walletTransaction.metadata?.float_amount || walletTransaction.float_amount || 0
     const totalCost = Math.abs(walletTransaction.amount)
+    
+    if (floatAmount <= 0) {
+      console.error('Invalid float amount:', floatAmount)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Invalid float amount in transaction',
+          details: `Float amount must be greater than 0, got: ${floatAmount}`
+        },
+        { status: 400 }
+      )
+    }
 
     // Get partner info for B2C account
     const { data: partner } = await supabase
@@ -253,8 +288,18 @@ export async function POST(request: NextRequest) {
       s = settingsResult.data
 
       // Obtain token first
-      console.log('Requesting NCBA token from:', s.tokenPath)
-      const tokenUrl = new URL(s.tokenPath, s.baseUrl).toString()
+      // Construct token URL properly - ensure baseUrl ends with / and path starts with /
+      const baseUrl = s.baseUrl.endsWith('/') ? s.baseUrl : `${s.baseUrl}/`
+      const tokenPath = s.tokenPath.startsWith('/') ? s.tokenPath : `/${s.tokenPath}`
+      const tokenUrl = new URL(tokenPath, baseUrl).toString()
+      
+      console.log('Requesting NCBA token:', {
+        constructedUrl: tokenUrl,
+        baseUrl: s.baseUrl,
+        tokenPath: s.tokenPath,
+        environment: s.environment
+      })
+      
       const tokenRes = await fetch(tokenUrl, {
         method: 'POST',
         headers: {
@@ -331,13 +376,20 @@ export async function POST(request: NextRequest) {
     // Make NCBA float purchase request
     let ncbaData: any
     try {
+      // Construct URL properly - ensure baseUrl ends with / and path starts with /
+      const baseUrl = s.baseUrl.endsWith('/') ? s.baseUrl : `${s.baseUrl}/`
+      const floatPath = s.floatPurchasePath.startsWith('/') ? s.floatPurchasePath : `/${s.floatPurchasePath}`
+      const url = new URL(floatPath, baseUrl).toString()
+      
       console.log('Making NCBA float purchase request:', {
-        url: s.floatPurchasePath,
+        constructedUrl: url,
         baseUrl: s.baseUrl,
+        floatPurchasePath: s.floatPurchasePath,
+        environment: s.environment,
+        payloadKeys: Object.keys(ncbaPayload),
         payload: { ...ncbaPayload, reqDebitAccountNumber: '***', reqMobileNumber: '***' }
       })
       
-      const url = new URL(s.floatPurchasePath, s.baseUrl).toString()
       const ncbaResponse = await fetch(url, {
         method: 'POST',
         headers: {
@@ -359,7 +411,11 @@ export async function POST(request: NextRequest) {
         console.error('NCBA float purchase failed:', {
           status: ncbaResponse.status,
           statusText: ncbaResponse.statusText,
-          response: ncbaData
+          requestedUrl: url,
+          finalUrl: ncbaResponse.url, // May differ if redirected
+          response: ncbaData,
+          responseText: ncbaText.substring(0, 500), // First 500 chars
+          headers: Object.fromEntries(ncbaResponse.headers.entries())
         })
         
         // Update transaction status
@@ -371,7 +427,8 @@ export async function POST(request: NextRequest) {
               ...walletTransaction.metadata,
               error: ncbaText,
               ncba_response: ncbaData,
-              ncba_status: ncbaResponse.status
+              ncba_status: ncbaResponse.status,
+              ncba_url: url
             }
           })
           .eq('id', walletTransaction.id)
@@ -381,6 +438,8 @@ export async function POST(request: NextRequest) {
           error: ncbaData.error || ncbaData.message || ncbaText || 'NCBA float purchase failed',
           ncba_response: ncbaData,
           ncba_status: ncbaResponse.status,
+          ncba_url: url,
+          ncba_final_url: ncbaResponse.url,
           stage: 'ncba_api'
         }, { status: 500 })
       }
@@ -420,7 +479,7 @@ export async function POST(request: NextRequest) {
         floatAmount
       })
       
-      await UnifiedWalletService.updateWalletBalance(
+      const walletResult = await UnifiedWalletService.updateWalletBalance(
         partnerId,
         -totalCost, // Negative for debit
         'b2c_float_purchase',
@@ -438,9 +497,39 @@ export async function POST(request: NextRequest) {
         }
       )
       
-      console.log('Wallet balance updated successfully')
+      if (!walletResult.success) {
+        console.error('Wallet balance update failed:', walletResult)
+        
+        // Update transaction status
+        await supabase
+          .from('wallet_transactions')
+          .update({
+            status: 'failed',
+            metadata: {
+              ...walletTransaction.metadata,
+              ncba_response: ncbaData.data || ncbaData,
+              wallet_error: walletResult.error,
+              error: 'NCBA purchase succeeded but wallet update failed'
+            }
+          })
+          .eq('id', walletTransaction.id)
+        
+        return NextResponse.json({
+          success: false,
+          error: walletResult.error || 'Failed to update wallet balance',
+          stage: 'wallet_update',
+          ncba_success: true,
+          wallet_result: walletResult
+        }, { status: 500 })
+      }
+      
+      console.log('Wallet balance updated successfully:', {
+        previousBalance: walletResult.previousBalance,
+        newBalance: walletResult.newBalance,
+        amount: walletResult.amount
+      })
     } catch (walletError: any) {
-      console.error('Error updating wallet balance:', {
+      console.error('Exception updating wallet balance:', {
         message: walletError?.message,
         stack: walletError?.stack
       })
