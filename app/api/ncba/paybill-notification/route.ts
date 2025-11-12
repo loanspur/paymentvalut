@@ -656,126 +656,126 @@ export async function POST(request: NextRequest) {
           ResultDesc: "STK push transaction already exists, will be updated when matched"
         })
       }
-      
-      // Find partner by account reference
-      // Handle different NCBA formats:
-      // Format 1: BillRefNumber = "774451", Narrative = "FINSAFE" 
-      // Format 2: BillRefNumber = "FINSAFE", BusinessShortCode = "774451"
-      // Format 3: BusinessShortCode = "880100", BillRefNumber = "774451", Narrative = "umoja"
-      let partner = null
-    
-      // Try Format 1: Look for Narrative field
-      let partnerIdentifier = notificationData.Narrative || notificationData.narrative
-      
-      // Try Format 2: If no Narrative, use BillRefNumber as partner identifier
-      if (!partnerIdentifier && BillRefNumber !== accountNumber) {
-        partnerIdentifier = BillRefNumber
-      }
-      
-      // Check if this is the new format (BusinessShortCode = "880100", BillRefNumber = account number)
-      const isNewFormat = BusinessShortCode === '880100' && BillRefNumber === accountNumber && partnerIdentifier
-      
-      // Check if this is the old format (BusinessShortCode = account number)
-      const isOldFormat = BusinessShortCode === accountNumber && partnerIdentifier
-      
-      if ((isNewFormat || isOldFormat) && partnerIdentifier) {
-        // Try to find partner by short code - case insensitive
-        const { data: partnerData, error: partnerError } = await supabase
-          .from('partners')
-          .select('*')
-          .ilike('short_code', partnerIdentifier)
-          .eq('is_active', true)
-          .single()
 
-        if (partnerError || !partnerData) {
-          console.error('Partner not found for short code:', partnerIdentifier)
-          return NextResponse.json({
-            ResultCode: "1",
-            ResultDesc: `Partner not found for identifier: ${partnerIdentifier}`
-          })
-        }
-        
-        partner = partnerData
-      } else {
-        console.error('Invalid account reference format')
+    // Find partner by account reference
+    // Handle different NCBA formats:
+    // Format 1: BillRefNumber = "774451", Narrative = "FINSAFE" 
+    // Format 2: BillRefNumber = "FINSAFE", BusinessShortCode = "774451"
+    // Format 3: BusinessShortCode = "880100", BillRefNumber = "774451", Narrative = "umoja"
+    let partner = null
+    
+    // Try Format 1: Look for Narrative field
+    let partnerIdentifier = notificationData.Narrative || notificationData.narrative
+    
+    // Try Format 2: If no Narrative, use BillRefNumber as partner identifier
+    if (!partnerIdentifier && BillRefNumber !== accountNumber) {
+      partnerIdentifier = BillRefNumber
+    }
+    
+    // Check if this is the new format (BusinessShortCode = "880100", BillRefNumber = account number)
+    const isNewFormat = BusinessShortCode === '880100' && BillRefNumber === accountNumber && partnerIdentifier
+    
+    // Check if this is the old format (BusinessShortCode = account number)
+    const isOldFormat = BusinessShortCode === accountNumber && partnerIdentifier
+    
+    if ((isNewFormat || isOldFormat) && partnerIdentifier) {
+      // Try to find partner by short code - case insensitive
+      const { data: partnerData, error: partnerError } = await supabase
+        .from('partners')
+        .select('*')
+        .ilike('short_code', partnerIdentifier)
+        .eq('is_active', true)
+        .single()
+
+      if (partnerError || !partnerData) {
+        console.error('Partner not found for short code:', partnerIdentifier)
         return NextResponse.json({
           ResultCode: "1",
-          ResultDesc: "Invalid account reference format"
+          ResultDesc: `Partner not found for identifier: ${partnerIdentifier}`
         })
       }
+      
+      partner = partnerData
+    } else {
+        console.error('Invalid account reference format')
+      return NextResponse.json({
+        ResultCode: "1",
+        ResultDesc: "Invalid account reference format"
+      })
+    }
 
       // Check if this transaction has already been processed as C2B
       const { data: existingC2BTransaction } = await supabase
-        .from('c2b_transactions')
-        .select('*')
-        .eq('transaction_id', TransID)
-        .single()
+      .from('c2b_transactions')
+      .select('*')
+      .eq('transaction_id', TransID)
+      .single()
 
       if (existingC2BTransaction) {
-        return NextResponse.json({
-          ResultCode: "0",
-          ResultDesc: "Transaction already processed"
-        })
-      }
-
-      // Create C2B transaction record
-      const { data: c2bTransaction, error: c2bError } = await supabase
-        .from('c2b_transactions')
-        .insert({
-          partner_id: partner.id,
-          transaction_id: TransID,
-          transaction_type: TransType || 'PAYBILL',
-          transaction_time: TransTime,
-          amount: parseFloat(TransAmount),
-          business_short_code: BusinessShortCode,
-          bill_reference_number: `${BillRefNumber} ${partnerIdentifier}`,
-          customer_phone: Mobile,
-          customer_name: name || null,
-          status: 'completed',
-          raw_notification: notificationData,
-          created_at: ensureUtcTimestamp(created_at) || currentUtcTime
-        })
-        .select()
-        .single()
-
-      if (c2bError) {
-        console.error('Error creating C2B transaction:', c2bError)
-        return NextResponse.json({
-          ResultCode: "1",
-          ResultDesc: "Failed to record transaction"
-        })
-      }
-
-      // Update partner wallet balance using unified service
-      try {
-        const balanceResult = await UnifiedWalletService.updateWalletBalance(
-          partner.id,
-          parseFloat(TransAmount),
-          'top_up',
-          {
-            reference: TransID,
-            description: `Paybill payment from ${Mobile}`,
-            ncb_transaction_id: TransID,
-            ncb_transaction_time: TransTime,
-            customer_name: name || 'Unknown Customer',
-            phone_number: Mobile,
-            business_short_code: BusinessShortCode,
-            bill_ref_number: BillRefNumber
-          }
-        )
-
-        if (!balanceResult.success) {
-          console.error('Error updating wallet balance:', balanceResult.error)
-        }
-      } catch (walletError) {
-        console.error('Error processing wallet update:', walletError)
-      }
-
-      // Return success response
       return NextResponse.json({
         ResultCode: "0",
-        ResultDesc: "Transaction processed successfully"
+        ResultDesc: "Transaction already processed"
       })
+    }
+
+    // Create C2B transaction record
+    const { data: c2bTransaction, error: c2bError } = await supabase
+      .from('c2b_transactions')
+      .insert({
+        partner_id: partner.id,
+        transaction_id: TransID,
+        transaction_type: TransType || 'PAYBILL',
+        transaction_time: TransTime,
+          amount: parseFloat(TransAmount),
+        business_short_code: BusinessShortCode,
+          bill_reference_number: `${BillRefNumber} ${partnerIdentifier}`,
+        customer_phone: Mobile,
+        customer_name: name || null,
+        status: 'completed',
+        raw_notification: notificationData,
+        created_at: ensureUtcTimestamp(created_at) || currentUtcTime
+      })
+      .select()
+      .single()
+
+    if (c2bError) {
+      console.error('Error creating C2B transaction:', c2bError)
+      return NextResponse.json({
+        ResultCode: "1",
+        ResultDesc: "Failed to record transaction"
+      })
+    }
+
+    // Update partner wallet balance using unified service
+    try {
+      const balanceResult = await UnifiedWalletService.updateWalletBalance(
+        partner.id,
+        parseFloat(TransAmount),
+        'top_up',
+        {
+          reference: TransID,
+          description: `Paybill payment from ${Mobile}`,
+          ncb_transaction_id: TransID,
+          ncb_transaction_time: TransTime,
+          customer_name: name || 'Unknown Customer',
+          phone_number: Mobile,
+          business_short_code: BusinessShortCode,
+          bill_ref_number: BillRefNumber
+        }
+      )
+
+      if (!balanceResult.success) {
+        console.error('Error updating wallet balance:', balanceResult.error)
+      }
+    } catch (walletError) {
+      console.error('Error processing wallet update:', walletError)
+    }
+
+    // Return success response
+    return NextResponse.json({
+      ResultCode: "0",
+      ResultDesc: "Transaction processed successfully"
+    })
     }
     }
 

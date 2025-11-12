@@ -20,26 +20,55 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
     }
 
-    // Get user's partner ID
+    // Get user's partner ID and role
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('partner_id')
+      .select('id, email, role, partner_id, is_active')
       .eq('id', payload.userId)
       .single()
 
     if (userError || !user) {
+      console.error('Wallet balance - User not found:', { userId: payload.userId, error: userError })
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    if (!user.partner_id) {
-      return NextResponse.json({ error: 'No partner associated with user' }, { status: 400 })
+    if (!user.is_active) {
+      return NextResponse.json({ error: 'User account is inactive' }, { status: 403 })
+    }
+
+    // Determine which partner's wallet to query - SECURITY: Enforce partner isolation
+    let partnerId: string | null = null
+    
+    if (user.role === 'super_admin') {
+      // Super admin can query any partner via query param, but for balance endpoint, 
+      // we'll use their own partner_id if available, or return an error
+      const { searchParams } = new URL(request.url)
+      const requestedPartnerId = searchParams.get('partner_id')
+      partnerId = requestedPartnerId || user.partner_id || null
+    } else {
+      // All other users (including admin, partner_admin, etc.) can only access their own partner
+      partnerId = user.partner_id
+    }
+
+    if (!partnerId) {
+      console.error('Wallet balance - No partner assigned:', { 
+        userId: user.id, 
+        email: user.email, 
+        role: user.role, 
+        partner_id: user.partner_id 
+      })
+      return NextResponse.json({ 
+        success: false,
+        error: 'No partner assigned',
+        message: `User ${user.email} (${user.role}) does not have a partner assigned. Please contact your administrator to assign a partner (e.g., UMOJA) to your account.`
+      }, { status: 400 })
     }
 
     // Get wallet data
     const { data: wallet, error: walletError } = await supabase
       .from('partner_wallets')
       .select('*')
-      .eq('partner_id', user.partner_id)
+      .eq('partner_id', partnerId)
       .single()
 
     if (walletError && walletError.code !== 'PGRST116') {
@@ -51,7 +80,7 @@ export async function GET(request: NextRequest) {
     const { data: b2cFloat, error: b2cError } = await supabase
       .from('b2c_float_balance')
       .select('*')
-      .eq('partner_id', user.partner_id)
+      .eq('partner_id', partnerId)
       .single()
 
     if (b2cError && b2cError.code !== 'PGRST116') {
@@ -65,7 +94,7 @@ export async function GET(request: NextRequest) {
       const { data: newWallet, error: createError } = await supabase
         .from('partner_wallets')
         .insert({
-          partner_id: user.partner_id,
+          partner_id: partnerId,
           current_balance: 0,
           currency: 'KES',
           low_balance_threshold: 1000,
@@ -88,7 +117,7 @@ export async function GET(request: NextRequest) {
       const { data: newB2cFloat, error: createB2cError } = await supabase
         .from('b2c_float_balance')
         .insert({
-          partner_id: user.partner_id,
+          partner_id: partnerId,
           current_float_balance: 0,
           total_purchased: 0,
           total_used: 0

@@ -131,6 +131,11 @@ export async function POST(request: NextRequest) {
       .eq('id', partnerId)
       .single()
 
+    // Get B2C short code from metadata
+    const b2cShortCode = walletTransaction.metadata?.b2c_shortcode || '4120187' // Default fallback
+    // Use partner name as account name
+    const b2cAccountName = partner?.name || 'B2C Float Account'
+
     // Get current user info for agent name
     const { data: currentUser } = await supabase
       .from('users')
@@ -199,10 +204,10 @@ export async function POST(request: NextRequest) {
       reqDebitAcCurrency: s.debitAccountCurrency,
       reqDebitAmount: String(floatAmount),
       reqMobileNumber: currentUser?.phone_number?.replace(/^\+/, '') || '',
-      reqPayBillTillNo: '4120187', // B2C account number - your M-Pesa B2C account
-      reqPaymentDescription: `B2C Float Purchase for ${partner?.name || 'Partner'}`,
+      reqPayBillTillNo: b2cShortCode, // Use selected B2C short code
+      reqPaymentDescription: `B2C Float Purchase for ${b2cAccountName}`,
       reqPaymentType: 'FloatPurchase',
-      reqToAccountName: partner?.name || 'B2C Float Account',
+      reqToAccountName: b2cAccountName, // Use validated account name
       reqTransactionReferenceNo: txnRef,
       reqTxnDate: txnDate,
       senderCountry: s.country
@@ -263,7 +268,9 @@ export async function POST(request: NextRequest) {
         charge_config_id: walletTransaction.metadata?.charge_config_id,
         ncba_response: ncbaData.data,
         ncba_deal_reference: ncbaData.data?.reqDealReference || otp_reference,
-        b2c_account: '4120187'
+        b2c_shortcode_id: walletTransaction.metadata?.b2c_shortcode_id,
+        b2c_shortcode: b2cShortCode,
+        b2c_account_name: b2cAccountName
       }
     )
 

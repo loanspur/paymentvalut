@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     
     const offset = (page - 1) * limit
 
-    // Build query for disbursement requests based on user role and request
+    // Build query for disbursement requests based on user role and request - SECURITY: Enforce partner isolation
     let disbursementQuery = supabase.from('disbursement_requests').select('*', { count: 'exact' })
     
     if (currentUser.role === 'super_admin') {
@@ -62,8 +62,15 @@ export async function GET(request: NextRequest) {
       if (requestedPartnerId && requestedPartnerId !== 'all') {
         disbursementQuery = disbursementQuery.eq('partner_id', requestedPartnerId)
       }
-    } else if (currentUser.partner_id) {
+    } else {
       // Non-super admin users are limited to their own partner
+      if (!currentUser.partner_id) {
+        return NextResponse.json({
+          error: 'No partner assigned',
+          message: 'You must be assigned to a partner to view disbursements'
+        }, { status: 400 })
+      }
+      // SECURITY: Always filter by user's partner_id for non-super_admin users
       disbursementQuery = disbursementQuery.eq('partner_id', currentUser.partner_id)
     }
 

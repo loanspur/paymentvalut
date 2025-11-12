@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verifyJWTToken } from '../../../../lib/jwt-utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,8 +9,41 @@ const supabase = createClient(
 
 export async function GET(request: NextRequest) {
   try {
+    // Authentication check
+    const token = request.cookies.get('auth_token')?.value
+    
+    if (!token) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const payload = await verifyJWTToken(token)
+    
+    if (!payload || !payload.userId) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid session' },
+        { status: 401 }
+      )
+    }
+
+    // Get current user from database to get partner_id and role
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, role, partner_id, is_active')
+      .eq('id', payload.userId)
+      .single()
+
+    if (userError || !user || !user.is_active) {
+      return NextResponse.json(
+        { success: false, error: 'User not found or inactive' },
+        { status: 401 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
-    const partner_id = searchParams.get('partner_id')
+    const requestedPartnerId = searchParams.get('partner_id')
     const transaction_type = searchParams.get('transaction_type')
     const status = searchParams.get('status')
     const search = searchParams.get('search')
@@ -20,20 +54,59 @@ export async function GET(request: NextRequest) {
     
     const offset = (page - 1) * limit
 
+    // Determine which partner's transactions to query - SECURITY: Enforce partner isolation
+    let partnerId: string | null | 'unallocated' = null
+    
+    if (user.role === 'super_admin') {
+      // Only super_admin can query any partner or unallocated transactions
+      partnerId = requestedPartnerId || null
+    } else {
+      // All other users (including admin) can only access their own partner
+      if (!user.partner_id) {
+        return NextResponse.json(
+          { success: false, error: 'No partner assigned to user' },
+          { status: 400 }
+        )
+      }
+      
+      partnerId = user.partner_id
+      
+      // If they requested a different partner or unallocated, deny access
+      if (requestedPartnerId && requestedPartnerId !== user.partner_id && requestedPartnerId !== 'unallocated') {
+        return NextResponse.json(
+          { success: false, error: 'Access denied: You can only view your own partner\'s transactions' },
+          { status: 403 }
+        )
+      }
+      
+      // Regular users cannot view unallocated transactions
+      if (requestedPartnerId === 'unallocated') {
+        return NextResponse.json(
+          { success: false, error: 'Access denied: You cannot view unallocated transactions' },
+          { status: 403 }
+        )
+      }
+    }
+
     // Build query without joins first (we'll get partner info separately)
     let query = supabase
       .from('c2b_transactions')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1)
 
-    // Apply filters
-    if (partner_id) {
-      if (partner_id === 'unallocated') {
+    // Apply partner filter - SECURITY: Always filter by partner
+    if (partnerId) {
+      if (partnerId === 'unallocated') {
         query = query.is('partner_id', null)
       } else {
-        query = query.eq('partner_id', partner_id)
+        query = query.eq('partner_id', partnerId)
       }
+    } else if (user.role !== 'super_admin') {
+      // Non-super_admin users must have a partner filter
+      return NextResponse.json(
+        { success: false, error: 'Partner filter required' },
+        { status: 400 }
+      )
     }
 
     if (transaction_type) {
@@ -56,7 +129,8 @@ export async function GET(request: NextRequest) {
       query = query.or(`transaction_id.ilike.%${search}%,customer_name.ilike.%${search}%,customer_phone.ilike.%${search}%,bill_reference_number.ilike.%${search}%`)
     }
 
-    const { data, error, count } = await query
+    // Apply pagination after all filters
+    const { data, error, count } = await query.range(offset, offset + limit - 1)
 
     if (error) {
       console.error('Error fetching C2B transactions:', error)
@@ -111,10 +185,21 @@ export async function GET(request: NextRequest) {
       wallet_credited: walletTransactionsMap[transaction.transaction_id]?.status === 'completed' || false
     })) || []
 
-    // Get transaction summary (without partner filter for global view)
-    const { data: summaryData, error: summaryError } = await supabase
+    // Get transaction summary - SECURITY: Filter by partner for summary too
+    let summaryQuery = supabase
       .from('c2b_transactions')
       .select('transaction_type, amount, status, created_at, partner_id')
+    
+    // Apply partner filter to summary query
+    if (partnerId) {
+      if (partnerId === 'unallocated') {
+        summaryQuery = summaryQuery.is('partner_id', null)
+      } else {
+        summaryQuery = summaryQuery.eq('partner_id', partnerId)
+      }
+    }
+
+    const { data: summaryData, error: summaryError } = await summaryQuery
 
     if (summaryError) {
       console.error('Error fetching C2B transaction summary:', summaryError)

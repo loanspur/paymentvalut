@@ -328,12 +328,19 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
         addNotification({
           type: 'success',
           title: 'Success',
-          message: 'User updated successfully'
+          message: 'User updated successfully. Partner assignment has been saved.'
         })
         setShowUserModal(false)
         setEditingUser(null)
         resetForm()
         fetchUsers()
+        
+        // If the updated user is the current logged-in user, they may need to refresh
+        // to see the updated partner assignment in the wallet page
+        if (editingUser && data.user) {
+          console.log('🔍 Updated user data:', data.user)
+          console.log('🔍 Partner ID in response:', data.user.partner_id)
+        }
       } else {
         addNotification({
           type: 'error',
@@ -785,32 +792,49 @@ export default function UserManagement({ isAdmin = false, className = '' }: User
                     </div>
                   </div>
 
-                  {(userForm.role === 'partner' || userForm.role === 'partner_admin' || userForm.role === 'operator' || userForm.role === 'viewer') && (
-                    <div className="mt-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Partner Assignment <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        value={userForm.partner_id}
-                        onChange={(e) => handleFieldChange('partner_id', e.target.value)}
-                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          formErrors.partner_id ? 'border-red-300' : 'border-gray-300'
-                        }`}
-                        required={['partner', 'partner_admin', 'operator', 'viewer'].includes(userForm.role)}
-                      >
-                        <option value="">Select a partner</option>
-                        {partners.map(partner => (
+                  {/* Partner Assignment - Always show for partner-related roles */}
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Partner Assignment 
+                      {['partner', 'partner_admin', 'operator', 'viewer'].includes(userForm.role) && (
+                        <span className="text-red-500">*</span>
+                      )}
+                    </label>
+                    <select
+                      value={userForm.partner_id}
+                      onChange={(e) => handleFieldChange('partner_id', e.target.value)}
+                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        formErrors.partner_id ? 'border-red-300' : 'border-gray-300'
+                      }`}
+                      required={['partner', 'partner_admin', 'operator', 'viewer'].includes(userForm.role)}
+                      disabled={userForm.role === 'super_admin'}
+                    >
+                      <option value="">
+                        {userForm.role === 'super_admin' 
+                          ? 'Not applicable for Super Admin' 
+                          : 'Select a partner'}
+                      </option>
+                      {partners.length > 0 ? (
+                        partners.map(partner => (
                           <option key={partner.id} value={partner.id}>
                             {partner.name} ({partner.short_code})
                           </option>
-                        ))}
-                      </select>
-                      {formErrors.partner_id && (
-                        <p className="mt-1 text-sm text-red-600">{formErrors.partner_id}</p>
+                        ))
+                      ) : (
+                        <option value="" disabled>No partners available</option>
                       )}
-                      <p className="mt-1 text-xs text-gray-500">Required for partner-related roles</p>
-                    </div>
-                  )}
+                    </select>
+                    {formErrors.partner_id && (
+                      <p className="mt-1 text-sm text-red-600">{formErrors.partner_id}</p>
+                    )}
+                    <p className="mt-1 text-xs text-gray-500">
+                      {userForm.role === 'super_admin' 
+                        ? 'Super Admin users do not require partner assignment'
+                        : ['partner', 'partner_admin', 'operator', 'viewer'].includes(userForm.role) 
+                        ? 'Required for partner-related roles' 
+                        : 'Optional - Assign a partner to this user'}
+                    </p>
+                  </div>
                 </div>
 
                 {/* Security Section */}

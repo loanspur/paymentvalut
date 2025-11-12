@@ -124,10 +124,7 @@ serve(async (req) => {
       )
     }
 
-    // 💰 NEW: Optional wallet integration for disbursement charges
-    console.log('💰 [Wallet] Checking for optional wallet integration...')
-    
-    // Get partner wallet (optional - don't fail if not found)
+    // Optional wallet integration for disbursement charges
     const { data: wallet, error: walletError } = await supabaseClient
       .from('partner_wallets')
       .select('id, current_balance, currency')
@@ -139,7 +136,6 @@ serve(async (req) => {
     let disbursementCharge = null
 
     if (wallet && !walletError) {
-      console.log('✅ [Wallet] Partner wallet found, checking for disbursement charges...')
       walletIntegrationEnabled = true
 
       // Get disbursement charge configuration
@@ -155,20 +151,9 @@ serve(async (req) => {
       if (chargeConfig && !chargeError) {
         disbursementCharge = chargeConfig
         chargeAmount = chargeConfig.charge_amount || 0
-        console.log('💰 [Wallet] Disbursement charge configured:', {
-          charge_name: chargeConfig.charge_name,
-          charge_amount: chargeAmount,
-          automatic: chargeConfig.is_automatic
-        })
 
         // Check if wallet has sufficient balance for charges
         if (wallet.current_balance < chargeAmount) {
-          console.error('❌ [Wallet] Insufficient balance for disbursement charges:', {
-            current_balance: wallet.current_balance,
-            required_charges: chargeAmount,
-            shortfall: chargeAmount - wallet.current_balance
-          })
-          
           return new Response(
             JSON.stringify({
               status: 'rejected',
@@ -187,24 +172,10 @@ serve(async (req) => {
             }
           )
         }
-
-        console.log('✅ [Wallet] Wallet balance sufficient for charges:', {
-          current_balance: wallet.current_balance,
-          disbursement_amount: body.amount,
-          charges: chargeAmount,
-          remaining_balance: wallet.current_balance - chargeAmount
-        })
-      } else {
-        console.log('💰 [Wallet] No disbursement charge configured for partner')
       }
-    } else {
-      console.log('💰 [Wallet] No partner wallet found - proceeding without wallet integration')
-      console.log('💰 [Wallet] This is normal for USSD partners or partners without wallet setup')
     }
 
-    // 🛡️ CRITICAL: Check for duplicate disbursements BEFORE processing
-    console.log('🔍 [Duplicate Check] Checking for existing disbursements...')
-    
+    // Check for duplicate disbursements BEFORE processing
     // Check 1: Same client_request_id (idempotency)
     const { data: existingByRequestId } = await supabaseClient
       .from('disbursement_requests')
@@ -214,7 +185,6 @@ serve(async (req) => {
       .single()
 
     if (existingByRequestId) {
-      console.log('🚫 [Duplicate Check] Found existing request with same client_request_id:', existingByRequestId.id)
       return new Response(
         JSON.stringify({
           status: 'rejected',
@@ -236,31 +206,25 @@ serve(async (req) => {
     }
 
     // Check 2: Enhanced duplicate prevention with relaxed rules
-    console.log('🔍 [Enhanced Duplicate Check] Using new relaxed duplicate prevention rules...')
-    
-    // Get client IP address
     const clientIp = req.headers.get('x-forwarded-for') || 
                      req.headers.get('x-real-ip') || 
                      req.headers.get('cf-connecting-ip') || 
                      '127.0.0.1'
     
-    // Import and use the enhanced duplicate prevention service
     const { DuplicatePreventionService } = await import('../_shared/duplicate-prevention.ts')
     const duplicateService = new DuplicatePreventionService(supabaseClient)
     
     const duplicateCheck = await duplicateService.checkForDuplicates(
       partner.id,
-      body.customer_id || body.msisdn, // Use customer_id if provided, fallback to msisdn
+      body.customer_id || body.msisdn,
       body.msisdn,
       body.amount,
       clientIp,
       body.client_request_id,
-      'ussd' // Pass origin to bypass restrictions for USSD transactions
+      'ussd'
     )
 
     if (duplicateCheck.isDuplicate) {
-      console.log('🚫 [Enhanced Duplicate Check] Duplicate detected:', duplicateCheck.blockReason)
-      
       return new Response(
         JSON.stringify({
           status: 'rejected',
@@ -280,33 +244,16 @@ serve(async (req) => {
       )
     }
 
-    // Note: Rate limiting for same phone number is now handled by the enhanced duplicate prevention service
-    // with configurable time windows (default 2 minutes instead of 1 hour)
-
-    console.log('✅ [Duplicate Check] No duplicate disbursements found, proceeding with request')
-
     // Get credentials from vault
     const vaultPassphrase = Deno.env.get('MPESA_VAULT_PASSPHRASE') || 'mpesa-vault-passphrase-2025'
     let credentials
     try {
-      console.log('🔑 [Credentials] Attempting to retrieve credentials for partner:', partner.name)
-      console.log('🔑 [Credentials] Partner has encrypted_credentials:', !!partner.encrypted_credentials)
-      console.log('🔑 [Credentials] Partner has plain text credentials:', {
-        consumer_key: !!partner.consumer_key,
-        consumer_secret: !!partner.consumer_secret,
-        initiator_password: !!partner.initiator_password,
-        security_credential: !!partner.security_credential
-      })
-      
       credentials = await CredentialManager.getPartnerCredentials(partner.id, vaultPassphrase, partner)
-      console.log('✅ [Credentials] Successfully retrieved credentials from vault')
     } catch (vaultError) {
-      console.error('❌ [Credentials] Vault credential retrieval failed for partner:', partner.name, vaultError)
-      console.error('❌ [Credentials] Vault error details:', vaultError.message)
+      console.error('Vault credential retrieval failed:', vaultError instanceof Error ? vaultError.message : 'Unknown error')
       
       // Fallback to plain text credentials
       if (partner.consumer_key && partner.consumer_secret && partner.initiator_password) {
-        console.log('🔄 [Credentials] Using plain text credentials as fallback')
         credentials = {
           consumer_key: partner.consumer_key,
           consumer_secret: partner.consumer_secret,
@@ -316,14 +263,8 @@ serve(async (req) => {
           shortcode: partner.mpesa_shortcode || '',
           environment: partner.mpesa_environment || 'sandbox'
         }
-        console.log('✅ [Credentials] Plain text credentials configured successfully')
       } else {
-        console.error('❌ [Credentials] No valid credentials found for partner:', partner.name)
-        console.error('❌ [Credentials] Missing fields:', {
-          consumer_key: !partner.consumer_key,
-          consumer_secret: !partner.consumer_secret,
-          initiator_password: !partner.initiator_password
-        })
+        console.error('No valid credentials found for partner:', partner.name)
         throw new Error(`Failed to retrieve M-Pesa credentials for ${partner.name}: ${vaultError.message}`)
       }
     }
@@ -334,29 +275,13 @@ serve(async (req) => {
     const initiatorPassword = credentials.initiator_password
     const environment = credentials.environment || partner.mpesa_environment || 'sandbox'
 
-    console.log('🔍 [Credentials] Validating credential fields:', {
-      consumer_key: !!consumerKey,
-      consumer_secret: !!consumerSecret,
-      shortcode: !!shortCode,
-      initiator_password: !!initiatorPassword,
-      environment: environment
-    })
-
     if (!consumerKey || !consumerSecret || !shortCode) {
-      console.error('❌ [Credentials] Missing required credential fields:', {
-        consumer_key: !consumerKey,
-        consumer_secret: !consumerSecret,
-        shortcode: !shortCode
-      })
       throw new Error('M-Pesa credentials not configured for this partner')
     }
     
     if (!initiatorPassword) {
-      console.error('❌ [Credentials] Missing initiator password')
       throw new Error('M-Pesa InitiatorPassword not configured for this partner')
     }
-
-    console.log('✅ [Credentials] All required credentials validated successfully')
 
     // Get access token with explicit logging
     const baseUrl = environment === 'production' 
@@ -403,13 +328,6 @@ serve(async (req) => {
     // Determine the correct initiator name
     const initiatorName = credentials.initiator_name || partner.mpesa_initiator_name || process.env.DEFAULT_INITIATOR_NAME || "default_initiator"
     
-    console.log('🔍 [Initiator] Initiator name resolution:', {
-      from_credentials: credentials.initiator_name,
-      from_partner: partner.mpesa_initiator_name,
-      from_env: process.env.DEFAULT_INITIATOR_NAME,
-      final_initiator_name: initiatorName
-    })
-    
     const b2cRequest = {
       InitiatorName: initiatorName,
       SecurityCredential: securityCredential,
@@ -422,19 +340,6 @@ serve(async (req) => {
       ResultURL: resultURL,
       Occasion: body.client_request_id || 'manual'
     }
-    
-    console.log('📤 M-Pesa B2C Request:', {
-      InitiatorName: initiatorName,
-      PartyA: shortCode,
-      PartyB: body.msisdn,
-      Amount: body.amount,
-      CommandID: "BusinessPayment",
-      Remarks: b2cRequest.Remarks,
-      ResultURL: resultURL,
-      QueueTimeOutURL: timeoutURL,
-      Occasion: b2cRequest.Occasion,
-      SecurityCredentialLength: securityCredential ? securityCredential.length : 0
-    })
 
     // Call M-Pesa B2C API
     

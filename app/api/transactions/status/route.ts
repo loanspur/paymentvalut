@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verifyJWTToken } from '../../../../lib/jwt-utils'
 
 // Initialize Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -14,9 +15,68 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey)
 // Get transaction status and recent transactions
 export async function GET(request: NextRequest) {
   try {
+    // Authentication check
+    const token = request.cookies.get('auth_token')?.value
+    
+    if (!token) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const payload = await verifyJWTToken(token)
+    
+    if (!payload || !payload.userId) {
+      return NextResponse.json(
+        { error: 'Invalid session' },
+        { status: 401 }
+      )
+    }
+
+    // Get current user from database to get partner_id and role
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, role, partner_id, is_active')
+      .eq('id', payload.userId)
+      .single()
+
+    if (userError || !user || !user.is_active) {
+      return NextResponse.json(
+        { error: 'User not found or inactive' },
+        { status: 401 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
-    const partnerId = searchParams.get('partner_id')
+    const requestedPartnerId = searchParams.get('partner_id')
     const limit = parseInt(searchParams.get('limit') || '20')
+
+    // Determine which partner's transactions to query - SECURITY: Enforce partner isolation
+    let partnerId: string | null = null
+    
+    if (user.role === 'super_admin') {
+      // Only super_admin can query any partner
+      partnerId = requestedPartnerId || null
+    } else {
+      // All other users (including admin) can only access their own partner
+      if (!user.partner_id) {
+        return NextResponse.json(
+          { error: 'No partner assigned to user' },
+          { status: 400 }
+        )
+      }
+      
+      partnerId = user.partner_id
+      
+      // If they requested a different partner, deny access
+      if (requestedPartnerId && requestedPartnerId !== user.partner_id) {
+        return NextResponse.json(
+          { error: 'Access denied: You can only view your own partner\'s transactions' },
+          { status: 403 }
+        )
+      }
+    }
 
     if (!partnerId) {
       return NextResponse.json(

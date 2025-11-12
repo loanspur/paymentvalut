@@ -24,37 +24,68 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const requestedPartnerId = searchParams.get('partner_id')
 
-    // Build wallet scope
-    let walletQuery = supabase
+    // Get current user from database to get partner_id and role
+    const { data: currentUser, error: userError } = await supabase
+      .from('users')
+      .select('id, role, partner_id, is_active')
+      .eq('id', payload.userId)
+      .single()
+
+    if (userError || !currentUser || !currentUser.is_active) {
+      return NextResponse.json({ success: false, error: 'User not found or inactive' }, { status: 401 })
+    }
+
+    // Determine which partner's wallets to query - SECURITY: Enforce partner isolation
+    let partnerId: string | null = null
+    
+    if (currentUser.role === 'super_admin') {
+      // Super admin can query any partner via query param
+      partnerId = requestedPartnerId || currentUser.partner_id || null
+    } else {
+      // All other users (including admin, partner_admin, etc.) can only access their own partner
+      partnerId = currentUser.partner_id
+      
+      // If they requested a different partner, deny access
+      if (requestedPartnerId && requestedPartnerId !== currentUser.partner_id) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied: You can only view your own partner\'s charge statistics' },
+          { status: 403 }
+        )
+      }
+    }
+
+    if (!partnerId) {
+      return NextResponse.json(
+        { success: false, error: 'No partner assigned. Please contact your administrator to assign a partner to your account.' },
+        { status: 400 }
+      )
+    }
+
+    // Get wallets for the partner
+    const { data: wallets, error: walletsError } = await supabase
       .from('partner_wallets')
       .select('id, partner_id')
+      .eq('partner_id', partnerId)
 
-    if (requestedPartnerId) {
-      walletQuery = walletQuery.eq('partner_id', requestedPartnerId)
-    } else if (payload.role !== 'super_admin' && payload.role !== 'admin') {
-      walletQuery = walletQuery.eq('partner_id', payload.userId ? undefined : undefined) // placeholder, will override below
-    }
-
-    // If not admin, fetch the user's partner_id
-    if (!requestedPartnerId && payload.role !== 'super_admin' && payload.role !== 'admin') {
-      const { data: userRow } = await supabase
-        .from('users')
-        .select('partner_id')
-        .eq('id', payload.userId)
-        .single()
-      if (!userRow?.partner_id) {
-        return NextResponse.json({ success: false, error: 'No partner assigned' }, { status: 400 })
-      }
-      walletQuery = walletQuery.eq('partner_id', userRow.partner_id)
-    }
-
-    const { data: wallets, error: walletsError } = await walletQuery
-
-    if (walletsError || !wallets || wallets.length === 0) {
+    if (walletsError) {
+      console.error('Wallet fetch error:', walletsError)
       return NextResponse.json(
-        { success: false, error: 'No wallets found' },
-        { status: 404 }
+        { success: false, error: 'Failed to fetch wallet data' },
+        { status: 500 }
       )
+    }
+
+    // Return empty stats if no wallets found (instead of 404)
+    if (!wallets || wallets.length === 0) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          today: { totalTransactions: 0, totalAmount: 0, chargeTypes: {} },
+          week: { totalTransactions: 0, totalAmount: 0, chargeTypes: {} },
+          month: { totalTransactions: 0, totalAmount: 0, chargeTypes: {} },
+          quarter: { totalTransactions: 0, totalAmount: 0, chargeTypes: {} }
+        }
+      })
     }
 
     const walletIds = wallets.map(w => w.id)

@@ -42,18 +42,26 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // For super_admin or admin, allow query param to specify partner_id
+    // Determine which partner's wallet to query - SECURITY: Enforce partner isolation
     const { searchParams } = new URL(request.url)
     const requestedPartnerId = searchParams.get('partner_id')
     
     let partnerId: string | null = null
     
-    if (user.role === 'super_admin' || user.role === 'admin') {
-      // Admins can query any partner
+    if (user.role === 'super_admin') {
+      // Only super_admin can query any partner
       partnerId = requestedPartnerId || user.partner_id || null
     } else {
-      // Regular users can only access their own partner
+      // All other users (including admin, tenant, etc.) can only access their own partner
       partnerId = user.partner_id
+      
+      // If they requested a different partner, deny access
+      if (requestedPartnerId && requestedPartnerId !== user.partner_id) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied: You can only view your own partner\'s wallet' },
+          { status: 403 }
+        )
+      }
     }
 
     if (!partnerId) {

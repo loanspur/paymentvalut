@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '../../../../lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 import { requirePartner } from '../../../../lib/auth-utils'
 
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 // Get partner's shortcodes
 export const GET = requirePartner(async (request: NextRequest, user) => {
@@ -20,8 +24,9 @@ export const GET = requirePartner(async (request: NextRequest, user) => {
       .order('created_at', { ascending: false })
 
     if (error) {
+      console.error('Error fetching shortcodes:', error)
       return NextResponse.json(
-        { error: 'Failed to fetch shortcodes' },
+        { error: 'Failed to fetch shortcodes', details: error.message },
         { status: 500 }
       )
     }
@@ -31,9 +36,10 @@ export const GET = requirePartner(async (request: NextRequest, user) => {
       shortcodes: shortcodes || []
     })
 
-  } catch (error) {
+  } catch (error: any) {
+    console.error('Exception in GET shortcodes:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch shortcodes' },
+      { error: 'Failed to fetch shortcodes', details: error?.message },
       { status: 500 }
     )
   }
@@ -68,12 +74,20 @@ export const POST = requirePartner(async (request: NextRequest, user) => {
     }
 
     // Check if shortcode already exists for this partner
-    const { data: existing } = await supabase
+    const { data: existing, error: checkError } = await supabase
       .from('partner_shortcodes')
       .select('id')
       .eq('partner_id', user.partner_id)
       .eq('shortcode', shortcode)
-      .single()
+      .maybeSingle()
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      console.error('Error checking existing shortcode:', checkError)
+      return NextResponse.json(
+        { error: 'Failed to check existing shortcode', details: checkError.message },
+        { status: 500 }
+      )
+    }
 
     if (existing) {
       return NextResponse.json(
@@ -101,8 +115,9 @@ export const POST = requirePartner(async (request: NextRequest, user) => {
       .single()
 
     if (error || !newShortcode) {
+      console.error('Error creating shortcode:', error)
       return NextResponse.json(
-        { error: 'Failed to create shortcode' },
+        { error: 'Failed to create shortcode', details: error?.message },
         { status: 500 }
       )
     }
@@ -112,9 +127,10 @@ export const POST = requirePartner(async (request: NextRequest, user) => {
       shortcode: newShortcode
     }, { status: 201 })
 
-  } catch (error) {
+  } catch (error: any) {
+    console.error('Exception in POST shortcodes:', error)
     return NextResponse.json(
-      { error: 'Failed to create shortcode' },
+      { error: 'Failed to create shortcode', details: error?.message },
       { status: 500 }
     )
   }

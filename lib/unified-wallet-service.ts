@@ -11,6 +11,28 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+const toNumber = (value: any): number => {
+  if (typeof value === 'number') {
+    return value
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed === '') {
+      return 0
+    }
+
+    const parsed = parseFloat(trimmed.replace(/,/g, ''))
+    return Number.isNaN(parsed) ? 0 : parsed
+  }
+
+  if (typeof value === 'bigint') {
+    return Number(value)
+  }
+
+  return 0
+}
+
 export interface WalletBalanceUpdateResult {
   success: boolean
   walletId?: string
@@ -38,11 +60,24 @@ export class UnifiedWalletService {
    */
   static async updateWalletBalance(
     partnerId: string,
-    amount: number,
+    amount: number | string,
     transactionType: string,
     metadata?: Record<string, any>
   ): Promise<WalletBalanceUpdateResult> {
+    const normalizedAmount = toNumber(amount)
+
+    if (Number.isNaN(normalizedAmount)) {
+      return {
+        success: false,
+        partnerId,
+        amount: 0,
+        transactionType,
+        error: 'Invalid amount provided for wallet update'
+      }
+    }
+
     try {
+
       // Get or create wallet for the partner
       let { data: wallet, error: walletError } = await supabase
         .from('partner_wallets')
@@ -58,7 +93,7 @@ export class UnifiedWalletService {
         return {
           success: false,
           partnerId,
-          amount,
+          amount: normalizedAmount,
           transactionType,
           error: `Failed to fetch wallet: ${walletError.message}`
         }
@@ -86,7 +121,7 @@ export class UnifiedWalletService {
           return {
             success: false,
             partnerId,
-            amount,
+            amount: normalizedAmount,
             transactionType,
             error: `Failed to create wallet: ${createError.message}`
           }
@@ -97,11 +132,11 @@ export class UnifiedWalletService {
         currentBalance = 0
       } else {
         walletId = wallet.id
-        currentBalance = wallet.current_balance || 0
+        currentBalance = toNumber(wallet.current_balance)
       }
 
       // Calculate new balance
-      const newBalance = currentBalance + amount
+      const newBalance = currentBalance + normalizedAmount
 
       // Validate balance (prevent negative balances for charges)
       if (transactionType === 'charge' || transactionType === 'sms_charge' || transactionType === 'disbursement') {
@@ -111,9 +146,9 @@ export class UnifiedWalletService {
             walletId,
             partnerId,
             previousBalance: currentBalance,
-            amount,
+            amount: normalizedAmount,
             transactionType,
-            error: `Insufficient balance. Required: ${Math.abs(amount)} KES, Available: ${currentBalance} KES`
+            error: `Insufficient balance. Required: ${Math.abs(normalizedAmount)} KES, Available: ${currentBalance} KES`
           }
         }
       }
@@ -132,7 +167,7 @@ export class UnifiedWalletService {
             walletId,
             partnerId,
             previousBalance: currentBalance,
-            amount,
+            amount: normalizedAmount,
             transactionType,
             error: `Cannot deduct wallet: Related disbursement status is '${relatedDisbursement.status}', not 'success'`
           }
@@ -148,7 +183,7 @@ export class UnifiedWalletService {
       // Update topup fields if this is a topup transaction
       if (transactionType === 'top_up' || transactionType === 'manual_credit') {
         updateData.last_topup_date = new Date().toISOString()
-        updateData.last_topup_amount = amount
+        updateData.last_topup_amount = normalizedAmount
       }
 
       const { error: balanceError } = await supabase
@@ -163,7 +198,7 @@ export class UnifiedWalletService {
           walletId,
           partnerId,
           previousBalance: currentBalance,
-          amount,
+          amount: normalizedAmount,
           transactionType,
           error: `Failed to update wallet balance: ${balanceError.message}`
         }
@@ -173,7 +208,7 @@ export class UnifiedWalletService {
       const transactionData: WalletTransactionData = {
         walletId,
         transactionType: transactionType as any,
-        amount,
+        amount: normalizedAmount,
         reference: metadata?.reference,
         description: metadata?.description,
         metadata: {
@@ -194,7 +229,7 @@ export class UnifiedWalletService {
         partnerId,
         previousBalance: currentBalance,
         newBalance,
-        amount,
+        amount: normalizedAmount,
         transactionType
       }
 
@@ -203,7 +238,7 @@ export class UnifiedWalletService {
       return {
         success: false,
         partnerId,
-        amount,
+        amount: normalizedAmount,
         transactionType,
         error: `Internal error: ${error instanceof Error ? error.message : 'Unknown error'}`
       }
@@ -264,7 +299,7 @@ export class UnifiedWalletService {
       }
 
       return {
-        balance: wallet?.current_balance || 0,
+        balance: wallet ? toNumber(wallet.current_balance) : 0,
         walletId: wallet?.id
       }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verifyJWTToken } from '../../../../../lib/jwt-utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,8 +9,41 @@ const supabase = createClient(
 
 export async function GET(request: NextRequest) {
   try {
+    // Authentication check
+    const token = request.cookies.get('auth_token')?.value
+    
+    if (!token) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const payload = await verifyJWTToken(token)
+    
+    if (!payload || !payload.userId) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid session' },
+        { status: 401 }
+      )
+    }
+
+    // Get current user from database to get partner_id and role
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, role, partner_id, is_active')
+      .eq('id', payload.userId)
+      .single()
+
+    if (userError || !user || !user.is_active) {
+      return NextResponse.json(
+        { success: false, error: 'User not found or inactive' },
+        { status: 401 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
-    const partner_id = searchParams.get('partner_id')
+    const requestedPartnerId = searchParams.get('partner_id')
     const transaction_type = searchParams.get('transaction_type')
     const status = searchParams.get('status')
     const search = searchParams.get('search')
@@ -20,19 +54,45 @@ export async function GET(request: NextRequest) {
     
     const offset = (page - 1) * limit
 
+    // Determine which partner's transactions to query - SECURITY: Enforce partner isolation
+    let partnerId: string | null = null
+    
+    if (user.role === 'super_admin') {
+      // Only super_admin can query any partner
+      partnerId = requestedPartnerId || null
+    } else {
+      // All other users (including admin) can only access their own partner
+      partnerId = user.partner_id
+      
+      // If they requested a different partner, deny access
+      if (requestedPartnerId && requestedPartnerId !== user.partner_id) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied: You can only view your own partner\'s transactions' },
+          { status: 403 }
+        )
+      }
+    }
+
+    if (!partnerId) {
+      return NextResponse.json(
+        { success: false, error: 'No partner specified' },
+        { status: 400 }
+      )
+    }
+
     // Build query for wallet transactions
     let query = supabase
       .from('wallet_transactions')
       .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
 
-    // Apply filters
-    if (partner_id) {
+    // Apply partner filter - SECURITY: Always filter by partner
+    if (partnerId) {
       // First get wallet IDs for the partner
       const { data: wallets, error: walletsError } = await supabase
         .from('partner_wallets')
         .select('id')
-        .eq('partner_id', partner_id)
+        .eq('partner_id', partnerId)
 
       if (walletsError) {
         console.error('Error fetching wallets for partner:', walletsError)
@@ -131,26 +191,72 @@ export async function GET(request: NextRequest) {
       // Only add if we haven't seen this transaction ID before
       if (!transactionMap.has(transaction.id)) {
         transactionMap.set(transaction.id, {
-          id: transaction.id,
-          wallet_id: transaction.wallet_id,
-          partner_id: partnerMap[transaction.wallet_id]?.partner_id,
-          partner_name: partnerMap[transaction.wallet_id]?.partner_name,
-          transaction_type: transaction.transaction_type,
-          amount: transaction.amount,
-          reference: transaction.reference,
-          description: transaction.description,
-          status: transaction.status,
-          created_at: transaction.created_at,
-          metadata: transaction.metadata
+      id: transaction.id,
+      wallet_id: transaction.wallet_id,
+      partner_id: partnerMap[transaction.wallet_id]?.partner_id,
+      partner_name: partnerMap[transaction.wallet_id]?.partner_name,
+      transaction_type: transaction.transaction_type,
+      amount: transaction.amount,
+      reference: transaction.reference,
+      description: transaction.description,
+      status: transaction.status,
+      created_at: transaction.created_at,
+      metadata: transaction.metadata
         })
       }
     })
     const transformedData = Array.from(transactionMap.values())
 
-    // Get transaction summary (without pagination for global stats)
-    const { data: summaryData, error: summaryError } = await supabase
+    // Get transaction summary - SECURITY: Filter by partner for summary too
+    let summaryQuery = supabase
       .from('wallet_transactions')
-      .select('transaction_type, amount, status, created_at')
+      .select('transaction_type, amount, status, created_at, wallet_id')
+    
+    // Apply partner filter to summary query
+    if (partnerId) {
+      const { data: summaryWallets } = await supabase
+        .from('partner_wallets')
+        .select('id')
+        .eq('partner_id', partnerId)
+      
+      const summaryWalletIds = summaryWallets?.map(w => w.id) || []
+      if (summaryWalletIds.length > 0) {
+        summaryQuery = summaryQuery.in('wallet_id', summaryWalletIds)
+      } else {
+        // No wallets for this partner, return empty summary
+        const emptySummary = {
+          total_transactions: 0,
+          total_amount: 0,
+          total_topups: 0,
+          total_disbursements: 0,
+          total_float_purchases: 0,
+          total_charges: 0,
+          total_manual_credits: 0,
+          total_manual_debits: 0,
+          completed_transactions: 0,
+          pending_transactions: 0,
+          failed_transactions: 0,
+          today_transactions: 0,
+          today_amount: 0
+        }
+        
+        return NextResponse.json({
+          success: true,
+          data: transformedData,
+          summary: emptySummary,
+          pagination: {
+            page,
+            limit,
+            offset,
+            total: count || 0,
+            total_pages: Math.ceil((count || 0) / limit),
+            has_more: (count || 0) > offset + limit
+          }
+        })
+      }
+    }
+
+    const { data: summaryData, error: summaryError } = await summaryQuery
 
     if (summaryError) {
       console.error('Error fetching transaction summary:', summaryError)

@@ -99,6 +99,7 @@ interface Partner {
   id: string
   name: string
   short_code: string
+  mpesa_shortcode?: string
   is_active: boolean
 }
 
@@ -109,6 +110,7 @@ interface User {
   partner_id?: string
   first_name?: string
   last_name?: string
+  phone_number?: string
 }
 
 export default function WalletPage() {
@@ -119,12 +121,26 @@ export default function WalletPage() {
   const [showFloatModal, setShowFloatModal] = useState(false)
   const [topUpData, setTopUpData] = useState<TopUpRequest>({ amount: 0, phone_number: '' })
   const [floatAmount, setFloatAmount] = useState(0)
+  const [floatPurchaseStep, setFloatPurchaseStep] = useState<'amount' | 'otp' | 'processing' | 'success'>('amount')
+  const [selectedB2CShortCode, setSelectedB2CShortCode] = useState<string>('')
+  const [isNewB2CShortCode, setIsNewB2CShortCode] = useState(false)
+  const [newB2CShortCode, setNewB2CShortCode] = useState<string>('')
+  const [newB2CShortCodeName, setNewB2CShortCodeName] = useState<string>('')
+  const [floatCharges, setFloatCharges] = useState<{ amount: number; percentage?: number; name?: string } | null>(null)
+  const [floatTotalCost, setFloatTotalCost] = useState(0)
+  const [otpCode, setOtpCode] = useState('')
+  const [otpReference, setOtpReference] = useState('')
+  const [walletTransactionId, setWalletTransactionId] = useState('')
+  const [partnerShortCodes, setPartnerShortCodes] = useState<Array<{ id: string; shortcode: string; shortcode_name: string; is_active: boolean; partner_id?: string; partner_name?: string }>>([])
+  const [floatPurchaseStatus, setFloatPurchaseStatus] = useState<'pending' | 'processing' | 'completed' | 'failed'>('pending')
+  const [floatPurchasePartnerId, setFloatPurchasePartnerId] = useState<string | null>(null)
   const [showBalance, setShowBalance] = useState(true)
   const [partners, setPartners] = useState<Partner[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [userProfile, setUserProfile] = useState<{ phone_number?: string, email?: string } | null>(null)
   const [selectedPartner, setSelectedPartner] = useState<Partner | null>(null)
   const [viewingPartnerId, setViewingPartnerId] = useState<string | null>(null)
+  const [floatPurchaseLoading, setFloatPurchaseLoading] = useState(false)
   const [isTopUpLoading, setIsTopUpLoading] = useState(false)
   const [topUpMethod, setTopUpMethod] = useState<'stk_push' | 'manual'>('stk_push')
   const [stkAwaiting, setStkAwaiting] = useState(false)
@@ -182,8 +198,14 @@ export default function WalletPage() {
   useEffect(() => {
     loadCurrentUser()
     loadPartners()
-    loadUserProfile()
   }, [])
+
+  // Load user profile after currentUser is loaded
+  useEffect(() => {
+    if (currentUser) {
+      loadUserProfile()
+    }
+  }, [currentUser])
 
   // Auto-select first partner for super_admin if none selected (after partners are loaded)
   useEffect(() => {
@@ -203,6 +225,16 @@ export default function WalletPage() {
     }
     // For regular users, wait until currentUser is loaded
     if (currentUser?.role !== 'super_admin' && !currentUser?.partner_id) {
+      // If user is loaded but has no partner_id, stop loading and show error
+      if (currentUser) {
+        setLoading(false)
+        addToast({
+          type: 'error',
+          title: 'No Partner Assigned',
+          message: 'You must be assigned to a partner to view wallet data. Please contact your administrator.',
+          duration: 8000
+        })
+      }
       return
     }
     
@@ -397,13 +429,29 @@ export default function WalletPage() {
       const response = await fetch('/api/profile', { credentials: 'include' })
       if (response.ok) {
         const data = await response.json()
+        const profileData = data?.data || data?.profile || {}
         setUserProfile({
-          phone_number: data?.data?.phone_number || data?.profile?.phone_number,
-          email: data?.data?.email || data?.profile?.email || currentUser?.email
+          phone_number: profileData.phone_number || currentUser?.phone_number,
+          email: profileData.email || currentUser?.email
         })
+      } else {
+        // Fallback to currentUser data if profile API fails
+        if (currentUser) {
+          setUserProfile({
+            phone_number: currentUser.phone_number,
+            email: currentUser.email
+          })
+        }
       }
     } catch (error) {
       console.error('Failed to load user profile:', error)
+      // Fallback to currentUser data if profile API fails
+      if (currentUser) {
+        setUserProfile({
+          phone_number: currentUser.phone_number,
+          email: currentUser.email
+        })
+      }
     }
   }
 
@@ -542,34 +590,288 @@ export default function WalletPage() {
     }
   }
 
-  const handleFloatPurchase = async () => {
-    if (!floatAmount) {
-      alert('Please enter float amount')
+  // Load partner shortcodes when modal opens
+  const loadPartnerShortCodes = async (partnerId?: string | null) => {
+    try {
+      // For super_admin, load all shortcodes with partner info
+      // For regular users, load only their partner's shortcodes
+      const url = currentUser?.role === 'super_admin' 
+        ? '/api/admin/partners/shortcodes/all'
+        : '/api/partner/shortcodes'
+      
+      const response = await fetch(url)
+      console.log('Shortcode API response status:', response.status, 'URL:', url)
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('Shortcode API response data:', data)
+        
+        // Handle both response formats: { success: true, shortcodes: [...] } and { shortcodes: [...] }
+        let shortcodes = data.shortcodes || (data.success ? data.data?.shortcodes : [])
+        console.log('Extracted shortcodes array:', shortcodes?.length || 0, shortcodes)
+        
+        if (shortcodes && Array.isArray(shortcodes)) {
+          // Filter active shortcodes (handle both boolean and null/undefined)
+          // Note: API already filters by is_active=true, but we do a safety check here
+          let filteredShortcodes = shortcodes.filter((sc: any) => sc.is_active !== false)
+          console.log('After is_active filter:', filteredShortcodes.length, filteredShortcodes)
+          
+          // If super_admin selected a specific partner, filter by that partner
+          // But also show all shortcodes if filtering results in empty (for debugging)
+          if (currentUser?.role === 'super_admin' && partnerId) {
+            console.log('Filtering by partner_id:', partnerId, 'Type:', typeof partnerId)
+            const beforeFilter = filteredShortcodes.length
+            const matchedShortcodes = filteredShortcodes.filter((sc: any) => {
+              const matches = String(sc.partner_id) === String(partnerId)
+              console.log(`  Shortcode ${sc.id}: partner_id=${sc.partner_id} (${typeof sc.partner_id}), matches=${matches}`)
+              return matches
+            })
+            console.log(`Filtered from ${beforeFilter} to ${matchedShortcodes.length} shortcodes for partner ${partnerId}`)
+            
+            // If no matches found, show all shortcodes with partner info (for debugging)
+            if (matchedShortcodes.length === 0 && filteredShortcodes.length > 0) {
+              console.warn('No shortcodes matched the selected partner. Showing all shortcodes for debugging.')
+              filteredShortcodes = filteredShortcodes // Show all with partner names
+            } else {
+              filteredShortcodes = matchedShortcodes
+            }
+          }
+          
+          console.log('Final shortcodes to display:', filteredShortcodes.length, filteredShortcodes)
+          setPartnerShortCodes(filteredShortcodes)
+          
+          // Auto-select first shortcode if available (always auto-select when loading)
+          if (filteredShortcodes.length > 0) {
+            const firstActive = filteredShortcodes[0]
+            if (firstActive && firstActive.id) {
+              setSelectedB2CShortCode(firstActive.id)
+              console.log('Auto-selected shortcode:', firstActive.id, firstActive.shortcode_name)
+            }
+          } else {
+            // Clear selection if no shortcodes available
+            setSelectedB2CShortCode('')
+            console.log('No shortcodes available for partner:', partnerId)
+          }
+        } else {
+          // No shortcodes found or invalid response
+          console.log('No shortcodes in response or invalid format:', data)
+          setPartnerShortCodes([])
+          setSelectedB2CShortCode('')
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Error loading shortcodes:', response.status, errorData)
+        setPartnerShortCodes([])
+        setSelectedB2CShortCode('')
+      }
+    } catch (error) {
+      console.error('Error loading partner shortcodes:', error)
+      setPartnerShortCodes([])
+      setSelectedB2CShortCode('')
+    }
+  }
+
+  // Calculate charges when amount changes
+  useEffect(() => {
+    // For super_admin, use selected partner or viewingPartnerId
+    // For regular users, use their partner_id
+    const partnerId = currentUser?.role === 'super_admin' 
+      ? (floatPurchasePartnerId || viewingPartnerId)
+      : currentUser?.partner_id
+    
+    if (floatAmount > 0 && partnerId) {
+      const calculateCharges = async () => {
+        try {
+          const response = await fetch(`/api/wallet/float/purchase/calculate-charges?amount=${floatAmount}&partner_id=${partnerId}`)
+          if (response.ok) {
+            const data = await response.json()
+            if (data.success) {
+              setFloatCharges(data.charges)
+              setFloatTotalCost(data.total_cost)
+            }
+          }
+        } catch (error) {
+          console.error('Error calculating charges:', error)
+        }
+      }
+      calculateCharges()
+    }
+  }, [floatAmount, currentUser?.partner_id, currentUser?.role, floatPurchasePartnerId, viewingPartnerId])
+
+  // Load shortcodes when modal opens or partner changes
+  useEffect(() => {
+    if (showFloatModal) {
+      // Reset state when modal opens
+      setFloatPurchaseStep('amount')
+      setOtpCode('')
+      setOtpReference('')
+      setWalletTransactionId('')
+      setFloatPurchaseStatus('pending')
+      
+      // For super_admin, use selected partner or viewingPartnerId
+      // For regular users, use their partner_id
+      const partnerId = currentUser?.role === 'super_admin' 
+        ? (floatPurchasePartnerId || viewingPartnerId)
+        : currentUser?.partner_id
+      
+      if (partnerId) {
+        // Reset selection before loading new shortcodes
+        setSelectedB2CShortCode('')
+        // Don't clear partnerShortCodes here - let it show loading state
+        
+        // Load wallet data first, then shortcodes
+        loadWalletData().then(() => {
+          console.log('Loading shortcodes for partner in useEffect:', partnerId)
+          loadPartnerShortCodes(partnerId)
+        })
+      } else if (currentUser?.role === 'super_admin') {
+        // For super_admin without partner selected, load all shortcodes to show what's available
+        console.log('Super admin - no partner selected, loading all shortcodes')
+        loadPartnerShortCodes(null) // Load all shortcodes
+      } else if (currentUser?.partner_id) {
+        // For regular users, load their partner's shortcodes
+        setSelectedB2CShortCode('')
+        loadWalletData().then(() => {
+          loadPartnerShortCodes(currentUser.partner_id)
+        })
+      }
+    }
+  }, [showFloatModal, currentUser?.partner_id, currentUser?.role, floatPurchasePartnerId, viewingPartnerId])
+
+  const handleFloatPurchaseInitiate = async () => {
+    if (!floatAmount || floatAmount < 1) {
+      addToast({ type: 'error', title: 'Error', message: 'Please enter a valid float amount', duration: 5000 })
       return
     }
 
+
+    // For super_admin, include partner_id if different from viewingPartnerId
+    const partnerId = currentUser?.role === 'super_admin' 
+      ? (floatPurchasePartnerId || viewingPartnerId)
+      : currentUser?.partner_id
+
+    if (currentUser?.role === 'super_admin' && !partnerId) {
+      addToast({ type: 'error', title: 'Error', message: 'Please select a partner for float purchase', duration: 5000 })
+      return
+    }
+
+    // Get the selected partner's shortcode
+    const selectedPartner = partners.find(p => p.id === partnerId)
+    const partnerShortcode = selectedPartner?.mpesa_shortcode || selectedPartner?.short_code
+
+    if (!partnerShortcode) {
+      addToast({ type: 'error', title: 'Error', message: 'Partner shortcode is not configured. Please configure it in partner settings.', duration: 5000 })
+      return
+    }
+
+    setFloatPurchaseLoading(true)
     try {
       const response = await fetch('/api/wallet/float/purchase', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ amount: floatAmount })
+        body: JSON.stringify({ 
+          amount: floatAmount,
+          b2c_shortcode_id: null, // No longer using partner_shortcodes table
+          b2c_shortcode: partnerShortcode,
+          b2c_shortcode_name: selectedPartner?.name || 'Partner B2C Account',
+          partner_id: currentUser?.role === 'super_admin' ? partnerId : undefined
+        })
       })
 
       if (response.ok) {
         const result = await response.json()
-        alert('Float purchase initiated! You will receive an OTP for confirmation.')
-        setShowFloatModal(false)
-        setFloatAmount(0)
-        loadWalletData()
+        if (result.success) {
+          setOtpReference(result.data.otp_reference)
+          setWalletTransactionId(result.data.wallet_transaction.id)
+          setFloatPurchaseStep('otp')
+          
+          // Check if OTP was actually sent
+          const otpSent = result.data?.smsSent || result.data?.emailSent
+          if (otpSent) {
+            addToast({ type: 'success', title: 'OTP Sent', message: 'Please check your email and SMS for the OTP code', duration: 8000 })
+          } else {
+            addToast({ type: 'warning', title: 'OTP Generated', message: 'OTP was generated but may not have been sent. Please contact support if you do not receive it.', duration: 10000 })
+          }
+        } else {
+          addToast({ type: 'error', title: 'Error', message: result.error || result.details || 'Failed to initiate float purchase', duration: 5000 })
+        }
       } else {
         const error = await response.json()
-        alert(`Float purchase failed: ${error.error}`)
+        addToast({ type: 'error', title: 'Error', message: error.error || error.details || 'Failed to initiate float purchase', duration: 5000 })
       }
     } catch (error) {
-      alert('Float purchase failed. Please try again.')
+      console.error('Float purchase initiation error:', error)
+      addToast({ type: 'error', title: 'Error', message: 'Float purchase initiation failed. Please try again.', duration: 5000 })
+    } finally {
+      setFloatPurchaseLoading(false)
     }
+  }
+
+  const handleFloatPurchaseConfirm = async () => {
+    if (!otpCode || otpCode.length !== 6) {
+      addToast({ type: 'error', title: 'Error', message: 'Please enter a valid 6-digit OTP code', duration: 5000 })
+      return
+    }
+
+    setFloatPurchaseStep('processing')
+    setFloatPurchaseStatus('processing')
+
+    try {
+      const response = await fetch('/api/wallet/float/purchase/confirm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          otp_reference: otpReference,
+          otp_code: otpCode,
+          wallet_transaction_id: walletTransactionId
+        })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success) {
+          setFloatPurchaseStatus('completed')
+          setFloatPurchaseStep('success')
+          addToast({ type: 'success', title: 'Success', message: 'Float purchase completed successfully!', duration: 5000 })
+          loadWalletData()
+          loadTransactions()
+          
+          // Auto-close after 3 seconds
+          setTimeout(() => {
+            setShowFloatModal(false)
+            setFloatPurchaseStep('amount')
+            setFloatAmount(0)
+            setOtpCode('')
+            setSelectedB2CShortCode('')
+            setIsNewB2CShortCode(false)
+            setNewB2CShortCode('')
+            setNewB2CShortCodeName('')
+            setFloatPurchasePartnerId(null)
+          }, 3000)
+        } else {
+          setFloatPurchaseStatus('failed')
+          addToast({ type: 'error', title: 'Error', message: result.error || 'Float purchase confirmation failed', duration: 5000 })
+          setFloatPurchaseStep('otp') // Go back to OTP step
+        }
+      } else {
+        const error = await response.json()
+        setFloatPurchaseStatus('failed')
+        addToast({ type: 'error', title: 'Error', message: error.error || 'Float purchase confirmation failed', duration: 5000 })
+        setFloatPurchaseStep('otp') // Go back to OTP step
+      }
+    } catch (error) {
+      setFloatPurchaseStatus('failed')
+      addToast({ type: 'error', title: 'Error', message: 'Float purchase confirmation failed. Please try again.', duration: 5000 })
+      setFloatPurchaseStep('otp') // Go back to OTP step
+    }
+  }
+
+  const handleFloatPurchase = () => {
+    setShowFloatModal(true)
   }
 
   const formatAmount = (amount: number) => {
@@ -589,8 +891,11 @@ export default function WalletPage() {
 
   const maskPhone = (phone?: string) => {
     if (!phone) return '—'
-    // Keep country code and last 3 digits
-    return phone.replace(/^(\d{3})(\d+)(\d{3})$/, (_m, a, mid, b) => `${a}${'*'.repeat(mid.length)}${b}`)
+    // Extract digits only and show last 3-4 digits
+    const digits = phone.replace(/\D/g, '')
+    if (digits.length < 3) return '—'
+    const last3 = digits.slice(-3)
+    return `****${last3}`
   }
 
   // formatDate is imported from lib/utils (uses EA Time)
@@ -1638,77 +1943,329 @@ export default function WalletPage() {
         </div>
       )}
 
-      {/* Float Purchase Modal */}
+      {/* Enhanced Float Purchase Modal */}
       {showFloatModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-            <div className="mt-3">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Purchase B2C Float</h3>
-              {/* Partner B2C account details and OTP contacts */}
-              <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <h4 className="text-sm font-semibold text-gray-900 mb-2">B2C Account Details</h4>
-                <div className="text-sm text-gray-800 space-y-1">
+          <div className="relative top-10 mx-auto p-6 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-semibold text-gray-900">Purchase B2C Float</h3>
+              <button
+                onClick={() => {
+                  setShowFloatModal(false)
+                  setFloatPurchaseStep('amount')
+                  setFloatAmount(0)
+                  setOtpCode('')
+                  setSelectedB2CShortCode('')
+                  setIsNewB2CShortCode(false)
+                  setNewB2CShortCode('')
+                  setNewB2CShortCodeName('')
+                  setFloatPurchasePartnerId(null)
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Step 1: Amount and B2C Details */}
+            {floatPurchaseStep === 'amount' && (
+              <div className="space-y-4">
+                {/* Partner Selection for Super Admin */}
+                {currentUser?.role === 'super_admin' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Select Partner *
+                    </label>
+                    <select
+                      value={floatPurchasePartnerId || viewingPartnerId || ''}
+                      onChange={async (e) => {
+                        const selectedId = e.target.value || null
+                        setFloatPurchasePartnerId(selectedId)
+                        
+                        // Reload wallet data for selected partner
+                        if (selectedId) {
+                          setViewingPartnerId(selectedId)
+                          await loadWalletData()
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">Select a partner</option>
+                      {partners.filter(p => p.is_active).map(partner => (
+                        <option key={partner.id} value={partner.id}>
+                          {partner.name} ({partner.short_code})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">Select the partner whose B2C shortcode you want to use</p>
+                  </div>
+                )}
+
+                {/* B2C Short Code Display */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    B2C Short Code *
+                  </label>
                   {(() => {
-                    let partnerName = '—'
-                    let shortCode = '—'
-                    if (currentUser?.partner_id) {
-                      const p = partners.find(x => x.id === currentUser.partner_id)
-                      partnerName = p?.name || partnerName
-                      shortCode = p?.short_code || shortCode
-                    }
-                    const paybill = '880100'
-                    const accountNumber = '774451'
+                    // Get the selected partner
+                    const selectedPartnerId = currentUser?.role === 'super_admin' 
+                      ? (floatPurchasePartnerId || viewingPartnerId)
+                      : currentUser?.partner_id
+                    
+                    const selectedPartner = partners.find(p => p.id === selectedPartnerId)
+                    const partnerShortcode = selectedPartner?.mpesa_shortcode || selectedPartner?.short_code || 'Not configured'
+                    
                     return (
-                      <>
-                        <p><strong>Partner:</strong> {partnerName} ({shortCode})</p>
-                        <p><strong>Paybill:</strong> {paybill}</p>
-                        <p><strong>Account Ref:</strong> {accountNumber}#{shortCode}</p>
-                      </>
+                      <div className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-700">
+                        {partnerShortcode}
+                        {selectedPartner && (
+                          <span className="ml-2 text-xs text-gray-500">
+                            ({selectedPartner.name})
+                          </span>
+                        )}
+                      </div>
                     )
                   })()}
+                  <p className="mt-1 text-xs text-gray-500">
+                    This is the partner's B2C shortcode from partner settings
+                  </p>
                 </div>
-                <div className="mt-3">
+
+                {/* Float Amount */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Float Amount (KES) *
+                  </label>
+                  <input
+                    type="number"
+                    value={floatAmount || ''}
+                    onChange={(e) => setFloatAmount(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter float amount"
+                    min="1"
+                    step="0.01"
+                  />
+                </div>
+
+                {/* Current Wallet Balance Display */}
+                {wallet && (
+                  <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <h4 className="text-sm font-semibold text-gray-900 mb-2">Current Wallet Balance</h4>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-700">Available Balance:</span>
+                      <span className={`text-lg font-bold ${wallet.current_balance < floatTotalCost ? 'text-red-600' : 'text-green-600'}`}>
+                        {formatAmount(wallet.current_balance)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Charges Display */}
+                {floatCharges && floatAmount > 0 && (
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <h4 className="text-sm font-semibold text-blue-900 mb-2">Charges Breakdown</h4>
+                    <div className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-700">Float Amount:</span>
+                        <span className="font-semibold">{formatAmount(floatAmount)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-700">
+                          {floatCharges.name || 'Float Purchase Fee'}:
+                          {floatCharges.percentage && ` (${floatCharges.percentage}%)`}
+                        </span>
+                        <span className="font-semibold">{formatAmount(floatCharges.amount)}</span>
+                      </div>
+                      <div className="border-t border-blue-300 pt-1 mt-1 flex justify-between">
+                        <span className="text-blue-900 font-semibold">Total Cost:</span>
+                        <span className="text-blue-900 font-bold text-lg">{formatAmount(floatTotalCost)}</span>
+                      </div>
+                      {wallet && wallet.current_balance < floatTotalCost && (
+                        <p className="text-xs text-red-600 mt-2 font-semibold">
+                          ⚠️ Insufficient balance. Required: {formatAmount(floatTotalCost)}, Available: {formatAmount(wallet.current_balance)}
+                        </p>
+                      )}
+                      {wallet && wallet.current_balance >= floatTotalCost && (
+                        <p className="text-xs text-green-600 mt-2 font-semibold">
+                          ✅ Sufficient balance. Remaining after purchase: {formatAmount(wallet.current_balance - floatTotalCost)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* OTP Delivery Info */}
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
                   <h5 className="text-sm font-semibold text-gray-900 mb-1">OTP Delivery</h5>
-                  <p className="text-xs text-gray-700">We will send OTP to your registered contacts for confirmation.</p>
-                  <div className="mt-2 text-sm text-gray-800 space-y-1">
-                    <p><strong>Email:</strong> {maskEmail(userProfile?.email || currentUser?.email)}</p>
-                    <p><strong>Phone:</strong> {maskPhone(userProfile?.phone_number)}</p>
+                  <p className="text-xs text-gray-700 mb-2">We will send OTP to your registered contacts for confirmation.</p>
+                  <div className="text-sm text-gray-800 space-y-1">
+                    <p><strong>Email:</strong> {maskEmail(userProfile?.email || currentUser?.email || '')}</p>
+                    <p><strong>Phone:</strong> {maskPhone(userProfile?.phone_number || '')}</p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                  onClick={() => {
+                    setShowFloatModal(false)
+                    setFloatPurchaseStep('amount')
+                    setFloatAmount(0)
+                    setSelectedB2CShortCode('')
+                    setIsNewB2CShortCode(false)
+                    setFloatPurchasePartnerId(null)
+                  }}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleFloatPurchaseInitiate}
+                    disabled={
+                      floatPurchaseLoading ||
+                      !floatAmount || 
+                      !wallet ||
+                      wallet.current_balance < floatTotalCost ||
+                      (currentUser?.role === 'super_admin' && !floatPurchasePartnerId && !viewingPartnerId) ||
+                      !(() => {
+                        const selectedPartnerId = currentUser?.role === 'super_admin' 
+                          ? (floatPurchasePartnerId || viewingPartnerId)
+                          : currentUser?.partner_id
+                        const selectedPartner = partners.find(p => p.id === selectedPartnerId)
+                        return selectedPartner?.mpesa_shortcode || selectedPartner?.short_code
+                      })()
+                    }
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {floatPurchaseLoading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      'Continue to OTP'
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: OTP Verification */}
+            {floatPurchaseStep === 'otp' && (
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <h4 className="text-sm font-semibold text-blue-900 mb-2">OTP Verification Required</h4>
+                  <p className="text-sm text-blue-800 mb-3">
+                    We will send OTP to your registered contacts for confirmation.
+                  </p>
+                  
+                  {/* OTP Delivery Information */}
+                  <div className="mt-3 pt-3 border-t border-blue-200">
+                    <h5 className="text-xs font-semibold text-gray-700 mb-2">OTP Delivery</h5>
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Email:</span>
+                        <span className="text-gray-900 font-medium">
+                          {maskEmail(userProfile?.email || currentUser?.email)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Phone:</span>
+                        <span className="text-gray-900 font-medium">
+                          {maskPhone(userProfile?.phone_number || currentUser?.phone_number)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Enter OTP Code *
+                  </label>
+                  <input
+                    type="text"
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-center text-2xl font-mono tracking-widest"
+                    maxLength={6}
+                    autoFocus
+                  />
+                  <p className="mt-1 text-xs text-gray-500">6-digit code sent to your registered email and phone</p>
+                </div>
+
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="text-sm text-gray-800 space-y-1">
+                    <p><strong>Float Amount:</strong> {formatAmount(floatAmount)}</p>
+                    {floatCharges && (
+                      <p><strong>Charges:</strong> {formatAmount(floatCharges.amount)}</p>
+                    )}
+                    <p><strong>Total Cost:</strong> {formatAmount(floatTotalCost)}</p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    onClick={() => {
+                      setFloatPurchaseStep('amount')
+                      setOtpCode('')
+                    }}
+                    className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={handleFloatPurchaseConfirm}
+                    disabled={otpCode.length !== 6}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    Confirm Purchase
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Processing */}
+            {floatPurchaseStep === 'processing' && (
+              <div className="space-y-4 text-center py-8">
+                <div className="flex justify-center">
+                  <RefreshCw className="w-12 h-12 text-blue-600 animate-spin" />
+                </div>
+                <h4 className="text-lg font-semibold text-gray-900">Processing Float Purchase</h4>
+                <p className="text-sm text-gray-600">
+                  Please wait while we process your float purchase with NCBA...
+                </p>
+                <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="text-sm text-gray-800 space-y-1">
+                    <p><strong>Amount:</strong> {formatAmount(floatAmount)}</p>
+                    <p><strong>Status:</strong> <span className="text-blue-600">Processing...</span></p>
                   </div>
                 </div>
               </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Float Amount (KES)
-                </label>
-                <input
-                  type="number"
-                  value={floatAmount}
-                  onChange={(e) => setFloatAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter float amount"
-                  min="1"
-                />
-              </div>
-              <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> You will receive an OTP via SMS and email to confirm this transaction.
+            )}
+
+            {/* Step 4: Success */}
+            {floatPurchaseStep === 'success' && (
+              <div className="space-y-4 text-center py-8">
+                <div className="flex justify-center">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                    <CheckCircle className="w-10 h-10 text-green-600" />
+                  </div>
+                </div>
+                <h4 className="text-lg font-semibold text-green-900">Float Purchase Successful!</h4>
+                <p className="text-sm text-gray-600">
+                  Your B2C float purchase has been completed successfully.
                 </p>
+                <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                  <div className="text-sm text-gray-800 space-y-1">
+                    <p><strong>Amount:</strong> {formatAmount(floatAmount)}</p>
+                    <p><strong>Total Cost:</strong> {formatAmount(floatTotalCost)}</p>
+                    <p><strong>Status:</strong> <span className="text-green-600">Completed</span></p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 mt-4">This window will close automatically...</p>
               </div>
-              <div className="flex justify-end space-x-3">
-                <button
-                  onClick={() => setShowFloatModal(false)}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleFloatPurchase}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Purchase Float
-                </button>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}

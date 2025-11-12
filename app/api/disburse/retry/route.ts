@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { verifyJWTToken } from '../../../../lib/jwt-utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -107,12 +108,78 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    // Authentication check
+    const token = request.cookies.get('auth_token')?.value
+    
+    if (!token) {
+      return NextResponse.json(
+        { success: false, error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    const payload = await verifyJWTToken(token)
+    
+    if (!payload || !payload.userId) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid session' },
+        { status: 401 }
+      )
+    }
+
+    // Get current user from database to get partner_id and role
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, role, partner_id, is_active')
+      .eq('id', payload.userId)
+      .single()
+
+    if (userError || !user || !user.is_active) {
+      return NextResponse.json(
+        { success: false, error: 'User not found or inactive' },
+        { status: 401 }
+      )
+    }
+
     const { searchParams } = new URL(request.url)
-    const partner_id = searchParams.get('partner_id')
+    const requestedPartnerId = searchParams.get('partner_id')
     const status = searchParams.get('status')
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '20')
     const offset = (page - 1) * limit
+
+    // Determine which partner's disbursements to query - SECURITY: Enforce partner isolation
+    let partnerId: string | null = null
+    
+    if (user.role === 'super_admin') {
+      // Only super_admin can query any partner
+      partnerId = requestedPartnerId || null
+    } else {
+      // All other users (including admin) can only access their own partner
+      if (!user.partner_id) {
+        return NextResponse.json(
+          { success: false, error: 'No partner assigned to user' },
+          { status: 400 }
+        )
+      }
+      
+      partnerId = user.partner_id
+      
+      // If they requested a different partner, deny access
+      if (requestedPartnerId && requestedPartnerId !== user.partner_id) {
+        return NextResponse.json(
+          { success: false, error: 'Access denied: You can only view your own partner\'s disbursements' },
+          { status: 403 }
+        )
+      }
+    }
+
+    if (!partnerId) {
+      return NextResponse.json(
+        { success: false, error: 'Partner filter required' },
+        { status: 400 }
+      )
+    }
 
     // Build query for disbursements with retry information
     let query = supabase
@@ -127,10 +194,8 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
-    // Apply filters
-    if (partner_id) {
-      query = query.eq('partner_id', partner_id)
-    }
+    // Apply partner filter - SECURITY: Always filter by partner
+    query = query.eq('partner_id', partnerId)
 
     if (status) {
       query = query.eq('status', status)
@@ -182,10 +247,11 @@ export async function GET(request: NextRequest) {
         new Date(disbursement.next_retry_at).toLocaleString() : null
     })) || []
 
-    // Get summary statistics
+    // Get summary statistics - SECURITY: Filter by partner for summary too
     const { data: summaryData, error: summaryError } = await supabase
       .from('disbursement_requests')
       .select('status, retry_count, created_at')
+      .eq('partner_id', partnerId)
 
     if (summaryError) {
       console.error('Error fetching summary data:', summaryError)

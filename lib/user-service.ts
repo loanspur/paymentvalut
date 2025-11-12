@@ -52,6 +52,7 @@ export interface UpdateUserData {
   phone_number?: string
   department?: string
   role?: string
+  partner_id?: string | null
   is_active?: boolean
   email_verified?: boolean
   notes?: string
@@ -364,6 +365,12 @@ export class UserService {
       if (userData.email !== undefined) updateData.email = userData.email
       if (userData.role !== undefined) updateData.role = userData.role
       if (userData.is_active !== undefined) updateData.is_active = userData.is_active
+      
+      // Partner assignment - CRITICAL: Must be included for partner assignment to persist
+      if (userData.partner_id !== undefined) {
+        // Allow setting partner_id to null (empty string from form becomes null)
+        updateData.partner_id = userData.partner_id === '' ? null : userData.partner_id
+      }
       
       // Profile fields - include all provided values
       if (userData.first_name !== undefined) updateData.first_name = userData.first_name

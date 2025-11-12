@@ -108,13 +108,96 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // TODO: Send OTP via SMS and Email
-    // For now, we'll just log it (in production, integrate with SMS/Email service)
-    console.log(`OTP for ${formattedPhone} / ${email_address} (${purpose}): ${otpCode}. Reference: ${otpReference}`)
+    // Send OTP via SMS and Email using existing functions
+    let smsSent = false
+    let emailSent = false
+
+    // Send SMS
+    try {
+      // Get SMS settings
+      const { data: smsSettings } = await supabase
+        .from('system_settings')
+        .select('setting_key, setting_value')
+        .eq('category', 'sms')
+        .in('setting_key', ['damza_username', 'damza_api_key', 'damza_sender_id'])
+
+      const settings = smsSettings?.reduce((acc, setting) => {
+        acc[setting.setting_key] = setting.setting_value
+        return acc
+      }, {} as Record<string, string>) || {}
+
+      if (settings.damza_username && settings.damza_api_key) {
+        // Use SMS send API
+        const smsResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/sms/send`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Cookie': request.headers.get('cookie') || ''
+          },
+          body: JSON.stringify({
+            phone_number: formattedPhone,
+            message: `Your OTP for ${purpose === 'float_purchase' ? 'B2C Float Purchase' : purpose} is ${otpCode}. Valid for 10 minutes. Amount: KES ${amount || 0}. Do not share this code.`
+          })
+        })
+        
+        if (smsResponse.ok) {
+          const smsResult = await smsResponse.json()
+          smsSent = smsResult.success || false
+          
+          // Update OTP record with SMS status
+          await supabase
+            .from('otp_validations')
+            .update({ sms_sent: smsSent })
+            .eq('reference', otpReference)
+        }
+      }
+    } catch (smsError) {
+      console.error('Error sending OTP SMS:', smsError)
+    }
+
+    // Send Email
+    try {
+      const { sendEmail } = await import('../../../../lib/email-utils')
+      const emailSubject = `OTP for ${purpose === 'float_purchase' ? 'B2C Float Purchase' : purpose}`
+      const emailBody = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #2563eb;">Payment Vault - OTP Verification</h2>
+          <p>Your OTP code for ${purpose === 'float_purchase' ? 'B2C Float Purchase' : purpose} is:</p>
+          <div style="background-color: #f3f4f6; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;">
+            <h1 style="color: #2563eb; font-size: 32px; margin: 0; letter-spacing: 4px;">${otpCode}</h1>
+          </div>
+          <p><strong>Amount:</strong> KES ${amount || 0}</p>
+          <p><strong>Valid for:</strong> 10 minutes</p>
+          <p style="color: #dc2626;"><strong>⚠️ Do not share this code with anyone.</strong></p>
+          <p style="color: #6b7280; font-size: 12px; margin-top: 30px;">This is an automated message. Please do not reply.</p>
+        </div>
+      `
+
+      const emailResult = await sendEmail({
+        to: email_address,
+        subject: emailSubject,
+        html: emailBody
+      })
+
+      emailSent = emailResult.success || false
+
+      // Update OTP record with Email status
+      await supabase
+        .from('otp_validations')
+        .update({ email_sent: emailSent })
+        .eq('reference', otpReference)
+    } catch (emailError) {
+      console.error('Error sending OTP Email:', emailError)
+    }
+
+    // Log OTP for development
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`OTP for ${formattedPhone} / ${email_address} (${purpose}): ${otpCode}. Reference: ${otpReference}`)
+    }
 
     return NextResponse.json({
       success: true,
-      message: 'OTP generated successfully',
+      message: 'OTP generated and sent successfully',
       reference: otpReference,
       expiresAt: expiresAt.toISOString(),
       purpose: purpose,
@@ -122,7 +205,11 @@ export async function POST(request: NextRequest) {
       phoneNumber: formattedPhone,
       emailAddress: email_address,
       maxAttempts: 3,
-      expiryMinutes: 10
+      expiryMinutes: 10,
+      smsSent,
+      emailSent,
+      // In development, include OTP code for testing
+      ...(process.env.NODE_ENV === 'development' && { otp_code: otpCode })
     })
 
   } catch (error) {
