@@ -1,5 +1,6 @@
 import './globals.css'
 import { Inter } from 'next/font/google'
+import { Suspense } from 'react'
 import AuthProvider from '../components/AuthProvider'
 import AppLayout from '../components/AppLayout'
 
@@ -23,11 +24,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <AuthProvider>
-          <AppLayout>
-            {children}
-          </AppLayout>
-        </AuthProvider>
+        <Suspense fallback={<div className="min-h-screen bg-gray-50" />}>
+          <AuthProvider>
+            <AppLayout>
+              {children}
+            </AppLayout>
+          </AuthProvider>
+        </Suspense>
       </body>
     </html>
   )

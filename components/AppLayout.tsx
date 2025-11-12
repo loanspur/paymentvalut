@@ -16,15 +16,17 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const { user, logout, isLoading } = useAuth()
   const pathname = usePathname()
   
-
-  // Prevent auto-scroll conflicts with fixed elements
-
   // Public routes that don't need the protected layout
   const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup', '/request-password-reset', '/reset-password']
-  const isPublicRoute = publicRoutes.includes(pathname)
+  const isPublicRoute = publicRoutes.includes(pathname || '')
+
+  // For public routes, render children directly without any layout
+  if (isPublicRoute) {
+    return <>{children}</>
+  }
 
   // Show loading state for protected routes while auth is loading
-  if (!isPublicRoute && isLoading) {
+  if (isLoading) {
     return (
       <ToastProvider>
         <div className="min-h-screen bg-gray-50 flex">
@@ -80,10 +82,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <ToastProvider>
-      {isPublicRoute ? (
-        children
-      ) : (
-        <div className="min-h-screen bg-gray-50 flex">
+      <div className="min-h-screen bg-gray-50 flex">
           {/* Sidebar */}
           <Sidebar />
           
@@ -131,8 +130,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
           </div>
           </main>
         </div>
-        </div>
-      )}
+      </div>
     </ToastProvider>
   )
 }
