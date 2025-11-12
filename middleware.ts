@@ -9,16 +9,22 @@ const supabase = createClient(
 )
 
 export async function middleware(request: NextRequest) {
-  // Public routes that don't need protection
-  const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup', '/request-password-reset', '/reset-password']
-  const isPublicRoute = publicRoutes.includes(request.nextUrl.pathname)
-
-  // Skip middleware for API routes and static files
-  if (request.nextUrl.pathname.startsWith('/api/') || 
-      request.nextUrl.pathname.startsWith('/_next/') ||
-      request.nextUrl.pathname.startsWith('/favicon.ico')) {
+  const pathname = request.nextUrl.pathname
+  
+  // Skip middleware for API routes, static files, and assets
+  if (
+    pathname.startsWith('/api/') || 
+    pathname.startsWith('/_next/') ||
+    pathname.startsWith('/favicon.ico') ||
+    pathname.startsWith('/static/') ||
+    pathname.match(/\.(ico|png|jpg|jpeg|svg|gif|webp|css|js|woff|woff2|ttf|eot)$/)
+  ) {
     return NextResponse.next()
   }
+
+  // Public routes that don't need protection
+  const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup', '/request-password-reset', '/reset-password']
+  const isPublicRoute = publicRoutes.includes(pathname)
 
   // Check if user is authenticated
   const token = request.cookies.get('auth_token')?.value
@@ -86,6 +92,15 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - static (static files)
+     * - files with extensions (images, fonts, etc.)
+     */
+    '/((?!api|_next/static|_next/image|favicon.ico|static|.*\\.(?:ico|png|jpg|jpeg|svg|gif|webp|css|js|woff|woff2|ttf|eot)).*)',
   ]
 }
