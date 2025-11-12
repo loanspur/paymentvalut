@@ -50,15 +50,73 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate OTP
-    if (otpRecord.status !== 'pending') {
+    // Check expiration first - ensure proper date parsing and UTC comparison
+    // This allows us to update status if expired, even if status wasn't updated yet
+    // Get current time in UTC to avoid timezone issues
+    const currentTime = new Date()
+    const currentTimeUTC = new Date(currentTime.toISOString())
+    
+    // Parse expires_at - Supabase returns timestamps as ISO strings
+    // Ensure we parse them correctly as UTC timestamps
+    let expiresAt: Date
+    if (typeof otpRecord.expires_at === 'string') {
+      // Supabase typically returns ISO strings with timezone info
+      // If no timezone indicator, PostgreSQL TIMESTAMP is stored in server timezone
+      // but we'll parse it and treat as UTC for consistency
+      const expiresAtStr = otpRecord.expires_at.trim()
+      if (expiresAtStr.endsWith('Z') || expiresAtStr.includes('+') || expiresAtStr.includes('-', 10)) {
+        // Has timezone info, parse directly
+        expiresAt = new Date(expiresAtStr)
+      } else {
+        // No timezone info - assume UTC (PostgreSQL TIMESTAMP without TZ is ambiguous)
+        // Add Z to force UTC interpretation
+        expiresAt = new Date(expiresAtStr + 'Z')
+      }
+    } else if (otpRecord.expires_at instanceof Date) {
+      expiresAt = otpRecord.expires_at
+    } else {
+      // Fallback: try to parse as date
+      expiresAt = new Date(otpRecord.expires_at)
+    }
+    
+    // Validate that expires_at is a valid date
+    if (isNaN(expiresAt.getTime())) {
+      console.error('Invalid expires_at date:', otpRecord.expires_at, typeof otpRecord.expires_at)
       return NextResponse.json(
-        { success: false, error: 'OTP already used or expired' },
-        { status: 400 }
+        { success: false, error: 'Invalid OTP expiration date' },
+        { status: 500 }
       )
     }
 
-    if (new Date() > new Date(otpRecord.expires_at)) {
+    // Convert both to UTC timestamps for accurate comparison
+    const currentTimestamp = currentTimeUTC.getTime()
+    const expiresTimestamp = expiresAt.getTime()
+    
+    // Add a small buffer (5 seconds) to account for clock skew between client/server/database
+    // This prevents false expiration due to minor time differences
+    const bufferMs = 5000
+    const timeRemaining = expiresTimestamp - currentTimestamp
+
+    // Debug logging in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('OTP expiration check:', {
+        now: currentTimeUTC.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        timeRemainingMs: timeRemaining,
+        timeRemainingMinutes: Math.floor(timeRemaining / 60000),
+        isExpired: currentTimestamp >= expiresTimestamp,
+        rawExpiresAt: otpRecord.expires_at,
+        expiresAtType: typeof otpRecord.expires_at,
+        currentTimestamp,
+        expiresTimestamp
+      })
+    }
+
+    // Compare dates properly (expires_at should be in the future)
+    // Use getTime() for precise comparison
+    // Account for clock skew: only expire if current time (minus buffer) is past expiration
+    // This prevents false expiration when clocks are slightly out of sync
+    if ((currentTimestamp - bufferMs) >= expiresTimestamp) {
       await supabase
         .from('otp_validations')
         .update({ status: 'expired' })
@@ -66,6 +124,14 @@ export async function POST(request: NextRequest) {
       
       return NextResponse.json(
         { success: false, error: 'OTP expired' },
+        { status: 400 }
+      )
+    }
+
+    // Validate OTP status - check after expiration to ensure status is current
+    if (otpRecord.status !== 'pending') {
+      return NextResponse.json(
+        { success: false, error: 'OTP already used or expired' },
         { status: 400 }
       )
     }

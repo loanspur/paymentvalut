@@ -78,10 +78,21 @@ export async function POST(request: NextRequest) {
 
     // Generate OTP
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString() // 6-digit OTP
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutes from now
     const otpReference = uuidv4()
 
+    // Debug logging in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('OTP generation:', {
+        now: new Date().toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        expiresAtTimestamp: expiresAt.getTime(),
+        expiryMinutes: 10
+      })
+    }
+
     // Create OTP record
+    // Store expires_at as ISO string (UTC) - PostgreSQL TIMESTAMP will store it correctly
     const { data: otpRecord, error: otpError } = await supabase
       .from('otp_validations')
       .insert({
@@ -106,6 +117,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         error: 'Failed to create OTP'
       }, { status: 500 })
+    }
+
+    // Debug: Verify what was stored
+    if (process.env.NODE_ENV === 'development' && otpRecord) {
+      console.log('OTP record created:', {
+        reference: otpRecord.reference,
+        storedExpiresAt: otpRecord.expires_at,
+        storedExpiresAtType: typeof otpRecord.expires_at,
+        parsedExpiresAt: new Date(otpRecord.expires_at).toISOString()
+      })
     }
 
     // Send OTP via SMS and Email using existing functions

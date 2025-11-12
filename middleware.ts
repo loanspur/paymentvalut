@@ -12,13 +12,16 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   
   // Skip middleware for API routes, static files, and assets
+  // IMPORTANT: Check _next paths FIRST before any other logic to prevent MIME type errors
   if (
-    pathname.startsWith('/api/') || 
     pathname.startsWith('/_next/') ||
+    pathname.startsWith('/api/') || 
+    pathname === '/favicon.ico' ||
     pathname.startsWith('/favicon.ico') ||
     pathname.startsWith('/static/') ||
-    pathname.match(/\.(ico|png|jpg|jpeg|svg|gif|webp|css|js|woff|woff2|ttf|eot)$/)
+    pathname.match(/\.(ico|png|jpg|jpeg|svg|gif|webp|css|js|woff|woff2|ttf|eot|json|map)$/i)
   ) {
+    // Return immediately without any processing to ensure static files are served correctly
     return NextResponse.next()
   }
 
@@ -95,12 +98,13 @@ export const config = {
     /*
      * Match all request paths except for the ones starting with:
      * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
+     * - _next (all Next.js internal paths - static files, chunks, etc.)
      * - favicon.ico (favicon file)
      * - static (static files)
      * - files with extensions (images, fonts, etc.)
+     * 
+     * Using non-capturing groups (?:...) to avoid "capturing groups not allowed" error
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|static|.*\\.(?:ico|png|jpg|jpeg|svg|gif|webp|css|js|woff|woff2|ttf|eot)).*)',
-  ]
+    '/((?!api|_next|favicon\\.ico|static|.*\\.(?:ico|png|jpg|jpeg|svg|gif|webp|css|js|woff|woff2|ttf|eot|json|map)).*)',
+  ],
 }
