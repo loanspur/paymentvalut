@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyJWTToken } from '../../../../../lib/jwt-utils'
+import { generateAndSendOTP } from '../../../../../lib/otp-utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -413,14 +414,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Use existing OTP generation API to create and send OTP
+    // Generate and send OTP directly (no HTTP call - more reliable in production)
     let otpData: any = null
     try {
-      // Get the base URL for server-side API calls
-      // In production, use NEXT_PUBLIC_APP_URL, otherwise use localhost
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-      const otpUrl = `${baseUrl}/api/otp/generate`
-      
       // Format phone number to 254XXXXXXXXX format if needed
       let formattedPhone = currentUser.phone_number?.replace(/\D/g, '') || ''
       if (formattedPhone.startsWith('0')) {
@@ -433,41 +429,20 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      console.log('Calling OTP generation API:', { otpUrl, formattedPhone, email: currentUser.email })
+      console.log('Generating OTP directly:', { formattedPhone, email: currentUser.email, amount: totalCost })
 
-      const otpResponse = await fetch(otpUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cookie': request.headers.get('cookie') || '' // Forward auth cookie
-        },
-        body: JSON.stringify({
-          phone_number: formattedPhone,
-          email_address: currentUser.email,
-          purpose: 'float_purchase',
-          amount: totalCost
-        })
+      // Call OTP generation function directly (no HTTP call)
+      const otpResult = await generateAndSendOTP({
+        userId: payload.userId,
+        partnerId: targetPartnerId!,
+        phoneNumber: formattedPhone,
+        emailAddress: currentUser.email,
+        purpose: 'float_purchase',
+        amount: totalCost
       })
 
-      if (!otpResponse.ok) {
-        let otpError: any = { error: 'Failed to parse error response' }
-        try {
-          otpError = await otpResponse.json()
-        } catch (parseError) {
-          const errorText = await otpResponse.text()
-          console.error('OTP generation failed - non-JSON response:', {
-            status: otpResponse.status,
-            statusText: otpResponse.statusText,
-            body: errorText
-          })
-          otpError = { error: `OTP generation failed: ${otpResponse.status} ${otpResponse.statusText}` }
-        }
-        
-        console.error('OTP generation failed:', {
-          status: otpResponse.status,
-          error: otpError.error || 'Unknown error',
-          details: otpError
-        })
+      if (!otpResult.success || !otpResult.reference) {
+        console.error('OTP generation failed:', otpResult)
         
         // Clean up transaction if OTP generation fails
         await supabase
@@ -478,49 +453,20 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { 
             success: false, 
-            error: otpError.error || 'Failed to generate OTP',
-            details: otpError.details || `HTTP ${otpResponse.status}: ${otpResponse.statusText}`
+            error: otpResult.error || 'Failed to generate OTP',
+            details: otpResult.details || 'OTP generation returned invalid response'
           },
           { status: 500 }
         )
       }
 
-      try {
-        otpData = await otpResponse.json()
-      } catch (jsonError) {
-        console.error('Failed to parse OTP response as JSON:', jsonError)
-        const errorText = await otpResponse.text()
-        console.error('OTP response body:', errorText)
-        
-        // Clean up transaction if OTP generation fails
-        await supabase
-          .from('wallet_transactions')
-          .delete()
-          .eq('id', walletTransaction.id)
-
-        return NextResponse.json(
-          { success: false, error: 'Invalid response from OTP service' },
-          { status: 500 }
-        )
-      }
-      
-      if (!otpData.success || !otpData.reference) {
-        console.error('OTP generation returned invalid data:', otpData)
-        
-        // Clean up transaction if OTP generation fails
-        await supabase
-          .from('wallet_transactions')
-          .delete()
-          .eq('id', walletTransaction.id)
-
-        return NextResponse.json(
-          { 
-            success: false, 
-            error: 'Failed to generate OTP - invalid response',
-            details: otpData.error || 'No reference returned'
-          },
-          { status: 500 }
-        )
+      // Store OTP data for response
+      otpData = {
+        success: true,
+        reference: otpResult.reference,
+        expiresAt: otpResult.expiresAt,
+        smsSent: otpResult.smsSent || false,
+        emailSent: otpResult.emailSent || false
       }
 
       // Update OTP record with wallet transaction ID
@@ -536,16 +482,16 @@ export async function POST(request: NextRequest) {
             b2c_shortcode: finalB2CShortCode
           }
         })
-        .eq('reference', otpData.reference)
+        .eq('reference', otpResult.reference)
 
       // Update wallet transaction with OTP reference
       await supabase
         .from('wallet_transactions')
         .update({
-          otp_reference: otpData.reference,
+          otp_reference: otpResult.reference,
           metadata: {
             ...walletTransaction.metadata,
-            otp_reference: otpData.reference
+            otp_reference: otpResult.reference
           }
         })
         .eq('id', walletTransaction.id)
