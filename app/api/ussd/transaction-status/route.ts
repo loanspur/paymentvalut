@@ -13,29 +13,100 @@ if (!supabaseUrl || !supabaseServiceKey) {
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 // Helper function to validate API key
+// Uses the same hashing method as the disbursement endpoint for consistency
 async function validateApiKey(apiKey: string): Promise<{ isValid: boolean; partnerId?: string; partnerName?: string }> {
   try {
+    // Trim whitespace from API key
+    const trimmedApiKey = apiKey.trim()
+    
+    if (!trimmedApiKey) {
+      console.log('API key validation failed: Empty API key provided')
+      return { isValid: false }
+    }
+    
+    // Hash the provided API key using SHA-256
+    // Using Node.js crypto.createHash which produces the same result as Web Crypto API
+    const hashedApiKey = crypto.createHash('sha256').update(trimmedApiKey, 'utf8').digest('hex').toLowerCase()
+    
+    // Log the hash for debugging (first 16 chars only for security)
+    console.log('API key validation attempt', {
+      apiKeyPrefix: trimmedApiKey.substring(0, 15),
+      hashedApiKeyPrefix: hashedApiKey.substring(0, 16),
+      fullHashLength: hashedApiKey.length
+    })
+    
+    // Query directly with the hash (matches disbursement endpoint logic)
+    // Use .single() instead of .maybeSingle() to match disbursement endpoint behavior
     const { data: partner, error } = await supabase
       .from('partners')
       .select('id, name, api_key_hash')
+      .eq('api_key_hash', hashedApiKey)
       .eq('is_active', true)
       .single()
 
-    if (error || !partner) {
+    if (error) {
+      // Check if it's a "not found" error (PGRST116)
+      if (error.code === 'PGRST116') {
+        console.log('API key validation failed: Partner not found with matching hash', {
+          apiKeyLength: trimmedApiKey.length,
+          apiKeyPrefix: trimmedApiKey.substring(0, 15),
+          hashedApiKey: hashedApiKey,
+          searchedHash: hashedApiKey,
+          timestamp: new Date().toISOString()
+        })
+        
+        // Try a fallback query to see if partner exists with different hash format
+        const { data: allPartners } = await supabase
+          .from('partners')
+          .select('id, name, api_key_hash, is_active')
+          .eq('is_active', true)
+          .limit(10)
+        
+        console.log('Fallback check: Found active partners', {
+          count: allPartners?.length || 0,
+          partnerHashes: allPartners?.map(p => ({
+            name: p.name,
+            hashPrefix: p.api_key_hash?.substring(0, 16) || 'NULL',
+            hashLength: p.api_key_hash?.length || 0
+          })) || []
+        })
+      } else {
+        console.error('API key validation database error:', {
+          error: error.message,
+          code: error.code,
+          hint: error.hint,
+          details: error.details
+        })
+      }
       return { isValid: false }
     }
 
-    // Hash the provided API key and compare
-    const hashedApiKey = crypto.createHash('sha256').update(apiKey).digest('hex')
-    
-    if (hashedApiKey === partner.api_key_hash) {
-      return { 
-        isValid: true, 
-        partnerId: partner.id, 
-        partnerName: partner.name 
+    if (partner) {
+      // Double-check the hash matches (case-insensitive comparison)
+      const storedHash = (partner.api_key_hash || '').toLowerCase()
+      if (storedHash === hashedApiKey) {
+        return { 
+          isValid: true, 
+          partnerId: partner.id, 
+          partnerName: partner.name 
+        }
+      } else {
+        console.log('API key validation failed: Hash mismatch', {
+          apiKeyPrefix: trimmedApiKey.substring(0, 15),
+          computedHash: hashedApiKey.substring(0, 16),
+          storedHash: storedHash.substring(0, 16),
+          timestamp: new Date().toISOString()
+        })
       }
     }
 
+    // If we get here, something unexpected happened
+    console.log('API key validation failed: Unexpected condition', {
+      apiKeyLength: trimmedApiKey.length,
+      apiKeyPrefix: trimmedApiKey.substring(0, 15),
+      hasPartner: !!partner,
+      timestamp: new Date().toISOString()
+    })
     return { isValid: false }
   } catch (error) {
     console.error('API key validation error:', error)

@@ -203,7 +203,7 @@ export default function WalletPage() {
   // Load user profile after currentUser is loaded
   useEffect(() => {
     if (currentUser) {
-      loadUserProfile()
+    loadUserProfile()
     }
   }, [currentUser])
 
@@ -279,25 +279,25 @@ export default function WalletPage() {
                 lastStatus = freshTx.status
                 
                 if (freshTx.status === 'completed') {
-                  if (pollingRef.current) clearInterval(pollingRef.current)
-                  pollingRef.current = null
-                  setStkCompleted(true)
+            if (pollingRef.current) clearInterval(pollingRef.current)
+            pollingRef.current = null
+            setStkCompleted(true)
                   // Keep stkAwaiting true so the success modal persists
                   // It will be set to false when user clicks "Done"
-                  if (!completionToastShownRef.current) {
-                    completionToastShownRef.current = true
-                    addToast({
-                      type: 'success',
-                      title: 'Top-up Completed',
-                      message: 'Your wallet has been credited successfully',
-                      duration: 6000
-                    })
-                  }
+            if (!completionToastShownRef.current) {
+              completionToastShownRef.current = true
+              addToast({
+                type: 'success',
+                title: 'Top-up Completed',
+                message: 'Your wallet has been credited successfully',
+                duration: 6000
+              })
+            }
                   // Reload data to show updated balance (only once when completed)
                   loadWalletData()
                   loadTransactions()
                   return
-                }
+          }
               }
               
               // If still pending after verification delay, verify with NCBA
@@ -755,6 +755,12 @@ export default function WalletPage() {
       return
     }
 
+    // For non-super_admin users, ensure they have a partner_id
+    if (currentUser?.role !== 'super_admin' && !partnerId) {
+      addToast({ type: 'error', title: 'Error', message: 'No partner assigned to your account. Please contact your administrator.', duration: 5000 })
+      return
+    }
+
     // Get the selected partner's shortcode
     const selectedPartner = partners.find(p => p.id === partnerId)
     const partnerShortcode = selectedPartner?.mpesa_shortcode || selectedPartner?.short_code
@@ -766,18 +772,24 @@ export default function WalletPage() {
 
     setFloatPurchaseLoading(true)
     try {
+      const requestBody: any = { 
+        amount: floatAmount,
+        b2c_shortcode_id: null, // No longer using partner_shortcodes table
+        b2c_shortcode: partnerShortcode,
+        b2c_shortcode_name: selectedPartner?.name || 'Partner B2C Account'
+      }
+      
+      // Always include partner_id if available (required for super_admin, optional for others)
+      if (partnerId) {
+        requestBody.partner_id = partnerId
+      }
+      
       const response = await fetch('/api/wallet/float/purchase', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ 
-          amount: floatAmount,
-          b2c_shortcode_id: null, // No longer using partner_shortcodes table
-          b2c_shortcode: partnerShortcode,
-          b2c_shortcode_name: selectedPartner?.name || 'Partner B2C Account',
-          partner_id: currentUser?.role === 'super_admin' ? partnerId : undefined
-        })
+        body: JSON.stringify(requestBody)
       })
 
       if (response.ok) {
@@ -842,9 +854,9 @@ export default function WalletPage() {
           
           // Auto-close after 3 seconds
           setTimeout(() => {
-            setShowFloatModal(false)
+        setShowFloatModal(false)
             setFloatPurchaseStep('amount')
-            setFloatAmount(0)
+        setFloatAmount(0)
             setOtpCode('')
             setSelectedB2CShortCode('')
             setIsNewB2CShortCode(false)
@@ -1621,17 +1633,17 @@ export default function WalletPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-center">
-                        <RefreshCw className="w-5 h-5 mr-2 animate-spin text-blue-600" />
-                        <p className="text-sm text-blue-800">
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center">
+                      <RefreshCw className="w-5 h-5 mr-2 animate-spin text-blue-600" />
+                      <p className="text-sm text-blue-800">
                           Waiting for STK push confirmation. Please complete the prompt on your phone.
-                        </p>
-                      </div>
+                      </p>
+                    </div>
                       <p className="text-xs text-blue-700 mt-2">
                         Do not close this window until the payment is confirmed. We'll verify automatically.
                       </p>
-                    </div>
+                  </div>
                   )}
 
                   <div className="flex justify-end">
@@ -2049,19 +2061,19 @@ export default function WalletPage() {
 
                 {/* Float Amount */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                     Float Amount (KES) *
-                  </label>
-                  <input
-                    type="number"
+                </label>
+                <input
+                  type="number"
                     value={floatAmount || ''}
-                    onChange={(e) => setFloatAmount(parseFloat(e.target.value) || 0)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter float amount"
-                    min="1"
+                  onChange={(e) => setFloatAmount(parseFloat(e.target.value) || 0)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter float amount"
+                  min="1"
                     step="0.01"
-                  />
-                </div>
+                />
+              </div>
 
                 {/* Current Wallet Balance Display */}
                 {wallet && (
@@ -2106,7 +2118,7 @@ export default function WalletPage() {
                           ✅ Sufficient balance. Remaining after purchase: {formatAmount(wallet.current_balance - floatTotalCost)}
                         </p>
                       )}
-                    </div>
+              </div>
                   </div>
                 )}
 
@@ -2121,7 +2133,7 @@ export default function WalletPage() {
                 </div>
 
                 <div className="flex justify-end space-x-3 pt-4">
-                  <button
+                <button
                   onClick={() => {
                     setShowFloatModal(false)
                     setFloatPurchaseStep('amount')
@@ -2130,11 +2142,11 @@ export default function WalletPage() {
                     setIsNewB2CShortCode(false)
                     setFloatPurchasePartnerId(null)
                   }}
-                    className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
                     onClick={handleFloatPurchaseInitiate}
                     disabled={
                       floatPurchaseLoading ||
@@ -2151,7 +2163,7 @@ export default function WalletPage() {
                       })()
                     }
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
+                >
                     {floatPurchaseLoading ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
@@ -2160,9 +2172,9 @@ export default function WalletPage() {
                     ) : (
                       'Continue to OTP'
                     )}
-                  </button>
-                </div>
+                </button>
               </div>
+            </div>
             )}
 
             {/* Step 2: OTP Verification */}
@@ -2183,13 +2195,13 @@ export default function WalletPage() {
                         <span className="text-gray-900 font-medium">
                           {maskEmail(userProfile?.email || currentUser?.email)}
                         </span>
-                      </div>
+          </div>
                       <div className="flex items-center justify-between">
                         <span className="text-gray-600">Phone:</span>
                         <span className="text-gray-900 font-medium">
                           {maskPhone(userProfile?.phone_number || currentUser?.phone_number)}
                         </span>
-                      </div>
+        </div>
                     </div>
                   </div>
                 </div>

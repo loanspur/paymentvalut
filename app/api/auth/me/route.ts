@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
     if (!token) {
       return NextResponse.json(
-        { error: 'Session token required' },
+        { success: false, error: 'Session token required' },
         { status: 401 }
       )
     }
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     
     if (!payload) {
       return NextResponse.json(
-        { error: 'Invalid session' },
+        { success: false, error: 'Invalid session' },
         { status: 401 }
       )
     }
@@ -41,9 +41,8 @@ export async function GET(request: NextRequest) {
     
     // If OTP is enabled but not validated, deny access
     if (otpEnabled && !payload.otpValidated) {
-      console.log('🔒 OTP validation required but not completed for user:', payload.email)
       return NextResponse.json(
-        { error: 'OTP validation required' },
+        { success: false, error: 'OTP validation required' },
         { status: 401 }
       )
     }
@@ -57,14 +56,14 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       return NextResponse.json(
-        { error: 'Database error', details: error.message },
+        { success: false, error: 'Database error', details: error.message },
         { status: 500 }
       )
     }
 
     if (!user) {
       return NextResponse.json(
-        { error: 'User not found' },
+        { success: false, error: 'User not found' },
         { status: 404 }
       )
     }
@@ -72,7 +71,7 @@ export async function GET(request: NextRequest) {
     // Check if user is active
     if (!user.is_active) {
       return NextResponse.json(
-        { error: 'Account is inactive' },
+        { success: false, error: 'Account is inactive' },
         { status: 403 }
       )
     }
@@ -92,7 +91,7 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     return NextResponse.json(
-      { error: 'Authentication failed' },
+      { success: false, error: 'Authentication failed' },
       { status: 500 }
     )
   }

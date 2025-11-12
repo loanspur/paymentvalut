@@ -42,6 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the current user's role and partner first (with full details for later use)
+    // Also check JWT payload for role as fallback (in case database is stale)
     let currentUserData: any = null
     try {
       const { data, error: userError } = await supabase
@@ -85,6 +86,11 @@ export async function POST(request: NextRequest) {
       }
 
       currentUserData = data
+      
+      // Use JWT role as fallback if database role is missing (shouldn't happen, but safety check)
+      if (!currentUserData.role && payload.role) {
+        currentUserData.role = payload.role
+      }
 
       if (!currentUserData.is_active) {
         return NextResponse.json(
@@ -119,11 +125,18 @@ export async function POST(request: NextRequest) {
     // Determine which partner to use
     let targetPartnerId: string | null = null
     
-    if (currentUserData.role === 'super_admin') {
+    // Normalize role (handle case sensitivity and whitespace)
+    const userRole = (currentUserData.role || '').trim().toLowerCase()
+    
+    if (userRole === 'super_admin') {
       // For super_admin, use provided partner_id
       if (!partner_id) {
         return NextResponse.json(
-          { success: false, error: 'Partner ID is required for super admin' },
+          { 
+            success: false, 
+            error: 'Partner ID is required for super admin',
+            details: 'Please select a partner from the dropdown before purchasing float'
+          },
           { status: 400 }
         )
       }
@@ -132,7 +145,11 @@ export async function POST(request: NextRequest) {
       // For regular users (including partner_admin), use their assigned partner_id
       if (!currentUserData.partner_id) {
         return NextResponse.json(
-          { success: false, error: 'No partner assigned to your account. Please contact your administrator to assign a partner.' },
+          { 
+            success: false, 
+            error: 'No partner assigned to your account. Please contact your administrator to assign a partner.',
+            details: `User role: ${userRole}, User ID: ${currentUserData.id}`
+          },
           { status: 400 }
         )
       }
@@ -174,11 +191,23 @@ export async function POST(request: NextRequest) {
 
     const { data: partners, error: partnersError } = await supabase
       .from('partners')
-      .select('id')
+      .select('id, name, mpesa_shortcode, short_code')
       .eq('id', targetPartnerId)
       .single()
 
-    if (partnersError || !partners) {
+    if (partnersError) {
+      console.error('Error fetching partner:', partnersError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Partner not found',
+          details: partnersError.message || partnersError.code || 'Database error'
+        },
+        { status: 404 }
+      )
+    }
+    
+    if (!partners) {
       return NextResponse.json(
         { success: false, error: 'Partner not found' },
         { status: 404 }
@@ -190,10 +219,23 @@ export async function POST(request: NextRequest) {
       .from('partner_wallets')
       .select('*')
       .eq('partner_id', partners.id)
-      .single()
+      .maybeSingle()
 
-    if (walletError && walletError.code === 'PGRST116') {
+    if (walletError) {
+      console.error('Error fetching wallet:', walletError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'Failed to fetch wallet data',
+          details: walletError.message || walletError.code || 'Database error'
+        },
+        { status: 500 }
+      )
+    }
+
+    if (!wallet) {
       // Wallet doesn't exist, create it
+      const now = new Date().toISOString()
       const { data: newWallet, error: createError } = await supabase
         .from('partner_wallets')
         .insert({
@@ -201,35 +243,50 @@ export async function POST(request: NextRequest) {
           current_balance: 0,
           currency: 'KES',
           low_balance_threshold: 1000,
-          sms_notifications_enabled: true
+          sms_notifications_enabled: true,
+          is_active: true,
+          created_at: now,
+          updated_at: now
         })
         .select()
         .single()
 
-      if (createError || !newWallet) {
+      if (createError) {
         console.error('Wallet creation error:', createError)
         return NextResponse.json(
-          { success: false, error: 'Failed to create wallet' },
+          { 
+            success: false, 
+            error: 'Failed to create wallet',
+            details: createError.message || createError.code || 'Database error'
+          },
+          { status: 500 }
+        )
+      }
+      
+      if (!newWallet) {
+        return NextResponse.json(
+          { success: false, error: 'Failed to create wallet - no data returned' },
           { status: 500 }
         )
       }
 
       wallet = newWallet
-    } else if (walletError || !wallet) {
-      return NextResponse.json(
-        { success: false, error: 'Failed to fetch wallet data' },
-        { status: 500 }
-      )
     }
 
     // Get partner charges for float purchase
+    // Use maybeSingle() to handle cases where no charge config exists (returns null instead of error)
     const { data: chargeConfig, error: chargeError } = await supabase
       .from('partner_charges_config')
       .select('*')
       .eq('partner_id', partners.id)
       .eq('charge_type', 'float_purchase')
       .eq('is_active', true)
-      .single()
+      .maybeSingle()
+    
+    // Only log error if it's not a "not found" error (PGRST116)
+    if (chargeError && chargeError.code !== 'PGRST116') {
+      console.error('Error fetching charge config:', chargeError)
+    }
 
     // Calculate total cost including charges
     let totalCharges = 0
@@ -298,6 +355,7 @@ export async function POST(request: NextRequest) {
     const otpReference = `FLOAT_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
     // Create wallet transaction record first
+    const now = new Date().toISOString()
     const { data: walletTransaction, error: transactionError } = await supabase
       .from('wallet_transactions')
       .insert({
@@ -310,6 +368,8 @@ export async function POST(request: NextRequest) {
         reference: otpReference,
         float_amount: amount,
         otp_reference: otpReference,
+        created_at: now,
+        updated_at: now,
         metadata: {
           float_amount: amount,
           charges: totalCharges,
@@ -325,12 +385,18 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (transactionError) {
-      console.error('Error creating wallet transaction:', transactionError.message)
+      console.error('Error creating wallet transaction:', {
+        message: transactionError.message,
+        code: transactionError.code,
+        details: transactionError.details,
+        hint: transactionError.hint
+      })
       return NextResponse.json(
         { 
           success: false, 
           error: 'Failed to create transaction record',
-          details: transactionError.message || 'Database error'
+          details: transactionError.message || transactionError.code || 'Database error',
+          hint: transactionError.hint || undefined
         },
         { status: 500 }
       )
@@ -465,12 +531,17 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error: any) {
-    console.error('Float purchase error:', error?.message || 'Unknown error')
+    console.error('Float purchase error:', {
+      message: error?.message,
+      stack: error?.stack,
+      name: error?.name
+    })
     return NextResponse.json(
-      { 
-        success: false, 
+      {
+        success: false,
         error: 'Internal server error',
-        details: error?.message || 'Unknown error occurred'
+        details: error?.message || 'Unknown error occurred',
+        code: error?.code || undefined
       },
       { status: 500 }
     )

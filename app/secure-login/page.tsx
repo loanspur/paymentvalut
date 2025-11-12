@@ -47,21 +47,18 @@ export default function SecureLoginPage() {
                 : '/'
               
               window.location.replace(redirectUrl)
-            }, 1000) // Increased delay to prevent race conditions
+            }, 1000)
           }
         }
-        // 401 is expected on login page when user is not authenticated - no need to log
+        // 401 is expected on login page when user is not authenticated - silently ignore
       } catch (error) {
         // Network error or other issue - silently continue, user needs to login
-        // Only log actual errors, not expected failures
-        if (error instanceof Error && !error.message.includes('ERR_')) {
-          console.error('Auth check error:', error)
-        }
+        // Don't log expected network errors
       }
     }
 
     // Add a longer delay to prevent race conditions with logout and other auth checks
-    const timeoutId = setTimeout(checkAuth, 1000) // Increased delay
+    const timeoutId = setTimeout(checkAuth, 1000)
     
     return () => clearTimeout(timeoutId)
   }, [router])
@@ -135,7 +132,16 @@ export default function SecureLoginPage() {
           }, 2000) // Increased delay to ensure cookie is set
         }
       } else {
-        setError(data.error || 'Login failed')
+        // Handle different error status codes
+        if (response.status === 401) {
+          setError(data.error || 'Invalid email or password. Please try again.')
+        } else if (response.status === 403) {
+          setError(data.error || 'Your account has been deactivated. Please contact your administrator.')
+        } else if (response.status === 500) {
+          setError(data.error || data.message || 'Server error. Please try again later.')
+        } else {
+          setError(data.error || 'Login failed. Please try again.')
+        }
         setIsLoading(false)
         setIsSubmitting(false)
       }
