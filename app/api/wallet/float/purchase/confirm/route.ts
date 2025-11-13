@@ -288,17 +288,13 @@ export async function POST(request: NextRequest) {
       s = settingsResult.data
 
       // Obtain token first
-      // Ensure baseUrl ends with / and path is relative (no leading /)
-      const baseUrl = s.baseUrl.endsWith('/') ? s.baseUrl : `${s.baseUrl}/`
-      const tokenPath = s.tokenPath.startsWith('/') ? s.tokenPath.substring(1) : s.tokenPath
-      const tokenUrl = new URL(tokenPath, baseUrl).toString()
+      // Use the same URL construction as the working float-purchase route
+      const tokenUrl = new URL(s.tokenPath, s.baseUrl).toString()
       
       console.log('Requesting NCBA token:', {
         constructedUrl: tokenUrl,
-        originalBaseUrl: s.baseUrl,
-        adjustedBaseUrl: baseUrl,
-        originalTokenPath: s.tokenPath,
-        adjustedTokenPath: tokenPath,
+        baseUrl: s.baseUrl,
+        tokenPath: s.tokenPath,
         environment: s.environment
       })
       
@@ -313,17 +309,59 @@ export async function POST(request: NextRequest) {
       
       const tokenText = await tokenRes.text()
       if (!tokenRes.ok) {
+        let tokenErrorData: any
+        try {
+          tokenErrorData = JSON.parse(tokenText)
+        } catch {
+          tokenErrorData = { error: tokenText }
+        }
+        
         console.error('NCBA token request failed:', {
           status: tokenRes.status,
           statusText: tokenRes.statusText,
-          response: tokenText.substring(0, 500),
+          response: tokenErrorData,
+          responseText: tokenText.substring(0, 500),
           headers: Object.fromEntries(tokenRes.headers.entries()),
           requestedUrl: tokenUrl,
           finalUrl: tokenRes.url
         })
+        
+        // Handle specific error codes
+        if (tokenRes.status === 401) {
+          return NextResponse.json(
+            { 
+              success: false, 
+              stage: 'token', 
+              status: 401,
+              error: 'NCBA Authentication Failed: Invalid username or password',
+              details: tokenErrorData.title || tokenErrorData.error || 'Please verify your NCBA credentials are correct',
+              ncba_response: tokenErrorData
+            },
+            { status: 401 }
+          )
+        } else if (tokenRes.status === 403) {
+          return NextResponse.json(
+            { 
+              success: false, 
+              stage: 'token', 
+              status: 403,
+              error: 'NCBA Access Forbidden: Your IP address may not be whitelisted',
+              details: 'Please contact NCBA to whitelist your server IP address',
+              ncba_response: tokenErrorData
+            },
+            { status: 403 }
+          )
+        }
+        
         return NextResponse.json(
-          { success: false, stage: 'token', status: tokenRes.status, error: tokenText.substring(0, 500) },
-          { status: 500 }
+          { 
+            success: false, 
+            stage: 'token', 
+            status: tokenRes.status, 
+            error: tokenErrorData.title || tokenErrorData.error || tokenText.substring(0, 500),
+            ncba_response: tokenErrorData
+          },
+          { status: tokenRes.status >= 500 ? 500 : tokenRes.status }
         )
       }
       
@@ -410,7 +448,11 @@ export async function POST(request: NextRequest) {
         )
       }
       
-      console.log('NCBA token obtained successfully (length:', accessToken.length, ')')
+      console.log('NCBA token obtained successfully:', {
+        tokenLength: accessToken.length,
+        tokenPreview: accessToken.substring(0, 20) + '...' + accessToken.substring(accessToken.length - 10),
+        tokenStartsWith: accessToken.substring(0, 10)
+      })
     } catch (tokenError: any) {
       console.error('Error obtaining NCBA token:', {
         message: tokenError?.message,
@@ -448,26 +490,29 @@ export async function POST(request: NextRequest) {
     // Make NCBA float purchase request
     let ncbaData: any
     try {
-      // Ensure baseUrl ends with / and path is relative (no leading /)
-      const baseUrl = s.baseUrl.endsWith('/') ? s.baseUrl : `${s.baseUrl}/`
-      const floatPath = s.floatPurchasePath.startsWith('/') ? s.floatPurchasePath.substring(1) : s.floatPurchasePath
-      const url = new URL(floatPath, baseUrl).toString()
+      // Use the same URL construction as the working float-purchase route
+      const url = new URL(s.floatPurchasePath, s.baseUrl).toString()
+      
+      // Ensure token is trimmed and properly formatted
+      const cleanToken = accessToken.trim()
       
       console.log('Making NCBA float purchase request:', {
         constructedUrl: url,
-        originalBaseUrl: s.baseUrl,
-        adjustedBaseUrl: baseUrl,
-        originalFloatPurchasePath: s.floatPurchasePath,
-        adjustedFloatPurchasePath: floatPath,
+        baseUrl: s.baseUrl,
+        floatPurchasePath: s.floatPurchasePath,
         environment: s.environment,
         payloadKeys: Object.keys(ncbaPayload),
-        payload: { ...ncbaPayload, reqDebitAccountNumber: '***', reqMobileNumber: '***' }
+        payload: { ...ncbaPayload, reqDebitAccountNumber: '***', reqMobileNumber: '***' },
+        tokenLength: cleanToken.length,
+        tokenPreview: cleanToken.substring(0, 20) + '...' + cleanToken.substring(cleanToken.length - 10),
+        subscriptionKeyLength: s.subscriptionKey?.length || 0,
+        subscriptionKeyPreview: s.subscriptionKey ? s.subscriptionKey.substring(0, 10) + '...' : 'MISSING'
       })
       
       const ncbaResponse = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`,
+          'Authorization': `Bearer ${cleanToken}`,
           'Ocp-Apim-Subscription-Key': s.subscriptionKey,
           'Content-Type': 'application/json'
         },
@@ -489,7 +534,9 @@ export async function POST(request: NextRequest) {
           finalUrl: ncbaResponse.url, // May differ if redirected
           response: ncbaData,
           responseText: ncbaText.substring(0, 500), // First 500 chars
-          headers: Object.fromEntries(ncbaResponse.headers.entries())
+          headers: Object.fromEntries(ncbaResponse.headers.entries()),
+          tokenLength: accessToken?.length,
+          hasSubscriptionKey: !!s.subscriptionKey
         })
         
         // Update transaction status
@@ -502,20 +549,54 @@ export async function POST(request: NextRequest) {
               error: ncbaText,
               ncba_response: ncbaData,
               ncba_status: ncbaResponse.status,
-              ncba_url: url
+              ncba_url: url,
+              ncba_final_url: ncbaResponse.url
             }
           })
           .eq('id', walletTransaction.id)
 
+        // Handle specific error codes
+        if (ncbaResponse.status === 401) {
+          return NextResponse.json({
+            success: false,
+            error: 'NCBA Authentication Failed: Invalid or expired access token',
+            details: ncbaData.title || ncbaData.error || 'The access token may be invalid, expired, or the subscription key may be incorrect',
+            ncba_response: ncbaData,
+            ncba_status: ncbaResponse.status,
+            ncba_url: url,
+            ncba_final_url: ncbaResponse.url,
+            stage: 'ncba_api',
+            troubleshooting: {
+              issue: '401 Unauthorized',
+              possible_causes: [
+                'Access token is invalid or expired',
+                'Subscription key is incorrect',
+                'Token was not properly obtained',
+                'NCBA credentials may have changed'
+              ],
+              action: 'Verify NCBA credentials and try again. If the issue persists, check with NCBA support.'
+            }
+          }, { status: 401 })
+        } else if (ncbaResponse.status === 403) {
+          return NextResponse.json({
+            success: false,
+            error: 'NCBA Access Forbidden: Your IP address may not be whitelisted',
+            details: ncbaData.title || ncbaData.error || 'Please contact NCBA to whitelist your server IP address',
+            ncba_response: ncbaData,
+            ncba_status: ncbaResponse.status,
+            stage: 'ncba_api'
+          }, { status: 403 })
+        }
+
         return NextResponse.json({
           success: false,
-          error: ncbaData.error || ncbaData.message || ncbaText || 'NCBA float purchase failed',
+          error: ncbaData.title || ncbaData.error || ncbaData.message || ncbaText || 'NCBA float purchase failed',
           ncba_response: ncbaData,
           ncba_status: ncbaResponse.status,
           ncba_url: url,
           ncba_final_url: ncbaResponse.url,
           stage: 'ncba_api'
-        }, { status: 500 })
+        }, { status: ncbaResponse.status >= 500 ? 500 : ncbaResponse.status })
       }
       
       console.log('NCBA float purchase successful:', ncbaData)
