@@ -203,9 +203,16 @@ export default function WalletPage() {
   // Load user profile after currentUser is loaded
   useEffect(() => {
     if (currentUser) {
-    loadUserProfile()
+      loadUserProfile()
     }
   }, [currentUser])
+
+  // Reload user profile when float purchase modal opens to ensure latest phone number
+  useEffect(() => {
+    if (showFloatModal && currentUser) {
+      loadUserProfile()
+    }
+  }, [showFloatModal, currentUser])
 
   // Auto-select first partner for super_admin if none selected (after partners are loaded)
   useEffect(() => {
@@ -429,12 +436,23 @@ export default function WalletPage() {
       const response = await fetch('/api/profile', { credentials: 'include' })
       if (response.ok) {
         const data = await response.json()
-        const profileData = data?.data || data?.profile || {}
+        // Profile API returns: { success: true, user: { phone_number, email, ... } }
+        const userData = data?.user || data?.data?.user || data?.data || data?.profile || {}
+        const phoneNumber = userData.phone_number || currentUser?.phone_number
+        const email = userData.email || currentUser?.email
+        
         setUserProfile({
-          phone_number: profileData.phone_number || currentUser?.phone_number,
-          email: profileData.email || currentUser?.email
+          phone_number: phoneNumber,
+          email: email
+        })
+        
+        console.log('User profile loaded for float purchase:', {
+          phone_number: phoneNumber || 'Not set',
+          email: email || 'Not set',
+          hasPhoneNumber: !!phoneNumber
         })
       } else {
+        console.warn('Profile API returned non-OK status:', response.status)
         // Fallback to currentUser data if profile API fails
         if (currentUser) {
           setUserProfile({

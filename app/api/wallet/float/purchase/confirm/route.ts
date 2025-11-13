@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { verifyJWTToken } from '../../../../../../lib/jwt-utils'
 import { UnifiedWalletService } from '../../../../../../lib/unified-wallet-service'
+import { log } from '../../../../../../lib/logger'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
     
     // Validate that expires_at is a valid date
     if (isNaN(expiresAt.getTime())) {
-      console.error('Invalid expires_at date:', otpRecord.expires_at, typeof otpRecord.expires_at)
+      log.error('Invalid expires_at date', { expiresAt: otpRecord.expires_at, type: typeof otpRecord.expires_at })
       return NextResponse.json(
         { success: false, error: 'Invalid OTP expiration date' },
         { status: 500 }
@@ -101,19 +102,10 @@ export async function POST(request: NextRequest) {
     const timeRemaining = expiresTimestamp - currentTimestamp
 
     // Debug logging in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log('OTP expiration check:', {
-        now: currentTimeUTC.toISOString(),
-        expiresAt: expiresAt.toISOString(),
-        timeRemainingMs: timeRemaining,
-        timeRemainingMinutes: Math.floor(timeRemaining / 60000),
-        isExpired: currentTimestamp >= expiresTimestamp,
-        rawExpiresAt: otpRecord.expires_at,
-        expiresAtType: typeof otpRecord.expires_at,
-        currentTimestamp,
-        expiresTimestamp
-      })
-    }
+    log.debug('OTP expiration check', {
+      timeRemainingMs: timeRemaining,
+      isExpired: currentTimestamp >= expiresTimestamp
+    })
 
     // Compare dates properly (expires_at should be in the future)
     // Use getTime() for precise comparison
@@ -169,7 +161,7 @@ export async function POST(request: NextRequest) {
     
     // If update fails, try updating just the status (validated_at might have a constraint)
     if (otpUpdateError) {
-      console.warn('First OTP update attempt failed, trying status only:', {
+      log.warn('First OTP update attempt failed, trying status only', {
         error: otpUpdateError.message,
         code: otpUpdateError.code
       })
@@ -180,7 +172,7 @@ export async function POST(request: NextRequest) {
         .eq('reference', otp_reference)
       
       if (statusOnlyError) {
-        console.error('Error updating OTP validation status (both attempts failed):', {
+        log.error('Error updating OTP validation status (both attempts failed)', {
           firstError: otpUpdateError,
           secondError: statusOnlyError,
           reference: otp_reference,
@@ -192,10 +184,10 @@ export async function POST(request: NextRequest) {
         // Don't fail the request - log and continue
         // The OTP is already validated in memory, so we can proceed
       } else {
-        console.log('OTP status updated successfully (without validated_at)')
+        log.debug('OTP status updated successfully (without validated_at)')
       }
     } else {
-      console.log('OTP validation updated successfully with validated_at')
+      log.debug('OTP validation updated successfully with validated_at')
     }
 
     // Get wallet transaction from OTP metadata or parameter
@@ -216,7 +208,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (transactionError || !walletTransaction) {
-      console.error('Error fetching wallet transaction:', {
+      log.error('Error fetching wallet transaction', {
         error: transactionError,
         transactionId,
         message: transactionError?.message,
@@ -235,7 +227,7 @@ export async function POST(request: NextRequest) {
     // Extract partner ID from the joined data
     const partnerId = (walletTransaction as any).partner_wallets?.partner_id
     if (!partnerId) {
-      console.error('Partner ID not found in wallet transaction:', walletTransaction)
+      log.error('Partner ID not found in wallet transaction', { transaction: walletTransaction })
       return NextResponse.json(
         { 
           success: false, 
@@ -250,7 +242,7 @@ export async function POST(request: NextRequest) {
     const totalCost = Math.abs(walletTransaction.amount)
     
     if (floatAmount <= 0) {
-      console.error('Invalid float amount:', floatAmount)
+      log.error('Invalid float amount', { floatAmount })
       return NextResponse.json(
         { 
           success: false, 
@@ -281,7 +273,7 @@ export async function POST(request: NextRequest) {
       .single()
     
     if (userError || !currentUser) {
-      console.error('Error fetching current user:', {
+      log.error('Error fetching current user', {
         error: userError,
         userId,
         message: userError?.message,
@@ -312,7 +304,7 @@ export async function POST(request: NextRequest) {
       
       const settingsResult = await loadNcbaOpenBankingSettings()
       if (!settingsResult.ok || !settingsResult.data) {
-        console.error('NCBA settings error:', settingsResult.error)
+        log.error('NCBA settings error', settingsResult.error)
         return NextResponse.json(
           { success: false, error: settingsResult.error || 'NCBA OB settings missing', stage: 'settings' },
           { status: 400 }
@@ -324,7 +316,7 @@ export async function POST(request: NextRequest) {
       // Use the same URL construction as the working float-purchase route
       const tokenUrl = new URL(s.tokenPath, s.baseUrl).toString()
       
-      console.log('Requesting NCBA token:', {
+      log.debug('Requesting NCBA token', {
         constructedUrl: tokenUrl,
         baseUrl: s.baseUrl,
         tokenPath: s.tokenPath,
@@ -349,7 +341,7 @@ export async function POST(request: NextRequest) {
           tokenErrorData = { error: tokenText }
         }
         
-        console.error('NCBA token request failed:', {
+        log.error('NCBA token request failed', {
           status: tokenRes.status,
           statusText: tokenRes.statusText,
           response: tokenErrorData,
@@ -400,7 +392,7 @@ export async function POST(request: NextRequest) {
       
       // Check if response is HTML (error page)
       if (tokenText.trim().startsWith('<!DOCTYPE') || tokenText.trim().startsWith('<html')) {
-        console.error('NCBA token endpoint returned HTML instead of JSON:', {
+        log.error('NCBA token endpoint returned HTML instead of JSON', {
           response: tokenText.substring(0, 500),
           requestedUrl: tokenUrl,
           finalUrl: tokenRes.url
@@ -424,10 +416,10 @@ export async function POST(request: NextRequest) {
       } catch (parseError) {
         // If not JSON, treat the entire response as the token (if it's not HTML)
         if (!tokenText.trim().startsWith('<!')) {
-          console.log('Token response is not JSON, treating as plain text token')
+          log.debug('Token response is not JSON, treating as plain text token')
           tokenData = { token: tokenText.trim() }
         } else {
-          console.error('Token response appears to be HTML:', tokenText.substring(0, 200))
+          log.error('Token response appears to be HTML', { preview: tokenText.substring(0, 200) })
           return NextResponse.json(
             { 
               success: false, 
@@ -441,7 +433,7 @@ export async function POST(request: NextRequest) {
       }
       
       // Log the full response structure for debugging
-      console.log('NCBA token response structure:', {
+      log.debug('NCBA token response structure', {
         hasData: !!tokenData.data,
         keys: Object.keys(tokenData),
         sample: JSON.stringify(tokenData).substring(0, 200)
@@ -463,7 +455,7 @@ export async function POST(request: NextRequest) {
         (typeof tokenData === 'string' ? tokenData.trim() : null)
       
       if (!accessToken) {
-        console.error('No access token found in NCBA response:', {
+        log.error('No access token found in NCBA response', {
           responseStructure: Object.keys(tokenData),
           fullResponse: JSON.stringify(tokenData).substring(0, 500),
           rawText: tokenText.substring(0, 500)
@@ -481,13 +473,13 @@ export async function POST(request: NextRequest) {
         )
       }
       
-      console.log('NCBA token obtained successfully:', {
+      log.info('NCBA token obtained successfully', {
         tokenLength: accessToken.length,
         tokenPreview: accessToken.substring(0, 20) + '...' + accessToken.substring(accessToken.length - 10),
         tokenStartsWith: accessToken.substring(0, 10)
       })
     } catch (tokenError: any) {
-      console.error('Error obtaining NCBA token:', {
+      log.error('Error obtaining NCBA token', {
         message: tokenError?.message,
         stack: tokenError?.stack
       })
@@ -529,7 +521,7 @@ export async function POST(request: NextRequest) {
       // Ensure token is trimmed and properly formatted
       const cleanToken = accessToken.trim()
       
-      console.log('Making NCBA float purchase request:', {
+      log.debug('Making NCBA float purchase request', {
         constructedUrl: url,
         baseUrl: s.baseUrl,
         floatPurchasePath: s.floatPurchasePath,
@@ -563,7 +555,7 @@ export async function POST(request: NextRequest) {
       
       // Check if response is HTML (error page) before trying to parse as JSON
       if (ncbaText.trim().startsWith('<!DOCTYPE') || ncbaText.trim().startsWith('<html')) {
-        console.error('NCBA float purchase endpoint returned HTML instead of JSON:', {
+        log.error('NCBA float purchase endpoint returned HTML instead of JSON', {
           status: ncbaResponse.status,
           statusText: ncbaResponse.statusText,
           requestedUrl: url,
@@ -619,7 +611,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (!ncbaResponse.ok) {
-        console.error('NCBA float purchase failed:', {
+        log.error('NCBA float purchase failed', {
           status: ncbaResponse.status,
           statusText: ncbaResponse.statusText,
           requestedUrl: url,
@@ -712,9 +704,9 @@ export async function POST(request: NextRequest) {
         }, { status: ncbaResponse.status >= 500 ? 500 : ncbaResponse.status })
       }
       
-      console.log('NCBA float purchase successful:', ncbaData)
+      log.info('NCBA float purchase successful', { data: ncbaData })
     } catch (ncbaError: any) {
-      console.error('Error calling NCBA float purchase API:', {
+      log.error('Error calling NCBA float purchase API', {
         message: ncbaError?.message,
         stack: ncbaError?.stack
       })
@@ -742,7 +734,7 @@ export async function POST(request: NextRequest) {
     // NCBA float purchase successful - update wallet balance and existing transaction
     // IMPORTANT: Update the existing transaction directly instead of creating a new one
     try {
-      console.log('Updating wallet balance and transaction:', {
+      log.debug('Updating wallet balance and transaction', {
         partnerId,
         amount: -totalCost,
         floatAmount,
@@ -757,7 +749,7 @@ export async function POST(request: NextRequest) {
         .single()
       
       if (walletError || !wallet) {
-        console.error('Error fetching wallet:', walletError)
+        log.error('Error fetching wallet', walletError)
         return NextResponse.json({
           success: false,
           error: 'Failed to fetch wallet',
@@ -790,7 +782,7 @@ export async function POST(request: NextRequest) {
         .eq('id', wallet.id)
       
       if (balanceUpdateError) {
-        console.error('Error updating wallet balance:', balanceUpdateError)
+        log.error('Error updating wallet balance', balanceUpdateError)
         return NextResponse.json({
           success: false,
           error: 'Failed to update wallet balance',
@@ -802,7 +794,7 @@ export async function POST(request: NextRequest) {
       
       // Update the EXISTING transaction (don't create a new one)
       // CRITICAL: This prevents duplicate transactions
-      console.log('Updating existing transaction to prevent duplicates:', {
+      log.debug('Updating existing transaction to prevent duplicates', {
         transactionId: walletTransaction.id,
         reference: walletTransaction.reference,
         currentStatus: walletTransaction.status
@@ -833,7 +825,7 @@ export async function POST(request: NextRequest) {
         .single()
       
       if (transactionUpdateError) {
-        console.error('❌ CRITICAL: Error updating existing transaction:', {
+        log.error('CRITICAL: Error updating existing transaction', {
           error: transactionUpdateError,
           transactionId: walletTransaction.id,
           message: 'This could lead to duplicate transactions if not fixed'
@@ -841,25 +833,25 @@ export async function POST(request: NextRequest) {
         // Balance was updated, but transaction update failed - log but don't fail
         // The balance update is more critical
       } else if (updatedTransaction) {
-        console.log('✅ Successfully updated existing transaction (no duplicate created):', {
+        log.info('Successfully updated existing transaction (no duplicate created)', {
           transactionId: updatedTransaction.id,
           reference: updatedTransaction.reference,
           status: updatedTransaction.status
         })
       } else {
-        console.warn('⚠️ Transaction update returned no data (transaction may not exist):', {
+        log.warn('Transaction update returned no data (transaction may not exist)', {
           transactionId: walletTransaction.id
         })
       }
       
-      console.log('Wallet balance and transaction updated successfully:', {
+      log.info('Wallet balance and transaction updated successfully', {
         previousBalance: currentBalance,
         newBalance: newBalance,
         amount: -totalCost,
         transactionId: walletTransaction.id
       })
     } catch (walletError: any) {
-      console.error('Exception updating wallet balance:', {
+      log.error('Exception updating wallet balance', {
         message: walletError?.message,
         stack: walletError?.stack
       })
@@ -898,7 +890,7 @@ export async function POST(request: NextRequest) {
     })
 
   } catch (error: any) {
-    console.error('Float purchase confirmation error:', {
+    log.error('Float purchase confirmation error', {
       message: error?.message,
       stack: error?.stack,
       name: error?.name,
