@@ -7,6 +7,9 @@ import OTPVerification from '../../components/OTPVerification'
 import EmailVerification from '../../components/EmailVerification'
 import PhoneVerification from '../../components/PhoneVerification'
 
+// Force dynamic rendering for this page
+export const dynamic = 'force-dynamic'
+
 export default function SecureLoginPage() {
   const [formData, setFormData] = useState({
     email: '',

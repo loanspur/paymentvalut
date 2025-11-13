@@ -240,12 +240,19 @@ export default function Sidebar({ className = '' }: SidebarProps) {
             icon: FileText,
             description: 'Manage SMS message templates'
           }] : []),
-          // Only show Bulk SMS Campaigns for super_admin and admin
+          // Show Bulk SMS Campaigns for super_admin, admin, and partner_admin
           ...(isSuperAdmin || isAdmin ? [{
             name: 'Bulk SMS Campaigns',
             href: '/admin/sms-campaigns',
             icon: Bell,
             description: 'Create and manage bulk SMS campaigns'
+          }] : []),
+          // Show Partner SMS Campaigns for partner_admin
+          ...(isPartnerAdmin ? [{
+            name: 'SMS Campaigns',
+            href: '/partner/sms-campaigns',
+            icon: Bell,
+            description: 'Create and manage your SMS campaigns'
           }] : [])
         ]
       },
