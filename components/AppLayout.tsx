@@ -15,13 +15,20 @@ interface AppLayoutProps {
 export default function AppLayout({ children }: AppLayoutProps) {
   const { user, logout, isLoading } = useAuth()
   const pathname = usePathname()
+  const [mounted, setMounted] = useState(false)
+  
+  // Ensure we're on the client before checking pathname
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   
   // Public routes that don't need the protected layout
   const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup', '/request-password-reset', '/reset-password']
-  const isPublicRoute = publicRoutes.includes(pathname || '')
-
+  const isPublicRoute = mounted && pathname ? publicRoutes.includes(pathname) : false
+  
   // For public routes, render children directly without any layout
-  if (isPublicRoute) {
+  // During SSR or before mount, render children to prevent hydration mismatch
+  if (!mounted || isPublicRoute) {
     return <>{children}</>
   }
 

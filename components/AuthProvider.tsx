@@ -38,15 +38,26 @@ export default function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const router = useRouter()
   const pathname = usePathname()
 
+  // Ensure we're on the client before checking pathname
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   // Public routes that don't require authentication
   const publicRoutes = ['/secure-login', '/login', '/login-enhanced', '/setup', '/request-password-reset', '/reset-password']
-  const isPublicRoute = publicRoutes.includes(pathname)
+  const isPublicRoute = mounted && pathname ? publicRoutes.includes(pathname) : false
 
   // Check authentication status on mount
   useEffect(() => {
+    // Wait for component to mount before checking routes
+    if (!mounted) {
+      return
+    }
+
     // Skip auth check if we're in the middle of logging out
     if (isLoggingOut) {
       return
@@ -114,7 +125,7 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     const timeoutId = setTimeout(checkAuthStatus, 100)
     
     return () => clearTimeout(timeoutId)
-  }, [pathname, isLoggingOut, isPublicRoute]) // Re-check when pathname changes or logout status changes
+  }, [pathname, isLoggingOut, isPublicRoute, mounted]) // Re-check when pathname changes or logout status changes
 
   const logout = async () => {
     try {
