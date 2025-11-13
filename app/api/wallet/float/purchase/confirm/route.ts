@@ -160,10 +160,43 @@ export async function POST(request: NextRequest) {
     }
 
     // OTP is valid - mark as validated
-    await supabase
+    // Try updating with validated_at first, if that fails, try without it
+    const validatedAt = new Date().toISOString()
+    let { error: otpUpdateError } = await supabase
       .from('otp_validations')
-      .update({ status: 'validated', validated_at: new Date().toISOString() })
+      .update({ status: 'validated', validated_at: validatedAt })
       .eq('reference', otp_reference)
+    
+    // If update fails, try updating just the status (validated_at might have a constraint)
+    if (otpUpdateError) {
+      console.warn('First OTP update attempt failed, trying status only:', {
+        error: otpUpdateError.message,
+        code: otpUpdateError.code
+      })
+      
+      const { error: statusOnlyError } = await supabase
+        .from('otp_validations')
+        .update({ status: 'validated' })
+        .eq('reference', otp_reference)
+      
+      if (statusOnlyError) {
+        console.error('Error updating OTP validation status (both attempts failed):', {
+          firstError: otpUpdateError,
+          secondError: statusOnlyError,
+          reference: otp_reference,
+          message: statusOnlyError.message,
+          code: statusOnlyError.code,
+          details: statusOnlyError.details,
+          hint: statusOnlyError.hint
+        })
+        // Don't fail the request - log and continue
+        // The OTP is already validated in memory, so we can proceed
+      } else {
+        console.log('OTP status updated successfully (without validated_at)')
+      }
+    } else {
+      console.log('OTP validation updated successfully with validated_at')
+    }
 
     // Get wallet transaction from OTP metadata or parameter
     const transactionId = wallet_transaction_id || otpRecord.metadata?.wallet_transaction_id
