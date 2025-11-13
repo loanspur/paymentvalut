@@ -263,7 +263,7 @@ export default function PartnerSMSCampaignsPage() {
     confirm({
       title: 'Send SMS Campaign',
       message: `Are you sure you want to send the SMS campaign "${campaignName}" to ${campaign?.total_recipients || 0} recipients? This will deduct KES ${campaign?.total_cost || 0} from your wallet.`,
-      variant: 'default',
+      variant: 'warning',
       confirmText: 'Send',
       onConfirm: async () => {
         setSending(id)
@@ -676,9 +676,14 @@ export default function PartnerSMSCampaignsPage() {
 
       <ConfirmationDialog
         isOpen={isOpen}
-        config={config}
-        onConfirm={handleConfirm}
         onClose={handleClose}
+        onConfirm={handleConfirm}
+        title={config?.title || ''}
+        message={config?.message || ''}
+        confirmText={config?.confirmText}
+        cancelText={config?.cancelText}
+        variant={config?.variant}
+        loading={deleting !== null || sending !== null}
       />
     </div>
   )

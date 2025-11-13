@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifyJWTToken } from '../../../../../../../lib/jwt-utils'
+import { verifyJWTToken } from '@/lib/jwt-utils'
 import { calculateSMSCost } from '@/lib/sms-utils'
-import { log } from '../../../../../../../lib/logger'
+import { log } from '@/lib/logger'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
