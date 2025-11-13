@@ -2122,13 +2122,53 @@ export default function WalletPage() {
                   </div>
                 )}
 
-                {/* OTP Delivery Info */}
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <h5 className="text-sm font-semibold text-gray-900 mb-1">OTP Delivery</h5>
-                  <p className="text-xs text-gray-700 mb-2">We will send OTP to your registered contacts for confirmation.</p>
-                  <div className="text-sm text-gray-800 space-y-1">
-                    <p><strong>Email:</strong> {maskEmail(userProfile?.email || currentUser?.email || '')}</p>
-                    <p><strong>Phone:</strong> {maskPhone(userProfile?.phone_number || '')}</p>
+                {/* OTP Delivery Info - Enhanced */}
+                <div className="p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 mt-0.5">
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h5 className="text-sm font-semibold text-blue-900 mb-1">OTP Delivery Information</h5>
+                      <p className="text-xs text-blue-800 mb-3">
+                        We will send the OTP verification code to your registered phone number and email address for security confirmation.
+                      </p>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between p-2 bg-white rounded border border-blue-100">
+                          <div className="flex items-center gap-2">
+                            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                            </svg>
+                            <span className="text-xs font-medium text-gray-600">Phone Number:</span>
+                          </div>
+                          <span className="text-sm font-semibold text-gray-900">
+                            {userProfile?.phone_number || currentUser?.phone_number 
+                              ? maskPhone(userProfile?.phone_number || currentUser?.phone_number || '')
+                              : <span className="text-red-600 italic">Not set</span>}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between p-2 bg-white rounded border border-blue-100">
+                          <div className="flex items-center gap-2">
+                            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            <span className="text-xs font-medium text-gray-600">Email Address:</span>
+                          </div>
+                          <span className="text-sm font-semibold text-gray-900">
+                            {userProfile?.email || currentUser?.email 
+                              ? maskEmail(userProfile?.email || currentUser?.email || '')
+                              : <span className="text-red-600 italic">Not set</span>}
+                          </span>
+                        </div>
+                      </div>
+                      {(!userProfile?.phone_number && !currentUser?.phone_number) && (
+                        <p className="text-xs text-red-600 mt-2 font-medium">
+                          ⚠️ Phone number is required. Please contact your administrator to add a phone number to your account.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
 
