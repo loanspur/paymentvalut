@@ -739,62 +739,124 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // NCBA float purchase successful - update wallet balance
+    // NCBA float purchase successful - update wallet balance and existing transaction
+    // IMPORTANT: Update the existing transaction directly instead of creating a new one
     try {
-      console.log('Updating wallet balance:', {
+      console.log('Updating wallet balance and transaction:', {
         partnerId,
         amount: -totalCost,
-        floatAmount
+        floatAmount,
+        transactionId: walletTransaction.id
       })
       
-      const walletResult = await UnifiedWalletService.updateWalletBalance(
-        partnerId,
-        -totalCost, // Negative for debit
-        'b2c_float_purchase',
-        {
-          reference: otp_reference,
-          description: `B2C Float Purchase - ${floatAmount} KES`,
-          float_amount: floatAmount,
-          charges: totalCost - floatAmount,
-          charge_config_id: walletTransaction.metadata?.charge_config_id,
-          ncba_response: ncbaData.data || ncbaData,
-          ncba_deal_reference: ncbaData.data?.reqDealReference || ncbaData.reqDealReference || otp_reference,
-          b2c_shortcode_id: walletTransaction.metadata?.b2c_shortcode_id,
-          b2c_shortcode: b2cShortCode,
-          b2c_account_name: b2cAccountName
-        }
-      )
+      // Get current wallet balance
+      const { data: wallet, error: walletError } = await supabase
+        .from('partner_wallets')
+        .select('current_balance, id')
+        .eq('partner_id', partnerId)
+        .single()
       
-      if (!walletResult.success) {
-        console.error('Wallet balance update failed:', walletResult)
-        
-        // Update transaction status
-        await supabase
-          .from('wallet_transactions')
-          .update({
-            status: 'failed',
-            metadata: {
-              ...walletTransaction.metadata,
-              ncba_response: ncbaData.data || ncbaData,
-              wallet_error: walletResult.error,
-              error: 'NCBA purchase succeeded but wallet update failed'
-            }
-          })
-          .eq('id', walletTransaction.id)
-        
+      if (walletError || !wallet) {
+        console.error('Error fetching wallet:', walletError)
         return NextResponse.json({
           success: false,
-          error: walletResult.error || 'Failed to update wallet balance',
+          error: 'Failed to fetch wallet',
+          details: walletError?.message || 'Wallet not found',
           stage: 'wallet_update',
-          ncba_success: true,
-          wallet_result: walletResult
+          ncba_success: true
         }, { status: 500 })
       }
       
-      console.log('Wallet balance updated successfully:', {
-        previousBalance: walletResult.previousBalance,
-        newBalance: walletResult.newBalance,
-        amount: walletResult.amount
+      const currentBalance = wallet.current_balance || 0
+      const newBalance = currentBalance - totalCost // Debit (subtract)
+      
+      // Validate balance
+      if (newBalance < 0) {
+        return NextResponse.json({
+          success: false,
+          error: `Insufficient balance. Required: ${totalCost} KES, Available: ${currentBalance} KES`,
+          stage: 'wallet_update',
+          ncba_success: true
+        }, { status: 400 })
+      }
+      
+      // Update wallet balance directly
+      const { error: balanceUpdateError } = await supabase
+        .from('partner_wallets')
+        .update({
+          current_balance: newBalance,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', wallet.id)
+      
+      if (balanceUpdateError) {
+        console.error('Error updating wallet balance:', balanceUpdateError)
+        return NextResponse.json({
+          success: false,
+          error: 'Failed to update wallet balance',
+          details: balanceUpdateError.message,
+          stage: 'wallet_update',
+          ncba_success: true
+        }, { status: 500 })
+      }
+      
+      // Update the EXISTING transaction (don't create a new one)
+      // CRITICAL: This prevents duplicate transactions
+      console.log('Updating existing transaction to prevent duplicates:', {
+        transactionId: walletTransaction.id,
+        reference: walletTransaction.reference,
+        currentStatus: walletTransaction.status
+      })
+      
+      const { data: updatedTransaction, error: transactionUpdateError } = await supabase
+        .from('wallet_transactions')
+        .update({
+          status: 'completed',
+          updated_at: new Date().toISOString(),
+          metadata: {
+            ...walletTransaction.metadata,
+            float_amount: floatAmount,
+            charges: totalCost - floatAmount,
+            charge_config_id: walletTransaction.metadata?.charge_config_id,
+            ncba_response: ncbaData.data || ncbaData,
+            ncba_deal_reference: ncbaData.data?.reqDealReference || ncbaData.reqDealReference || otp_reference,
+            b2c_shortcode_id: walletTransaction.metadata?.b2c_shortcode_id,
+            b2c_shortcode: b2cShortCode,
+            b2c_account_name: b2cAccountName,
+            wallet_balance_before: currentBalance,
+            wallet_balance_after: newBalance,
+            completed_at: new Date().toISOString()
+          }
+        })
+        .eq('id', walletTransaction.id)
+        .select()
+        .single()
+      
+      if (transactionUpdateError) {
+        console.error('❌ CRITICAL: Error updating existing transaction:', {
+          error: transactionUpdateError,
+          transactionId: walletTransaction.id,
+          message: 'This could lead to duplicate transactions if not fixed'
+        })
+        // Balance was updated, but transaction update failed - log but don't fail
+        // The balance update is more critical
+      } else if (updatedTransaction) {
+        console.log('✅ Successfully updated existing transaction (no duplicate created):', {
+          transactionId: updatedTransaction.id,
+          reference: updatedTransaction.reference,
+          status: updatedTransaction.status
+        })
+      } else {
+        console.warn('⚠️ Transaction update returned no data (transaction may not exist):', {
+          transactionId: walletTransaction.id
+        })
+      }
+      
+      console.log('Wallet balance and transaction updated successfully:', {
+        previousBalance: currentBalance,
+        newBalance: newBalance,
+        amount: -totalCost,
+        transactionId: walletTransaction.id
       })
     } catch (walletError: any) {
       console.error('Exception updating wallet balance:', {
@@ -802,7 +864,7 @@ export async function POST(request: NextRequest) {
         stack: walletError?.stack
       })
       
-      // Update transaction status
+      // Update existing transaction status to failed
       await supabase
         .from('wallet_transactions')
         .update({
@@ -822,26 +884,6 @@ export async function POST(request: NextRequest) {
         stage: 'wallet_update',
         ncba_success: true
       }, { status: 500 })
-    }
-
-    // Update transaction status
-    try {
-      await supabase
-        .from('wallet_transactions')
-        .update({
-          status: 'completed',
-          metadata: {
-            ...walletTransaction.metadata,
-            ncba_response: ncbaData.data || ncbaData,
-            completed_at: new Date().toISOString()
-          }
-        })
-        .eq('id', walletTransaction.id)
-      
-      console.log('Transaction status updated to completed')
-    } catch (updateError: any) {
-      console.error('Error updating transaction status:', updateError)
-      // Don't fail the request if status update fails - transaction is already completed
     }
 
     return NextResponse.json({

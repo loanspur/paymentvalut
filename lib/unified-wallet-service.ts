@@ -208,23 +208,97 @@ export class UnifiedWalletService {
         }
       }
 
-      // Create wallet transaction record
-      const transactionData: WalletTransactionData = {
-        walletId,
-        transactionType: transactionType as any,
-        amount: normalizedAmount,
-        reference: metadata?.reference,
-        description: metadata?.description,
-        metadata: {
-          ...(metadata || {}),
-          wallet_balance_after: newBalance
+      // Create or update wallet transaction record
+      // Check if transaction already exists by ID (most reliable) or by reference (to avoid duplicates)
+      let transactionUpdated = false
+      
+      // First, try to find by transaction ID if provided (most reliable)
+      if (metadata?.existing_transaction_id) {
+        const { data: existingTransaction } = await supabase
+          .from('wallet_transactions')
+          .select('id, status, reference')
+          .eq('id', metadata.existing_transaction_id)
+          .eq('wallet_id', walletId)
+          .maybeSingle()
+
+        if (existingTransaction) {
+          // Update existing transaction instead of creating a new one
+          const { error: updateError } = await supabase
+            .from('wallet_transactions')
+            .update({
+              amount: normalizedAmount,
+              status: 'completed',
+              updated_at: new Date().toISOString(),
+              metadata: {
+                ...(metadata || {}),
+                wallet_balance_before: currentBalance,
+                wallet_balance_after: newBalance
+              }
+            })
+            .eq('id', existingTransaction.id)
+
+          if (updateError) {
+            console.error('[UnifiedWalletService] Failed to update existing transaction by ID:', updateError)
+          } else {
+            transactionUpdated = true
+            console.log('[UnifiedWalletService] Updated existing transaction by ID:', existingTransaction.id)
+          }
+        }
+      }
+      
+      // If not found by ID, try to find by reference
+      if (!transactionUpdated && metadata?.reference) {
+        const { data: existingTransaction } = await supabase
+          .from('wallet_transactions')
+          .select('id, status, reference')
+          .eq('wallet_id', walletId)
+          .eq('reference', metadata.reference)
+          .maybeSingle()
+
+        if (existingTransaction) {
+          // Update existing transaction instead of creating a new one
+          const { error: updateError } = await supabase
+            .from('wallet_transactions')
+            .update({
+              amount: normalizedAmount,
+              status: 'completed',
+              updated_at: new Date().toISOString(),
+              metadata: {
+                ...(metadata || {}),
+                wallet_balance_before: currentBalance,
+                wallet_balance_after: newBalance
+              }
+            })
+            .eq('id', existingTransaction.id)
+
+          if (updateError) {
+            console.error('[UnifiedWalletService] Failed to update existing transaction by reference:', updateError)
+          } else {
+            transactionUpdated = true
+            console.log('[UnifiedWalletService] Updated existing transaction by reference:', existingTransaction.id, existingTransaction.reference)
+          }
         }
       }
 
-      const transactionResult = await this.createWalletTransaction(transactionData, wallet.currency || 'KES')
+      // Only create new transaction if one doesn't already exist
+      if (!transactionUpdated) {
+        const transactionData: WalletTransactionData = {
+          walletId,
+          transactionType: transactionType as any,
+          amount: normalizedAmount,
+          reference: metadata?.reference,
+          description: metadata?.description,
+          metadata: {
+            ...(metadata || {}),
+            wallet_balance_after: newBalance
+          }
+        }
 
-      if (!transactionResult) {
-        console.error('[UnifiedWalletService] Failed to create wallet transaction, but balance was updated')
+        const transactionResult = await this.createWalletTransaction(transactionData, wallet.currency || 'KES')
+
+        if (!transactionResult) {
+          console.error('[UnifiedWalletService] Failed to create wallet transaction, but balance was updated')
+        }
       }
 
       return {
