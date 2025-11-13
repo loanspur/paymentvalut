@@ -534,6 +534,13 @@ export async function POST(request: NextRequest) {
         baseUrl: s.baseUrl,
         floatPurchasePath: s.floatPurchasePath,
         environment: s.environment,
+        urlConstruction: {
+          originalBaseUrl: s.baseUrl,
+          originalPath: s.floatPurchasePath,
+          finalUrl: url,
+          baseUrlEndsWithSlash: s.baseUrl.endsWith('/'),
+          pathStartsWithSlash: s.floatPurchasePath.startsWith('/')
+        },
         payloadKeys: Object.keys(ncbaPayload),
         payload: { ...ncbaPayload, reqDebitAccountNumber: '***', reqMobileNumber: '***' },
         tokenLength: cleanToken.length,
@@ -553,6 +560,58 @@ export async function POST(request: NextRequest) {
       })
 
       const ncbaText = await ncbaResponse.text()
+      
+      // Check if response is HTML (error page) before trying to parse as JSON
+      if (ncbaText.trim().startsWith('<!DOCTYPE') || ncbaText.trim().startsWith('<html')) {
+        console.error('NCBA float purchase endpoint returned HTML instead of JSON:', {
+          status: ncbaResponse.status,
+          statusText: ncbaResponse.statusText,
+          requestedUrl: url,
+          finalUrl: ncbaResponse.url,
+          responsePreview: ncbaText.substring(0, 500),
+          headers: Object.fromEntries(ncbaResponse.headers.entries())
+        })
+        
+        // Update transaction status
+        await supabase
+          .from('wallet_transactions')
+          .update({
+            status: 'failed',
+            metadata: {
+              ...walletTransaction.metadata,
+              error: 'NCBA returned HTML error page (404 or invalid endpoint)',
+              ncba_status: ncbaResponse.status,
+              ncba_url: url,
+              ncba_final_url: ncbaResponse.url,
+              ncba_response_preview: ncbaText.substring(0, 500)
+            }
+          })
+          .eq('id', walletTransaction.id)
+        
+        return NextResponse.json({
+          success: false,
+          error: 'NCBA float purchase endpoint returned HTML error page',
+          details: ncbaResponse.status === 404 
+            ? 'The NCBA API endpoint URL appears to be incorrect or the endpoint does not exist. Please verify the float purchase path in system settings.'
+            : 'NCBA returned an HTML error page instead of JSON response',
+          ncba_status: ncbaResponse.status,
+          ncba_url: url,
+          ncba_final_url: ncbaResponse.url,
+          responsePreview: ncbaText.substring(0, 200),
+          stage: 'ncba_api',
+          troubleshooting: {
+            issue: ncbaResponse.status === 404 ? '404 Not Found' : 'HTML Error Page',
+            possible_causes: [
+              'The float purchase path in system settings may be incorrect',
+              'The base URL may be incorrect',
+              'The endpoint may not exist in the current NCBA environment',
+              'There may be a redirect to an error page'
+            ],
+            action: 'Verify the ncba_ob_float_purchase_path and ncba_ob_uat_base_url (or ncba_ob_prod_base_url) settings are correct'
+          }
+        }, { status: 500 })
+      }
+      
       try {
         ncbaData = JSON.parse(ncbaText)
       } catch {
@@ -589,7 +648,28 @@ export async function POST(request: NextRequest) {
           .eq('id', walletTransaction.id)
 
         // Handle specific error codes
-        if (ncbaResponse.status === 401) {
+        if (ncbaResponse.status === 404) {
+          return NextResponse.json({
+            success: false,
+            error: 'NCBA Endpoint Not Found: The float purchase endpoint does not exist',
+            details: ncbaData.title || ncbaData.error || ncbaData.message || 'The NCBA API endpoint URL appears to be incorrect or the endpoint does not exist',
+            ncba_response: ncbaData,
+            ncba_status: ncbaResponse.status,
+            ncba_url: url,
+            ncba_final_url: ncbaResponse.url,
+            stage: 'ncba_api',
+            troubleshooting: {
+              issue: '404 Not Found',
+              possible_causes: [
+                'The float purchase path in system settings may be incorrect',
+                'The base URL may be incorrect',
+                'The endpoint may not exist in the current NCBA environment (UAT vs PROD)',
+                'The endpoint path may have changed in the NCBA API'
+              ],
+              action: 'Verify the ncba_ob_float_purchase_path and ncba_ob_uat_base_url (or ncba_ob_prod_base_url) settings match the current NCBA API documentation'
+            }
+          }, { status: 404 })
+        } else if (ncbaResponse.status === 401) {
           return NextResponse.json({
             success: false,
             error: 'NCBA Authentication Failed: Invalid or expired access token',
