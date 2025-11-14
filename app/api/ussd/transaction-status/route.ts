@@ -255,11 +255,21 @@ export async function GET(request: NextRequest) {
     const mpesaCallbackMap: Record<string, any[]> = {}
     if (conversationIdsToCheck.size > 0) {
       const conversationIdArray = Array.from(conversationIdsToCheck)
-      // Build OR condition for both conversation_id and originator_conversation_id
-      const orConditions = conversationIdArray.map(id => 
-        `conversation_id.eq.${id},originator_conversation_id.eq.${id}`
-      ).join(',')
+      console.log(`[USSD Transaction Status] Checking for callbacks with conversation IDs:`, conversationIdArray)
       
+      // Build OR condition for both conversation_id and originator_conversation_id
+      // Format: "conversation_id.eq.value1,originator_conversation_id.eq.value1,conversation_id.eq.value2,originator_conversation_id.eq.value2"
+      const conversationOrConditions = conversationIdArray.flatMap(id => [
+        `conversation_id.eq.${id}`,
+        `originator_conversation_id.eq.${id}`
+      ]).join(',')
+      
+      console.log(`[USSD Transaction Status] OR conditions string:`, conversationOrConditions)
+      
+      // Query callbacks - include those with matching partner_id OR null partner_id
+      // (some older callbacks might not have partner_id set)
+      // We need to combine partner_id filter with conversation_id filter
+      // Since Supabase doesn't support AND between ORs easily, we'll filter by partner_id in code
       const { data: callbackData, error: callbackError } = await supabase
         .from('mpesa_callbacks')
         .select(`
@@ -278,18 +288,37 @@ export async function GET(request: NextRequest) {
           raw_callback_data,
           created_at
         `)
-        .eq('partner_id', partnerId)
-        .or(orConditions)
+        .or(conversationOrConditions)
         .order('created_at', { ascending: false })
 
       if (callbackError) {
-        console.error('Error fetching M-Pesa callback data:', callbackError)
-      } else if (callbackData) {
-        callbackData.forEach(callback => {
+        console.error('[USSD Transaction Status] Error fetching M-Pesa callback data:', callbackError)
+      } else {
+        console.log(`[USSD Transaction Status] Raw query returned ${callbackData?.length || 0} callbacks`)
+        if (callbackData && callbackData.length > 0) {
+          console.log(`[USSD Transaction Status] Sample callback data:`, {
+            first_callback: {
+              id: callbackData[0].id,
+              conversation_id: callbackData[0].conversation_id,
+              originator_conversation_id: callbackData[0].originator_conversation_id,
+              partner_id: callbackData[0].partner_id,
+              result_code: callbackData[0].result_code
+            }
+          })
+        }
+      }
+      
+      if (callbackData) {
+        console.log(`[USSD Transaction Status] Found ${callbackData.length} callbacks for conversation IDs:`, conversationIdArray)
+        // Filter by partner_id in code (to handle null partner_id cases)
+        const filteredCallbacks = callbackData.filter(callback => {
           const callbackPartnerId = callback.partner_id
-          if (callbackPartnerId && callbackPartnerId !== partnerId) {
-            return
-          }
+          // Include if partner_id matches OR if partner_id is null (older callbacks)
+          return !callbackPartnerId || callbackPartnerId === partnerId
+        })
+        console.log(`[USSD Transaction Status] Filtered to ${filteredCallbacks.length} callbacks after partner_id check`)
+        
+        filteredCallbacks.forEach(callback => {
 
           // Store callback under both conversation_id and originator_conversation_id for lookup
           const conversationKey = callback.conversation_id || 'unknown'
@@ -393,7 +422,50 @@ export async function GET(request: NextRequest) {
       if (mpesaDetails.length === 0 && transaction.originator_conversation_id) {
         mpesaDetails = mpesaCallbackMap[transaction.originator_conversation_id] || []
       }
+      
+      // Debug logging
+      if (mpesaDetails.length === 0) {
+        console.log(`[USSD Transaction Status] No callbacks found for transaction:`, {
+          transaction_id: transaction.id,
+          conversation_id: transaction.conversation_id,
+          originator_conversation_id: transaction.originator_conversation_id,
+          available_keys: Object.keys(mpesaCallbackMap)
+        })
+      } else {
+        console.log(`[USSD Transaction Status] Found ${mpesaDetails.length} callbacks for transaction:`, {
+          transaction_id: transaction.id,
+          conversation_id: transaction.conversation_id,
+          originator_conversation_id: transaction.originator_conversation_id,
+          callback_count: mpesaDetails.length
+        })
+      }
+      
       const primaryMpesa = mpesaDetails[0]
+
+      // Determine status based on callback data if available, otherwise use transaction status
+      let finalStatus = transaction.status
+      let finalResultCode = transaction.result_code
+      let finalResultDesc = transaction.result_desc
+      
+      if (primaryMpesa) {
+        // Update status based on callback result code
+        if (primaryMpesa.result_code === '0') {
+          finalStatus = 'success'
+        } else if (primaryMpesa.result_code === '1' || primaryMpesa.result_code === '1032') {
+          finalStatus = 'failed'
+        } else if (primaryMpesa.result_code) {
+          // Other result codes might indicate pending or failed
+          finalStatus = 'failed'
+        }
+        
+        // Use callback result code and description if available
+        if (primaryMpesa.result_code) {
+          finalResultCode = primaryMpesa.result_code
+        }
+        if (primaryMpesa.result_description) {
+          finalResultDesc = primaryMpesa.result_description
+        }
+      }
 
       const amountNumber = transaction.amount !== null && transaction.amount !== undefined
         ? Number(transaction.amount)
@@ -409,9 +481,9 @@ export async function GET(request: NextRequest) {
         customer_id: transaction.customer_id,
         msisdn: transaction.msisdn,
         amount: amountNumber,
-        status: transaction.status,
-        result_code: transaction.result_code,
-        result_description: transaction.result_desc,
+        status: finalStatus, // Use updated status based on callbacks
+        result_code: finalResultCode,
+        result_description: finalResultDesc,
         transaction_receipt: transaction.transaction_receipt,
         transaction_id_reference: transaction.transaction_id,
         created_at: transaction.created_at,
