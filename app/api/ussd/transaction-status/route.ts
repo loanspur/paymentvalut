@@ -243,6 +243,9 @@ export async function GET(request: NextRequest) {
       if (transaction.conversation_id) {
         conversationIdsToCheck.add(transaction.conversation_id)
       }
+      if (transaction.originator_conversation_id) {
+        conversationIdsToCheck.add(transaction.originator_conversation_id)
+      }
     })
     if (conversationId) {
       conversationIdsToCheck.add(conversationId)
@@ -252,6 +255,11 @@ export async function GET(request: NextRequest) {
     const mpesaCallbackMap: Record<string, any[]> = {}
     if (conversationIdsToCheck.size > 0) {
       const conversationIdArray = Array.from(conversationIdsToCheck)
+      // Build OR condition for both conversation_id and originator_conversation_id
+      const orConditions = conversationIdArray.map(id => 
+        `conversation_id.eq.${id},originator_conversation_id.eq.${id}`
+      ).join(',')
+      
       const { data: callbackData, error: callbackError } = await supabase
         .from('mpesa_callbacks')
         .select(`
@@ -270,7 +278,8 @@ export async function GET(request: NextRequest) {
           raw_callback_data,
           created_at
         `)
-        .in('conversation_id', conversationIdArray)
+        .eq('partner_id', partnerId)
+        .or(orConditions)
         .order('created_at', { ascending: false })
 
       if (callbackError) {
@@ -282,11 +291,11 @@ export async function GET(request: NextRequest) {
             return
           }
 
-          const key = callback.conversation_id || 'unknown'
-          if (!mpesaCallbackMap[key]) {
-            mpesaCallbackMap[key] = []
-          }
-          mpesaCallbackMap[key].push({
+          // Store callback under both conversation_id and originator_conversation_id for lookup
+          const conversationKey = callback.conversation_id || 'unknown'
+          const originatorKey = callback.originator_conversation_id || 'unknown'
+          
+          const callbackEntry = {
             callback_id: callback.id,
             callback_type: callback.callback_type,
             conversation_id: callback.conversation_id,
@@ -302,7 +311,21 @@ export async function GET(request: NextRequest) {
             result_description: callback.result_desc || null,
             raw_callback_data: callback.raw_callback_data || null,
             created_at: callback.created_at
-          })
+          }
+          
+          // Store under conversation_id key
+          if (!mpesaCallbackMap[conversationKey]) {
+            mpesaCallbackMap[conversationKey] = []
+          }
+          mpesaCallbackMap[conversationKey].push(callbackEntry)
+          
+          // Also store under originator_conversation_id key if different
+          if (originatorKey !== 'unknown' && originatorKey !== conversationKey) {
+            if (!mpesaCallbackMap[originatorKey]) {
+              mpesaCallbackMap[originatorKey] = []
+            }
+            mpesaCallbackMap[originatorKey].push(callbackEntry)
+          }
         })
       }
 
@@ -365,7 +388,11 @@ export async function GET(request: NextRequest) {
 
     // Build transaction response with enriched M-Pesa details
     let finalTransactions = (transactions || []).map(transaction => {
-      const mpesaDetails = mpesaCallbackMap[transaction.conversation_id || ''] || []
+      // Try to find callbacks by conversation_id first, then originator_conversation_id
+      let mpesaDetails = mpesaCallbackMap[transaction.conversation_id || ''] || []
+      if (mpesaDetails.length === 0 && transaction.originator_conversation_id) {
+        mpesaDetails = mpesaCallbackMap[transaction.originator_conversation_id] || []
+      }
       const primaryMpesa = mpesaDetails[0]
 
       const amountNumber = transaction.amount !== null && transaction.amount !== undefined
