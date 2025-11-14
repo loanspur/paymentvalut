@@ -27,7 +27,8 @@ import {
   HelpCircle,
   RefreshCw,
   MessageSquare,
-  ClipboardList
+  ClipboardList,
+  AlertCircle
 } from 'lucide-react'
 // import Image from 'next/image' // Using regular img tag to avoid Next.js optimization issues
 
@@ -174,6 +175,13 @@ export default function Sidebar({ className = '' }: SidebarProps) {
             href: '/management/ncba-transactions',
             icon: CreditCard,
             description: 'Manage NCBA Paybill transactions'
+          }] : []),
+          // Only show Missing Callbacks for super_admin
+          ...(isSuperAdmin ? [{
+            name: 'Missing Callbacks',
+            href: '/management/missing-callbacks',
+            icon: AlertCircle,
+            description: 'Query missing M-Pesa callbacks'
           }] : [])
         ]
       },

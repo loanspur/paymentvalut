@@ -155,6 +155,7 @@ function getPageTitle(pathname: string): string {
     '/admin/partner-charges': 'Partner Charges Management',
     '/admin/disbursement-retries': 'Disbursement Retry Management',
     '/management/ncba-transactions': 'NCBA Transactions',
+    '/management/missing-callbacks': 'Missing Callbacks Management',
     '/settings': 'Settings',
     '/api-docs': 'API Documentation',
     '/admin-dashboard': 'User Management',
@@ -167,6 +168,7 @@ function getPageTitle(pathname: string): string {
 function getPageDescription(pathname: string): string {
   const descriptions: Record<string, string> = {
     '/': 'Overview of disbursement activities and system status',
+    '/management/missing-callbacks': 'Query Safaricom for missing M-Pesa callbacks and send results to USSD team',
     '/disburse': 'Initiate M-Pesa B2C disbursement transactions',
     '/partners': 'Manage partner organizations and their configurations',
     '/transactions': 'Real-time monitoring of M-Pesa B2C transactions and balances',
